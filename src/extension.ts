@@ -6,34 +6,8 @@ import * as fs from 'fs';
 import * as util from 'util';
 
 const readFile = util.promisify(fs.readFile);
+let cachedTestTargets: string[] = [];
 
-const getTestLogPath = (testTarget: string, workspacePath: string): string => {
-	// Entferne das führende "//" aus dem Test-Target
-	const normalizedTarget = testTarget.replace(/^\/\//, '');
-	// Ersetze ":" durch "/" für den Verzeichnisnamen
-	const logPath = path.join(workspacePath, 'bazel-testlogs', normalizedTarget.replace(':', '/'), 'test.log');
-	return logPath;
-};
-
-const waitForFile = async (filePath: string, timeout = 5000) => {
-	const startTime = Date.now();
-	while (!fs.existsSync(filePath)) {
-		if (Date.now() - startTime > timeout) {
-			throw new Error(`Timeout: ${filePath} wurde nicht gefunden.`);
-		}
-		await new Promise(resolve => setTimeout(resolve, 200)); // Warte 200ms
-	}
-};
-
-const readTestLog = async (logPath: string): Promise<string> => {
-	try {
-		await waitForFile(logPath, 5000); // Warte auf test.log, falls noch nicht geschrieben
-		return await readFile(logPath, 'utf-8');
-	} catch (error) {
-		logger.appendLine(`Error reading test log ${logPath}: ${error}`);
-		return `Fehler beim Lesen von ${logPath}: ${error}`;
-	}
-};
 
 // 🛠 Logger for debugging
 const logger = vscode.window.createOutputChannel("Bazel Unity Tests");
@@ -70,57 +44,50 @@ export function activate(context: vscode.ExtensionContext) {
 			}
 			logger.appendLine(`Bazel workspace found at: ${workspacePath}`);
 
-			// 🔎 Run Bazel query to find tests
 			let testTargets: string[] = [];
 
 			try {
 				const result = await runCommand('bazel query "kind(cc_test, //...)"', workspacePath);
 				testTargets = result.split('\n')
-					.map(line => line.trim()) // Leerzeichen entfernen
-					.filter(line => line.startsWith("cc_test rule")) // Nur gültige Zeilen behalten
-					.map(line => line.replace(/^cc_test rule /, "").trim()); // "cc_test rule" entfernen
+					.map(line => line.trim())
+					.filter(line => line.startsWith("cc_test rule"))
+					.map(line => line.replace(/^cc_test rule /, "").trim());
+
+				// 🔹 **Check if tests have changed before updating**
+				if (JSON.stringify(testTargets) === JSON.stringify(cachedTestTargets)) {
+					logger.appendLine("No test changes detected. Using cached results.");
+					return; // Exit early if no changes
+				}
+
+				// 🔹 Update cache if test targets have changed
+				cachedTestTargets = [...testTargets];
 
 				logger.appendLine(`Extracted test targets:\n${testTargets.join("\n")}`);
 			} catch (error) {
 				logger.appendLine(`Bazel query failed: ${error}`);
 			}
 
-			// 🔎 If Bazel query fails, fallback to scanning C++ test files
-			// if (testTargets.length === 0) {
-			// 	logger.appendLine("Bazel query returned no tests. Scanning for C test files...");
-			// 	const cppFiles = await glob("tests/**/*.c", { nodir: true, absolute: true, cwd: workspacePath });
-			// 	testTargets = cppFiles.map(file => `//${path.relative(workspacePath, file)}`);
-			// }
-
 			if (testTargets.length === 0) {
 				vscode.window.showErrorMessage("No Bazel tests found with query.");
 				return;
 			}
 
-			// 📌 Log test discovery results
-			logger.appendLine(`Discovered tests:\n${testTargets.join("\n")}`);
-
-			if (testTargets.length === 0) {
-				vscode.window.showInformationMessage("No Bazel tests found.");
-				return;
-			}
-
-			// 📌 Keep the new tab with discovered tests
-			const doc = await vscode.workspace.openTextDocument({
-				content: testTargets.join("\n"),
-				language: "plaintext"
-			});
-			vscode.window.showTextDocument(doc);
-
-			// 📌 Register tests in the VS Code Test Explorer
+			// 📌 Register tests in VS Code Test Explorer
 			testController.items.replace([]);
-			const root = testController.createTestItem('bazel_tests', 'Bazel Tests');
-			testController.items.add(root);
 
 			testTargets.forEach(target => {
-				logger.appendLine(`Adding test target: ${target}`);
-				const testItem = testController.createTestItem(target, target);
-				root.children.add(testItem);
+				const parts = target.split(":"); // Extract package and test name
+				const packageName = parts[0]; // e.g., "//tests"
+				const testName = parts[1]; // e.g., "dm"
+
+				let packageItem = testController.items.get(packageName);
+				if (!packageItem) {
+					packageItem = testController.createTestItem(packageName, packageName);
+					testController.items.add(packageItem);
+				}
+
+				const testItem = testController.createTestItem(target, testName);
+				packageItem.children.add(testItem);
 				testItem.canResolveChildren = false;
 			});
 
@@ -130,85 +97,123 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	};
 
-	const deleteOldTestLog = (testItem: vscode.TestItem, workspacePath: string) => {
-		const logPath = getTestLogPath(testItem.id, workspacePath);
-		if (fs.existsSync(logPath)) {
-			try {
-				fs.unlinkSync(logPath); // Delete old test.log
-				logger.appendLine(`Deleted old log file: ${logPath}`);
-			} catch (deleteError) {
-				logger.appendLine(`Error deleting log file ${logPath}: ${deleteError}`);
-			}
-		}
-	};
 
-	const executeBazelTest = async (testItem: vscode.TestItem, workspacePath: string): Promise<string | null> => {
-		try {
+	const executeBazelTest = async (testItem: vscode.TestItem, workspacePath: string, run: vscode.TestRun) => {
+		return new Promise<void>((resolve, reject) => {
 			logger.appendLine(`Running test: ${testItem.id}`);
-			await runCommand(`bazel test ${testItem.id}`, workspacePath);
-			return null; // No error, test ran successfully
-		} catch (error) {
-			logger.appendLine(`Test ${testItem.id} failed:\n${error}`);
-			return `ERROR: ${error}`; // Return the error message
-		}
-	};
 
-	const handleTestResult = async (testItem: vscode.TestItem, workspacePath: string, errorMessage: string | null, run: vscode.TestRun) => {
-		const logPath = getTestLogPath(testItem.id, workspacePath);
+			const bazelProcess = cp.spawn('bazel', ['test', testItem.id, '--test_output=all'], {
+				cwd: workspacePath,
+				shell: true
+			});
 
-		if (!errorMessage && fs.existsSync(logPath)) {
-			try {
-				let logContent = await readTestLog(logPath);
+			let outputBuffer = "";
+			let errorBuffer = "";
 
-				logContent = logContent
-					.split(/\r?\n/)
-					.map(line => line.trimStart())
-					.join("\r\n");
+			// 📌 Erfasse Standardausgabe (wird in Test Output Fenster angezeigt)
+			bazelProcess.stdout.on('data', (data) => {
+				const output = data.toString();
+				outputBuffer += output + "\n";
+				run.appendOutput(output.replace(/\r?\n/g, '\r\n'));
+				logger.append(output);
+			});
 
-				run.appendOutput(`\r\n--- Test Output (${testItem.id}) ---\r\n${logContent}\r\n--- End of Log ---\r\n`);
+			// 📌 Erfasse Fehlerausgabe
+			bazelProcess.stderr.on('data', (data) => {
+				const errorOutput = data.toString();
+				errorBuffer += errorOutput + "\n";
+				run.appendOutput(errorOutput.replace(/\r?\n/g, '\r\n'));
+				logger.append(errorOutput);
+			});
 
-				if (!logContent.includes(':FAIL')) {
+			// 📌 Wenn der Test beendet wurde, prüfe den Exit-Code
+			bazelProcess.on('close', (code) => {
+				if (code === 0) {
 					run.passed(testItem);
+					resolve();
 				} else {
-					run.failed(testItem, new vscode.TestMessage("Failed tests detected!"));
+					// Set a minimal error message for the hover tooltip
+					const errorMessage = `Test failed: ${testItem.id}`;
+					const message = new vscode.TestMessage(errorMessage);
+					run.failed(testItem, message);
+					reject(new Error(`Bazel test failed with exit code ${code}`));
 				}
-				return;
-			} catch (logError) {
-				logger.appendLine(`Error reading log for ${testItem.id}: ${logError}`);
-				errorMessage = `Error loading test log: ${logError}`;
-			}
-		}
+			});
 
-		// If no log exists, show the error message
-		let formattedError = errorMessage ?? "Unknown error";
-		formattedError = formattedError
-			.split(/\r?\n/)
-			.map(line => line.trimStart())
-			.join("\r\n");
-
-		run.appendOutput(`\r\n--- Compilation Error for ${testItem.id} ---\r\n${formattedError}\r\n--- End of Error ---\r\n`);
-		run.failed(testItem, new vscode.TestMessage(formattedError));
+			// 📌 Falls der Prozess fehlschlägt, Fehlermeldung im Test-Explorer anzeigen
+			bazelProcess.on('error', (error) => {
+				const errorMessage = `Error executing test: ${error.message}`;
+				const message = new vscode.TestMessage(errorMessage);
+				run.failed(testItem, message);
+				reject(error);
+			});
+		});
 	};
+
 
 	const runTests = async (request: vscode.TestRunRequest, token: vscode.CancellationToken) => {
 		const run = testController.createTestRun(request);
-
 		const workspacePath = await findBazelWorkspace();
+
 		if (!workspacePath) {
 			vscode.window.showErrorMessage("No Bazel workspace detected.");
 			return;
 		}
 
+		const testPromises: Promise<void>[] = [];
+
 		for (const testItem of request.include ?? []) {
 			run.started(testItem);
-			deleteOldTestLog(testItem, workspacePath);
-			const errorMessage = await executeBazelTest(testItem, workspacePath);
-			await handleTestResult(testItem, workspacePath, errorMessage, run);
+
+			if (!testItem.id.includes(":")) {
+				// 🔹 It's a package, find all tests inside
+				try {
+					const result = await runCommand(`bazel query "kind(cc_test, ${testItem.id}/...)"`, workspacePath);
+					const testTargets = result.split("\n")
+						.map(line => line.trim())
+						.filter(line => line.startsWith("cc_test rule")) // Ensure we filter only valid lines
+						.map(line => line.replace(/^cc_test rule /, "").trim()); // Remove "cc_test rule " to get the actual target
+
+					if (testTargets.length === 0) {
+						vscode.window.showErrorMessage(`No tests found in ${testItem.id}`);
+						continue;
+					}
+
+					// 🔹 Start all tests inside the package in parallel (each as its own Bazel command)
+					testPromises.push(...testTargets.map(target => {
+						const parts = target.split(":");
+						const packageName = parts[0]; // e.g., "//tests"
+						const testName = parts[1]; // e.g., "dm"
+
+						const packageItem = testController.items.get(packageName);
+						if (!packageItem) {
+							logger.appendLine(`Warning: No package item found for ${packageName}`);
+							return Promise.resolve(); // Skip if package item is missing
+						}
+
+						const testItem = packageItem.children.get(target);
+						if (!testItem) {
+							logger.appendLine(`Warning: No test item found for ${target}`);
+							return Promise.resolve(); // Skip if test item is missing
+						}
+
+						return executeBazelTest(testItem, workspacePath, run);
+					}));
+
+				} catch (error) {
+					logger.appendLine(`Failed to discover tests in ${testItem.id}: ${error}`);
+				}
+
+			} else {
+				// 🔹 It's a single test, just run it
+				testPromises.push(executeBazelTest(testItem, workspacePath, run));
+			}
 		}
 
+		// 🔹 Run all tests in parallel, ensuring independent execution
+		await Promise.allSettled(testPromises);
 		run.end();
 	};
-
 
 	testController.createRunProfile('Run Tests', vscode.TestRunProfileKind.Run, runTests, true);
 
