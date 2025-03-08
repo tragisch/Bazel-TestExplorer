@@ -9,7 +9,9 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onTestController"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
