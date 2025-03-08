@@ -6,7 +6,6 @@ import * as fs from 'fs';
 import * as util from 'util';
 
 const readFile = util.promisify(fs.readFile);
-let cachedTestTargets: string[] = [];
 let hasActivated = false;
 
 // 🛠 Logger for debugging
@@ -54,9 +53,6 @@ export function activate(context: vscode.ExtensionContext) {
 	const testController = vscode.tests.createTestController('bazelUnityTestController', 'Bazel Unity Tests');
 	context.subscriptions.push(testController);
 
-	// 🔹 Load cached test results at startup
-	cachedTestTargets = context.globalState.get<string[]>("cachedTestTargets", []);
-
 	let hasRunTestDiscovery = false;
 
 	const showDiscoveredTests = async () => {
@@ -76,21 +72,6 @@ export function activate(context: vscode.ExtensionContext) {
 			logger.appendLine(`Bazel workspace found at: ${workspacePath}`);
 			let testTargets = await fetchTestTargets(workspacePath);
 
-			if (testController.items.size === 0) {
-				logger.appendLine("Test Explorer is empty. Forcing test discovery.");
-				cachedTestTargets = [];
-			} else {
-				cachedTestTargets = context.globalState.get<string[]>("cachedTestTargets", []);
-			}
-
-			if (JSON.stringify(testTargets) === JSON.stringify(cachedTestTargets)) {
-				logger.appendLine("No test changes detected. Using cached results.");
-				return;
-			}
-
-			cachedTestTargets = [...testTargets];
-			context.globalState.update("cachedTestTargets", cachedTestTargets);
-
 			testController.items.replace([]);
 			testTargets.forEach(target => {
 				const [packageName, testName] = target.includes(":") ? target.split(":") : [target, target]; // Ensure testName is never undefined
@@ -101,8 +82,7 @@ export function activate(context: vscode.ExtensionContext) {
 					testController.items.add(packageItem);
 				}
 
-				// 🔹 Ensure test items are stored with their full name
-				let testItem = packageItem.children.get(target);
+				let testItem = packageItem.children.get(testName);
 				if (!testItem) {
 					testItem = testController.createTestItem(target, testName);
 					packageItem.children.add(testItem);
@@ -122,7 +102,7 @@ export function activate(context: vscode.ExtensionContext) {
 		return new Promise<void>((resolve, reject) => {
 			logger.appendLine(`Running test: ${testItem.id}`);
 
-			const bazelProcess = cp.spawn('bazel', ['test', testItem.id, '--test_output=all'], {
+			const bazelProcess = cp.spawn('bazel', ['test', testItem.id, '--test_output=all', '--check_tests_up_to_date'], {
 				cwd: workspacePath,
 				shell: true
 			});
@@ -132,29 +112,38 @@ export function activate(context: vscode.ExtensionContext) {
 
 			bazelProcess.stdout.on('data', (data) => {
 				const output = data.toString();
-				outputBuffer += output + "\n";
-				run.appendOutput(output.replace(/\r?\n/g, '\r\n'));
+				if (!output.includes("INFO: Invocation ID") &&
+					!output.includes("Computing main repo mapping") &&
+					!output.includes("Loading:") &&
+					!output.includes("Analyzing:") &&
+					!output.includes("INFO: Found") &&
+					!output.includes("Target //")) {
+					outputBuffer += output + "\n";
+				}
 			});
 
 			bazelProcess.stderr.on('data', (data) => {
 				const errorOutput = data.toString();
 				errorBuffer += errorOutput + "\n";
-				run.appendOutput(errorOutput.replace(/\r?\n/g, '\r\n'));
 			});
 
 			bazelProcess.on('close', (code) => {
 				if (code === 0) {
-					run.passed(testItem);
+					const successMessage = `✅ Test Passed: ${testItem.id}\n${outputBuffer.trim()}`;
+					run.appendOutput(successMessage.replace(/\r?\n/g, '\r\n') + "\r\n"); // 🔹 Ensure proper output formatting
+					run.passed(testItem); // 🔹 Correctly mark test as passed
 					resolve();
 				} else {
-					const errorMessage = `Test failed: ${testItem.id}\n${errorBuffer.trim()}`;
+					const errorMessage = `❌ Test Failed: ${testItem.id}\n${outputBuffer.trim()}`;
+					run.appendOutput(errorMessage.replace(/\r?\n/g, '\r\n') + "\r\n"); // 🔹 Ensure proper output formatting
 					run.failed(testItem, new vscode.TestMessage(errorMessage));
 					reject(new Error(errorMessage));
 				}
 			});
 
 			bazelProcess.on('error', (error) => {
-				const errorMessage = `Error executing test: ${error.message}`;
+				const errorMessage = `❌ Error executing test: ${error.message}`;
+				run.appendOutput(errorMessage.replace(/\r?\n/g, '\r\n') + "\r\n"); // 🔹 Ensure proper output formatting
 				run.failed(testItem, new vscode.TestMessage(errorMessage));
 				reject(error);
 			});
@@ -179,25 +168,32 @@ export function activate(context: vscode.ExtensionContext) {
 
 			if (!testItem.id.includes(":")) {
 				// 🔹 It's a package, retrieve all tests inside
-				const testTargets = cachedTestTargets.filter(target => target.startsWith(testItem.id));
-				logger.appendLine(`📦 Package detected: ${testItem.id}, Found tests: ${testTargets.length}`);
+				const testTargets = await fetchTestTargets(workspacePath); // Ensure we wait for this
+				const filteredTestTargets = testTargets.filter(target => target.startsWith(testItem.id));
+				logger.appendLine(`📦 Package detected: ${testItem.id}, Found tests: ${filteredTestTargets.length}`);
 
-				if (testTargets.length === 0) {
+				if (filteredTestTargets.length === 0) {
 					vscode.window.showErrorMessage(`No tests found in ${testItem.id}`);
 					logger.appendLine(`⚠️ No tests found in package: ${testItem.id}`);
 					continue;
 				}
 
 				// 🔹 Run all package tests in parallel
-				testPromises.push(...testTargets.map(target => {
+				testPromises.push(...filteredTestTargets.map(target => {
 					const packageName = target.split(":")[0]; // Extract package part
 					const packageItem = testController.items.get(packageName);
 
-					const testItem = packageItem?.children.get(target); // 🔹 Retrieve test from `children`
+					if (!packageItem) {
+						logger.appendLine(`⚠️ Warning: Package item not found for ${packageName}`);
+						return Promise.resolve();
+					}
+
+					const testItem = packageItem?.children.get(target);
 					if (!testItem) {
 						logger.appendLine(`⚠️ Warning: Test item not found for ${target}`);
 						return Promise.resolve();
 					}
+
 					logger.appendLine(`▶️ Running test: ${target}`);
 					return executeBazelTest(testItem, workspacePath, run);
 				}));
