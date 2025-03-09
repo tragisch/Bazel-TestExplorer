@@ -30,8 +30,8 @@ const runCommand = async (command: string, cwd: string): Promise<string> => {
 	});
 };
 
-// 📌 Fetch test targets from Bazel
-export const fetchTestTargets = async (workspacePath: string): Promise<string[]> => {
+// 📌 Fetch test targets from Bazel, now returning both target and test type
+export const fetchTestTargets = async (workspacePath: string): Promise<{ target: string, type: string }[]> => {
 	try {
 		// 🔹 Read user-defined test types from settings.json, fallback to defaults
 		const config = vscode.workspace.getConfiguration("bazelTestRunner");
@@ -41,12 +41,22 @@ export const fetchTestTargets = async (workspacePath: string): Promise<string[]>
 		const query = testTypes.map(type => `kind(${type}, //...)`).join(" union ");
 		const result = await runCommand(`bazel query "${query}"`, workspacePath);
 
-		const filteredResult = result.split('\n')
-			.map(line => line.trim())
-			.map(line => line.replace(/^\S+ rule /, ""))
-			.filter(line => line.startsWith("//"));
+		// 🔹 Step 1: Split output into lines and trim whitespace
+		let lines = result.split("\n").map(line => line.trim());
 
-		return filteredResult;
+		// 🔹 Step 2: Extract test type BEFORE removing the prefix
+		let extractedTests = lines
+			.filter(line => line.includes(" rule //")) // Ensure it contains a test rule
+			.map(line => {
+				const parts = line.split(" rule "); // Example: "cc_test rule //tests:dm"
+				return { type: parts[0], target: parts[1] || "unknown_target" };
+			});
+
+		// 🔹 Step 3: Filter out invalid test targets
+		let validEntries = extractedTests.filter(entry => entry.target.startsWith("//"));
+		logger.appendLine(`Found ${validEntries.length} test targets in Bazel workspace.`);
+		return validEntries;
+
 	} catch (error) {
 		logger.appendLine(`Bazel query failed: ${error}`);
 		return [];
@@ -118,15 +128,6 @@ export function activate(context: vscode.ExtensionContext) {
 
 	let hasRunTestDiscovery = false;
 
-	console.log("Alle geladenen Erweiterungen:", vscode.extensions.all.map(ext => ext.id));
-
-	const myExtension = vscode.extensions.getExtension('bazel-tests');
-	if (myExtension) {
-		console.log("✅ Erweiterung ist geladen:", myExtension.id);
-	} else {
-		console.log("❌ Erweiterung nicht geladen oder nicht installiert!");
-	}
-
 	// 📌 Show discovered tests in the Test Explorer
 	const showDiscoveredTests = async () => {
 		if (hasRunTestDiscovery) {
@@ -143,11 +144,11 @@ export function activate(context: vscode.ExtensionContext) {
 			}
 
 			logger.appendLine(`Bazel workspace found at: ${workspacePath}`);
-			let testTargets = await fetchTestTargets(workspacePath);
+			let testEntries = await fetchTestTargets(workspacePath);
 
 			testController.items.replace([]);
-			testTargets.forEach(target => {
-				const [packageName, testName] = target.includes(":") ? target.split(":") : [target, target]; // Ensure testName is never undefined
+			testEntries.forEach(({ target, type }) => {
+				const [packageName, testName] = target.includes(":") ? target.split(":") : [target, target];
 
 				let packageItem = testController.items.get(packageName);
 				if (!packageItem) {
@@ -155,16 +156,19 @@ export function activate(context: vscode.ExtensionContext) {
 					testController.items.add(packageItem);
 				}
 
+				// 🔹 Use detected test type
+				const testTypeLabel = `[${type}]`;
+
 				let testItem = packageItem.children.get(testName);
 				if (!testItem) {
-					testItem = testController.createTestItem(target, testName);
+					testItem = testController.createTestItem(target, `${testTypeLabel} ${testName}`);
 					packageItem.children.add(testItem);
 				}
 
 				testItem.canResolveChildren = false;
 			});
 
-			logger.appendLine(`Registered test targets:\n${testTargets.join("\n")}`);
+			logger.appendLine(`Registered test targets:\n${testEntries.map(e => e.target).join("\n")}`);
 		} catch (error) {
 			vscode.window.showErrorMessage(`Failed to discover tests: ${(error as any).message}`);
 			logger.appendLine(`Error in showDiscoveredTests: ${error}`);
@@ -183,15 +187,24 @@ export function activate(context: vscode.ExtensionContext) {
 
 		logger.appendLine(`🔹 Starting test execution...`);
 		const testPromises: Promise<void>[] = [];
+		const packageResults: Map<string, { passed: number, total: number }> = new Map();
+
+		// 🔹 Get execution settings
+		const config = vscode.workspace.getConfiguration("bazelTestRunner");
+		const sequentialTestTypes: string[] = config.get("sequentialTestTypes", ["java_test"]);
 
 		for (const testItem of request.include ?? []) {
 			run.started(testItem);
 			logger.appendLine(`🔹 Processing test item: ${testItem.id}`);
 
 			if (!testItem.id.includes(":")) {
-				// 🔹 It's a package, retrieve all tests inside
-				const testTargets = await fetchTestTargets(workspacePath); // Ensure we wait for this
-				const filteredTestTargets = testTargets.filter(target => target.startsWith(testItem.id));
+				// 📦 It's a package, retrieve all tests inside
+				const testTargets = await fetchTestTargets(workspacePath);
+				const filteredTestTargets = testTargets.filter(({ target }) => {
+					const targetPackage = target.split(":")[0]; // Extract package name
+					return targetPackage === testItem.id; // Only allow exact package matches
+				});
+
 				logger.appendLine(`📦 Package detected: ${testItem.id}, Found tests: ${filteredTestTargets.length}`);
 
 				if (filteredTestTargets.length === 0) {
@@ -200,28 +213,36 @@ export function activate(context: vscode.ExtensionContext) {
 					continue;
 				}
 
-				// 🔹 Run all package tests in parallel
-				testPromises.push(...filteredTestTargets.map(target => {
-					const packageName = target.split(":")[0]; // Extract package part
+				packageResults.set(testItem.id, { passed: 0, total: filteredTestTargets.length });
+
+				const isSequential = filteredTestTargets.some(({ target }) =>
+					sequentialTestTypes.some(type => target.includes(type))
+				);
+
+				for (const { target } of filteredTestTargets) {
+					const packageName = target.split(":")[0];
 					const packageItem = testController.items.get(packageName);
-
-					if (!packageItem) {
-						logger.appendLine(`⚠️ Warning: Package item not found for ${packageName}`);
-						return Promise.resolve();
-					}
-
 					const testItem = packageItem?.children.get(target);
+
 					if (!testItem) {
 						logger.appendLine(`⚠️ Warning: Test item not found for ${target}`);
-						return Promise.resolve();
+						continue;
 					}
 
 					logger.appendLine(`▶️ Running test: ${target}`);
-					return executeBazelTest(testItem, workspacePath, run);
-				}));
+					testPromises.push(
+						executeBazelTest(testItem, workspacePath, run)
+							.then(() => {
+								let packageEntry = packageResults.get(testItem.parent?.id ?? "");
+								if (packageEntry) packageEntry.passed++;
+							})
+					);
+
+					if (isSequential) await testPromises[testPromises.length - 1]; // Run sequentially
+				}
 
 			} else {
-				// 🔹 It's a single test, execute it
+				// 🧪 It's a single test, execute it
 				logger.appendLine(`▶️ Running single test: ${testItem.id}`);
 				testPromises.push(executeBazelTest(testItem, workspacePath, run));
 			}
@@ -229,6 +250,13 @@ export function activate(context: vscode.ExtensionContext) {
 
 		await Promise.allSettled(testPromises);
 		run.end();
+
+		// 🔹 Update package labels with pass count
+		for (const [packageId, { passed, total }] of packageResults) {
+			let packageItem = testController.items.get(packageId);
+			if (packageItem) packageItem.label = `${packageId} (${passed}/${total})`;
+		}
+
 		logger.appendLine(`✅ Test execution completed.`);
 	};
 
