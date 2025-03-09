@@ -1,6 +1,6 @@
 {
-  "name": "bazel-unity-test",
-  "displayName": "bazel-unity-test",
+  "name": "bazel-tests",
+  "displayName": "bazel-tests",
   "description": "",
   "version": "0.0.1",
   "engines": {

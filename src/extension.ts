@@ -9,10 +9,10 @@ const readFile = util.promisify(fs.readFile);
 let hasActivated = false;
 
 // 🛠 Logger for debugging
-const logger = vscode.window.createOutputChannel("Bazel Unity Tests");
+const logger = vscode.window.createOutputChannel("Bazel-Test-Logs");
 
 // 📌 Utility function to find the Bazel workspace dynamically
-const findBazelWorkspace = async (): Promise<string | null> => {
+export const findBazelWorkspace = async (): Promise<string | null> => {
 	const workspaceFiles = await glob("**/MODULE.bazel*", { nodir: true, absolute: true, cwd: vscode.workspace.rootPath || "." });
 	return workspaceFiles.length > 0 ? path.dirname(workspaceFiles[0]) : null;
 };
@@ -31,7 +31,7 @@ const runCommand = async (command: string, cwd: string): Promise<string> => {
 };
 
 // 📌 Fetch test targets from Bazel
-const fetchTestTargets = async (workspacePath: string): Promise<string[]> => {
+export const fetchTestTargets = async (workspacePath: string): Promise<string[]> => {
 	try {
 		const result = await runCommand('bazel query "kind(cc_test, //...)"', workspacePath);
 		return result.split('\n')
@@ -44,6 +44,60 @@ const fetchTestTargets = async (workspacePath: string): Promise<string[]> => {
 	}
 };
 
+// 📌 Execute Bazel test
+export const executeBazelTest = async (testItem: vscode.TestItem, workspacePath: string, run: vscode.TestRun) => {
+	return new Promise<void>((resolve, reject) => {
+		logger.appendLine(`Running test: ${testItem.id}`);
+
+		const bazelProcess = cp.spawn('bazel', ['test', testItem.id, '--test_output=all'], {
+			cwd: workspacePath,
+			shell: true
+		});
+
+		let outputBuffer = "";
+		let errorBuffer = "";
+
+		bazelProcess.stdout.on('data', (data) => {
+			const output = data.toString();
+			if (!output.includes("INFO: Invocation ID") &&
+				!output.includes("Computing main repo mapping") &&
+				!output.includes("Loading:") &&
+				!output.includes("Analyzing:") &&
+				!output.includes("INFO: Found") &&
+				!output.includes("Target //")) {
+				outputBuffer += output + "\n";
+			}
+		});
+
+		bazelProcess.stderr.on('data', (data) => {
+			const errorOutput = data.toString();
+			errorBuffer += errorOutput + "\n";
+		});
+
+		bazelProcess.on('close', (code) => {
+			if (code === 0) {
+				const successMessage = `✅ Test Passed: ${testItem.id}\n${outputBuffer.trim()}`;
+				run.appendOutput(successMessage.replace(/\r?\n/g, '\r\n') + "\r\n");
+				run.passed(testItem);
+				resolve();
+			} else {
+				const errorMessage = `❌ Test Failed: ${testItem.id}\n${outputBuffer.trim()}`;
+				run.appendOutput(errorMessage.replace(/\r?\n/g, '\r\n') + "\r\n");
+				run.failed(testItem, new vscode.TestMessage(errorMessage));
+				reject(new Error(errorMessage));
+			}
+		});
+
+		bazelProcess.on('error', (error) => {
+			const errorMessage = `❌ Error executing test: ${error.message}`;
+			run.appendOutput(errorMessage.replace(/\r?\n/g, '\r\n') + "\r\n");
+			run.failed(testItem, new vscode.TestMessage(errorMessage));
+			reject(error);
+		});
+	});
+};
+
+// 📌 Activate the extension
 export function activate(context: vscode.ExtensionContext) {
 	if (hasActivated) {
 		logger.appendLine("Skipping duplicate activation.");
@@ -55,6 +109,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 	let hasRunTestDiscovery = false;
 
+	// 📌 Show discovered tests in the Test Explorer
 	const showDiscoveredTests = async () => {
 		if (hasRunTestDiscovery) {
 			logger.appendLine("Skipping duplicate test discovery.");
@@ -98,58 +153,7 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	};
 
-	const executeBazelTest = async (testItem: vscode.TestItem, workspacePath: string, run: vscode.TestRun) => {
-		return new Promise<void>((resolve, reject) => {
-			logger.appendLine(`Running test: ${testItem.id}`);
-
-			const bazelProcess = cp.spawn('bazel', ['test', testItem.id, '--test_output=all'], {
-				cwd: workspacePath,
-				shell: true
-			});
-
-			let outputBuffer = "";
-			let errorBuffer = "";
-
-			bazelProcess.stdout.on('data', (data) => {
-				const output = data.toString();
-				if (!output.includes("INFO: Invocation ID") &&
-					!output.includes("Computing main repo mapping") &&
-					!output.includes("Loading:") &&
-					!output.includes("Analyzing:") &&
-					!output.includes("INFO: Found") &&
-					!output.includes("Target //")) {
-					outputBuffer += output + "\n";
-				}
-			});
-
-			bazelProcess.stderr.on('data', (data) => {
-				const errorOutput = data.toString();
-				errorBuffer += errorOutput + "\n";
-			});
-
-			bazelProcess.on('close', (code) => {
-				if (code === 0) {
-					const successMessage = `✅ Test Passed: ${testItem.id}\n${outputBuffer.trim()}`;
-					run.appendOutput(successMessage.replace(/\r?\n/g, '\r\n') + "\r\n");
-					run.passed(testItem);
-					resolve();
-				} else {
-					const errorMessage = `❌ Test Failed: ${testItem.id}\n${outputBuffer.trim()}`;
-					run.appendOutput(errorMessage.replace(/\r?\n/g, '\r\n') + "\r\n");
-					run.failed(testItem, new vscode.TestMessage(errorMessage));
-					reject(new Error(errorMessage));
-				}
-			});
-
-			bazelProcess.on('error', (error) => {
-				const errorMessage = `❌ Error executing test: ${error.message}`;
-				run.appendOutput(errorMessage.replace(/\r?\n/g, '\r\n') + "\r\n");
-				run.failed(testItem, new vscode.TestMessage(errorMessage));
-				reject(error);
-			});
-		});
-	};
-
+	// 📌 Run tests
 	const runTests = async (request: vscode.TestRunRequest, token: vscode.CancellationToken) => {
 		const run = testController.createTestRun(request);
 		const workspacePath = await findBazelWorkspace();
@@ -211,9 +215,9 @@ export function activate(context: vscode.ExtensionContext) {
 	};
 
 	testController.createRunProfile('Run Tests', vscode.TestRunProfileKind.Run, runTests, true);
-
 	showDiscoveredTests();
 	vscode.commands.registerCommand("extension.showBazelTests", showDiscoveredTests);
 }
 
+// 📌 Deactivate the extension
 export function deactivate() { }

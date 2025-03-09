@@ -21,7 +21,6 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 ### Fixed
 - Resolved an issue where test items were not found in `testController.items.get(target)`.
 - Fixed indentation problems in test output formatting.
-- Corrected `extension.test.ts` imports to properly resolve the `extension.ts` module.
 
 ## [0.1.0] - YYYY-MM-DD
 ### Initial Release
