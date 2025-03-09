@@ -33,11 +33,20 @@ const runCommand = async (command: string, cwd: string): Promise<string> => {
 // 📌 Fetch test targets from Bazel
 export const fetchTestTargets = async (workspacePath: string): Promise<string[]> => {
 	try {
-		const result = await runCommand('bazel query "kind(cc_test, //...)"', workspacePath);
-		return result.split('\n')
+		// 🔹 Read user-defined test types from settings.json, fallback to defaults
+		const config = vscode.workspace.getConfiguration("bazelTestRunner");
+		const testTypes: string[] = config.get("testTypes", ["cc_test", "unity_test"]);
+
+		// 🔹 Construct Bazel query with union of all test types
+		const query = testTypes.map(type => `kind(${type}, //...)`).join(" union ");
+		const result = await runCommand(`bazel query "${query}"`, workspacePath);
+
+		const filteredResult = result.split('\n')
 			.map(line => line.trim())
-			.filter(line => line.startsWith("cc_test rule"))
-			.map(line => line.replace(/^cc_test rule /, "").trim());
+			.map(line => line.replace(/^\S+ rule /, ""))
+			.filter(line => line.startsWith("//"));
+
+		return filteredResult;
 	} catch (error) {
 		logger.appendLine(`Bazel query failed: ${error}`);
 		return [];
@@ -108,6 +117,15 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(testController);
 
 	let hasRunTestDiscovery = false;
+
+	console.log("Alle geladenen Erweiterungen:", vscode.extensions.all.map(ext => ext.id));
+
+	const myExtension = vscode.extensions.getExtension('bazel-tests');
+	if (myExtension) {
+		console.log("✅ Erweiterung ist geladen:", myExtension.id);
+	} else {
+		console.log("❌ Erweiterung nicht geladen oder nicht installiert!");
+	}
 
 	// 📌 Show discovered tests in the Test Explorer
 	const showDiscoveredTests = async () => {

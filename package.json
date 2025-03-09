@@ -19,7 +19,22 @@
         "command": "extension.showBazelTests",
         "title": "Show Bazel Tests"
       }
-    ]
+    ],
+    "configuration": {
+      "properties": {
+        "bazelTestRunner.testTypes": {
+          "type": "array",
+          "description": "List of Bazel test types to detect",
+          "default": [
+            "cc_test",
+            "unity_test"
+          ],
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
