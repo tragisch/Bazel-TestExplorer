@@ -102,7 +102,7 @@ export function activate(context: vscode.ExtensionContext) {
 		return new Promise<void>((resolve, reject) => {
 			logger.appendLine(`Running test: ${testItem.id}`);
 
-			const bazelProcess = cp.spawn('bazel', ['test', testItem.id, '--test_output=all', '--check_tests_up_to_date'], {
+			const bazelProcess = cp.spawn('bazel', ['test', testItem.id, '--test_output=all'], {
 				cwd: workspacePath,
 				shell: true
 			});
@@ -130,12 +130,12 @@ export function activate(context: vscode.ExtensionContext) {
 			bazelProcess.on('close', (code) => {
 				if (code === 0) {
 					const successMessage = `✅ Test Passed: ${testItem.id}\n${outputBuffer.trim()}`;
-					run.appendOutput(successMessage.replace(/\r?\n/g, '\r\n') + "\r\n"); // 🔹 Ensure proper output formatting
-					run.passed(testItem); // 🔹 Correctly mark test as passed
+					run.appendOutput(successMessage.replace(/\r?\n/g, '\r\n') + "\r\n");
+					run.passed(testItem);
 					resolve();
 				} else {
 					const errorMessage = `❌ Test Failed: ${testItem.id}\n${outputBuffer.trim()}`;
-					run.appendOutput(errorMessage.replace(/\r?\n/g, '\r\n') + "\r\n"); // 🔹 Ensure proper output formatting
+					run.appendOutput(errorMessage.replace(/\r?\n/g, '\r\n') + "\r\n");
 					run.failed(testItem, new vscode.TestMessage(errorMessage));
 					reject(new Error(errorMessage));
 				}
@@ -143,7 +143,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 			bazelProcess.on('error', (error) => {
 				const errorMessage = `❌ Error executing test: ${error.message}`;
-				run.appendOutput(errorMessage.replace(/\r?\n/g, '\r\n') + "\r\n"); // 🔹 Ensure proper output formatting
+				run.appendOutput(errorMessage.replace(/\r?\n/g, '\r\n') + "\r\n");
 				run.failed(testItem, new vscode.TestMessage(errorMessage));
 				reject(error);
 			});
