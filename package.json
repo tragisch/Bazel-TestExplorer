@@ -1,6 +1,6 @@
 {
-  "name": "bazel-tests",
-  "displayName": "bazel-tests",
+  "name": "bazel-testexplorer",
+  "displayName": "Bazel-TestExplorer",
   "description": "",
   "version": "0.0.1",
   "engines": {
