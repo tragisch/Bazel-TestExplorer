@@ -130,13 +130,13 @@ export const executeBazelTest = async (testItem: vscode.TestItem, workspacePath:
 
 		bazelProcess.stdout.on('data', (data) => {
 			const output = data.toString();
-		if (!output.includes("INFO: Invocation ID") &&
+			if (!output.includes("INFO: Invocation ID") &&
 				!output.includes("Computing main repo mapping") &&
 				!output.includes("Loading:") &&
 				!output.includes("Analyzing:") &&
 				!output.includes("Target //")) {
-			outputBuffer += output + "\n";
-		}
+				outputBuffer += output + "\n";
+			}
 		});
 
 		bazelProcess.stderr.on('data', (data) => {
@@ -162,17 +162,17 @@ export const executeBazelTest = async (testItem: vscode.TestItem, workspacePath:
 			});
 
 			// Add Bazel output section
-			formattedOutput += "📌 **Bazel Output:**\n";
-			formattedOutput += bazelOutput.join("\n") + "\n";
-			formattedOutput += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
-
-			// Add test log only if the test was actually executed
-			if (code === 0 || code === 1) {
+			if (code === 0) {
 				formattedOutput += "📄 **Test Log:**\n";
 				formattedOutput += testLogOutput.join("\n") + "\n";
 				formattedOutput += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
 			} else {
-				formattedOutput += "⚠️ **Error:** Test did not execute due to Bazel failure.\n";
+				formattedOutput += "📌 **Bazel Output:**\n";
+				formattedOutput += bazelOutput.join("\n") + "\n";
+				formattedOutput += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+				formattedOutput += "📄 **Test Log:**\n";
+				formattedOutput += testLogOutput.join("\n") + "\n";
+				formattedOutput += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
 			}
 
 			run.appendOutput(formattedOutput.replace(/\r?\n/g, '\r\n') + "\r\n");
