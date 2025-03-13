@@ -4,20 +4,21 @@
   "description": "",
   "version": "0.0.1",
   "engines": {
-    "vscode": "^1.97.0"
+    "vscode": "^1.60.0"
   },
   "categories": [
     "Other"
   ],
   "activationEvents": [
-    "onTestController"
+    "onView:workbench.view.testing",
+    "workspaceContains:**/MODULE.bazel"
   ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
         "command": "extension.showBazelTests",
-        "title": "Show Bazel Tests"
+        "title": "(Re)Load Bazel Tests"
       }
     ],
     "configuration": {
@@ -32,6 +33,15 @@
           "items": {
             "type": "string"
           }
+        },
+        "bazelTestRunner.workspaceRootFile": {
+          "type": "string",
+          "description": "Bazel workspace root file (MODULE.bazel for Bazel 8+, WORKSPACE for older projects)",
+          "default": "MODULE.bazel",
+          "enum": [
+            "MODULE.bazel",
+            "WORKSPACE"
+          ]
         }
       }
     }
