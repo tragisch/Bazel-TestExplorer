@@ -1,3 +1,18 @@
+/**
+ * Copyright (c) 2024–2025 @tragisch
+ * https://github.com/tragisch/Bazel-TestExplorer
+ * 
+ * This file is part of the Bazel Test Explorer extension for Visual Studio Code.
+ * 
+ * Licensed under the MIT License. See LICENSE file in the project root for details.
+ * 
+ * Description:
+ * This file contains the main activation logic for the VS Code extension, handling
+ * test discovery, execution, and integration with Bazel.
+ * 
+ */
+
+
 import * as vscode from 'vscode';
 import * as cp from 'child_process';
 import * as path from 'path';
@@ -57,7 +72,6 @@ export const fetchTestTargets = async (workspacePath: string): Promise<{ target:
 				return { type: parts[0], target: parts[1] || "unknown_target" };
 			});
 
-		// 🔹 Step 3: Filter out invalid test targets
 		let validEntries = extractedTests.filter(entry => entry.target.startsWith("//"));
 		logger.appendLine(`Found ${validEntries.length} test targets in Bazel workspace.`);
 		return validEntries;
@@ -219,12 +233,12 @@ export function activate(context: vscode.ExtensionContext) {
 		return;
 	}
 	hasActivated = true;
- 
+
 	const statusMessage = vscode.window.setStatusBarMessage("$(sync~spin) Bazel TestExplorer loading...");
- 
+
 	testController = vscode.tests.createTestController('bazelUnityTestController', 'Bazel Unity Tests');
 	context.subscriptions.push(testController);
- 
+
 	// Listen for VS Code testing settings changes and update accordingly
 	vscode.workspace.onDidChangeConfiguration(e => {
 		if (
