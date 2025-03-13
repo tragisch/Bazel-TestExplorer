@@ -219,11 +219,23 @@ export function activate(context: vscode.ExtensionContext) {
 		return;
 	}
 	hasActivated = true;
-
+ 
 	const statusMessage = vscode.window.setStatusBarMessage("$(sync~spin) Bazel TestExplorer loading...");
-
+ 
 	testController = vscode.tests.createTestController('bazelUnityTestController', 'Bazel Unity Tests');
 	context.subscriptions.push(testController);
+ 
+	// Listen for VS Code testing settings changes and update accordingly
+	vscode.workspace.onDidChangeConfiguration(e => {
+		if (
+			e.affectsConfiguration('testing.countBadge') ||
+			e.affectsConfiguration('testing.gutterEnabled') ||
+			e.affectsConfiguration('testing.defaultGutterClickAction')
+		) {
+			logger.appendLine("VS Code testing settings updated.");
+			// Automatically update test UI if needed
+		}
+	});
 
 	// 📌 Register the command properly
 	vscode.commands.registerCommand("extension.showBazelTests", showDiscoveredTests);
