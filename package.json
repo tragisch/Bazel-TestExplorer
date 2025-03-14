@@ -2,13 +2,14 @@
   "name": "bazel-testexplorer",
   "displayName": "Bazel-TestExplorer",
   "description": "A VS Code extension to run and manage Bazel tests.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "engines": {
     "vscode": "^1.97.0"
   },
   "categories": [
     "Testing"
   ],
+  "publisher": "tragisch",
   "repository": {
     "type": "git",
     "url": "https://github.com/tragisch/Bazel-TestExplorer.git"
@@ -59,7 +60,8 @@
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",
-    "test": "vscode-test"
+    "test": "vscode-test",
+    "package": "vsce package --yarn"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
@@ -73,6 +75,7 @@
     "typescript": "^5.7.3"
   },
   "dependencies": {
-    "brace-expansion": "^4.0.0"
+    "brace-expansion": "^4.0.0",
+    "glob": "^10.3.0"
   }
 }
