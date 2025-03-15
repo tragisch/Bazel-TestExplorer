@@ -211,6 +211,8 @@ export const executeBazelTest = async (testItem: vscode.TestItem, workspacePath:
 
 // 📌 Reload Bazel Tests Command
 const reloadBazelTests = async () => {
+    // Reset discovery flag to force re-querying Bazel
+    hasRunTestDiscovery = false;
 
 	const now = Date.now();
 	if (now - lastReloadTimestamp < RELOAD_INTERVAL_MS) {

@@ -1,4 +1,4 @@
-# Bazel Unity Test - VS Code Extension
+# Bazel TestExplorer - VS Code Extension
 
 A VS Code extension for managing Bazel-based tests, including **cc_test**.
 
