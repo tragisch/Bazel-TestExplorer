@@ -84,11 +84,11 @@ export const fetchTestTargets = async (workspacePath: string): Promise<{ target:
 
 // 📌 Show discovered tests in the Test Explorer
 const showDiscoveredTests = async () => {
-	if (hasRunTestDiscovery) {
-		logger.appendLine("Skipping duplicate test discovery.");
-		return;
-	}
-	hasRunTestDiscovery = true;
+	// if (hasRunTestDiscovery) {
+	// 	logger.appendLine("Skipping duplicate test discovery.");
+	// 	return;
+	// }
+	// hasRunTestDiscovery = true;
 
 	try {
 		const workspacePath = await findBazelWorkspace();
@@ -211,8 +211,8 @@ export const executeBazelTest = async (testItem: vscode.TestItem, workspacePath:
 
 // 📌 Reload Bazel Tests Command
 const reloadBazelTests = async () => {
-    // Reset discovery flag to force re-querying Bazel
-    hasRunTestDiscovery = false;
+	// Reset discovery flag to force re-querying Bazel
+	hasRunTestDiscovery = false;
 
 	const now = Date.now();
 	if (now - lastReloadTimestamp < RELOAD_INTERVAL_MS) {
