@@ -28,7 +28,7 @@ let testController: vscode.TestController; // 🔹 Declare testController global
 // 🛠 Logger for debugging
 const logger = vscode.window.createOutputChannel("Bazel-Test-Logs");
 
-const RELOAD_INTERVAL_MS = vscode.workspace.getConfiguration("bazelTestRunner").get<number>("reloadIntervalMinutes", 3) * 60 * 1000;
+const RELOAD_INTERVAL_MS = vscode.workspace.getConfiguration("bazelTestRunner").get<number>("reloadIntervalMinutes", 0.5) * 60 * 1000;
 let lastReloadTimestamp = 0;
 
 // 📌 Utility function to find the Bazel workspace dynamically
@@ -61,6 +61,7 @@ export const fetchTestTargets = async (workspacePath: string): Promise<{ target:
 		const testTypes: string[] = config.get("testTypes", ["cc_test", "unity_test"]);
 
 		const query = testTypes.map(type => `kind(${type}, //...)`).join(" union ");
+		logger.appendLine(`Executing Bazel query: ${query}`);
 		const result = await runCommand(`bazel query "${query}"`, workspacePath);
 
 		let lines = result.split("\n").map(line => line.trim());
