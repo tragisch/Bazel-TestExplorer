@@ -2,7 +2,7 @@
   "name": "bazel-testexplorer",
   "displayName": "Bazel-TestExplorer",
   "description": "A VS Code extension to run and manage Bazel tests.",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "engines": {
     "vscode": "^1.97.0"
   },
@@ -58,7 +58,7 @@
         },
         "bazelTestRunner.queryPaths": {
           "type": "array",
-          "description": "List of relative Bazel paths where tests should be queried. If left empty, defaults to querying the entire workspace ('//...').",
+          "description": "List of relative Bazel paths (i.e. //tests) where tests should be queried. If left empty, defaults to querying the entire workspace ('//...').",
           "default": [],
           "items": {
             "type": "string"

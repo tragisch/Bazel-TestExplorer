@@ -18,4 +18,4 @@ A VS Code extension for managing Bazel-based tests, including **cc_test**.
 - **Debugging Support**
 
 ## License
-MIT License – Feel free to modify!
+MIT License

@@ -2,6 +2,12 @@
 
 All notable changes to the "bazel-unity-test" extension will be documented here.
 
+## [0.1.5]
+
+### Fixed
+- Add forgotten 'union' to join different //bazel paths queries.
+
+
 ## [0.1.4]
 
 ### Added
@@ -24,6 +30,6 @@ All notable changes to the "bazel-unity-test" extension will be documented here.
 ### Fixed
 - Resolved issues with test discovery, indentation, and cached results.
 
-## [0.1.0] - YYYY-MM-DD
+## [0.1.0]
 ### Initial Release
 - Basic Bazel test integration.

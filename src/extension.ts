@@ -68,7 +68,7 @@ export const fetchTestTargets = async (workspacePath: string): Promise<{ target:
 		// Run queries separately for each path
 
 		for (const path of sanitizedPaths) {
-			const query = testTypes.map(type => `kind(${type}, ${path})`).join(" union ");
+			const query = testTypes.map(type => `kind(${type}, ${path}/...)`).join(" union ");
 			const command = `bazel query "${query}" ${useKeepGoing ? "--keep_going" : ""}`;
 			logger.appendLine(`Executing Bazel query: ${command}`);
 			const result = await runCommand(command, workspacePath);
