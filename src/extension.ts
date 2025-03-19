@@ -56,26 +56,40 @@ const runCommand = async (command: string, cwd: string): Promise<string> => {
 // 📌 Fetch test targets from Bazel, now returning both target and test type
 export const fetchTestTargets = async (workspacePath: string): Promise<{ target: string, type: string }[]> => {
 	try {
-		// Read user-defined test types from settings.json, fallback to defaults
+		// Read user-defined test types from settings.json
 		const config = vscode.workspace.getConfiguration("bazelTestRunner");
-		const testTypes: string[] = config.get("testTypes", ["cc_test", "unity_test"]);
+		const testTypes: string[] = config.get("testTypes", ["cc_test"]);
+		const useKeepGoing = config.get<boolean>("useKeepGoing", false);
+		const queryPaths: string[] = config.get("queryPaths", []);
+		const sanitizedPaths = queryPaths.length > 0 ? queryPaths.filter(p => p.trim() !== "") : ["//..."];
 
-		const query = testTypes.map(type => `kind(${type}, //...)`).join(" union ");
-		logger.appendLine(`Executing Bazel query: ${query}`);
-		const result = await runCommand(`bazel query "${query}"`, workspacePath);
+		let extractedTests: { target: string; type: string }[] = [];
 
-		let lines = result.split("\n").map(line => line.trim());
+		// Run queries separately for each path
 
-		let extractedTests = lines
-			.filter(line => line.includes(" rule //"))
-			.map(line => {
-				const parts = line.split(" rule ");
-				return { type: parts[0], target: parts[1] || "unknown_target" };
-			});
+		for (const path of sanitizedPaths) {
+			const query = testTypes.map(type => `kind(${type}, ${path})`).join(" union ");
+			const command = `bazel query "${query}" ${useKeepGoing ? "--keep_going" : ""}`;
+			logger.appendLine(`Executing Bazel query: ${command}`);
+			const result = await runCommand(command, workspacePath);
 
-		let validEntries = extractedTests.filter(entry => entry.target.startsWith("//"));
-		logger.appendLine(`Found ${validEntries.length} test targets in Bazel workspace.`);
-		return validEntries;
+			// Parse query output
+			const lines = result.split("\n").map(line => line.trim());
+			const tests = lines
+				.filter(line => line.includes(" rule //"))
+				.map(line => {
+					const parts = line.split(" rule ");
+					return { type: parts[0], target: parts[1] || "unknown_target" };
+				})
+				.filter(entry => entry.target.startsWith("//"));
+
+			// Merge results while avoiding duplicates
+			extractedTests.push(...tests.filter(test => !extractedTests.some(t => t.target === test.target)));
+		}
+
+
+		logger.appendLine(`Found ${extractedTests.length} test targets in Bazel workspace.`);
+		return extractedTests;
 
 	} catch (error) {
 		logger.appendLine(`Bazel query failed: ${error}`);

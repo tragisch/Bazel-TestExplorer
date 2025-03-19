@@ -50,6 +50,29 @@
             "MODULE.bazel",
             "WORKSPACE"
           ]
+        },
+        "bazelTestRunner.useKeepGoing": {
+          "type": "boolean",
+          "description": "Use --keep_going when running Bazel queries to continue execution despite errors.",
+          "default": false
+        },
+        "bazelTestRunner.queryPaths": {
+          "type": "array",
+          "description": "List of relative Bazel paths where tests should be queried. If left empty, defaults to querying the entire workspace ('//...').",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "bazelTestRunner.sequentialTestTypes": {
+          "type": "array",
+          "description": "List of test types (i.e. 'java_test') that should be run sequentially instead of in parallel.",
+          "default": [
+            "java_test"
+          ],
+          "items": {
+            "type": "string"
+          }
         }
       }
     }
