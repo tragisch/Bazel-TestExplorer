@@ -2,6 +2,12 @@
 
 All notable changes to the "bazel-unity-test" extension will be documented here.
 
+## [0.1.4]
+
+### Added
+- Add '--keep_going' in bazel queries as an option in settings.
+- Allow to specify specific folders to look for bazel tests.
+
 ## [0.1.3]
 
 ### Added
