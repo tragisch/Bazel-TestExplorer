@@ -55,55 +55,48 @@ const runCommand = async (command: string, cwd: string): Promise<string> => {
 
 // 📌 Fetch test targets from Bazel, now returning both target and test type
 export const fetchTestTargets = async (workspacePath: string): Promise<{ target: string, type: string }[]> => {
-	try {
-		// Read user-defined test types from settings.json
-		const config = vscode.workspace.getConfiguration("bazelTestRunner");
-		const testTypes: string[] = config.get("testTypes", ["cc_test"]);
-		const useKeepGoing = config.get<boolean>("useKeepGoing", false);
-		const queryPaths: string[] = config.get("queryPaths", []);
-		const sanitizedPaths = queryPaths.length > 0 ? queryPaths.filter(p => p.trim() !== "") : ["//..."];
+	const config = vscode.workspace.getConfiguration("bazelTestRunner");
+	const testTypes: string[] = config.get("testTypes", ["cc_test"]);
+	const useKeepGoing = config.get<boolean>("useKeepGoing", false);
+	const queryPaths: string[] = config.get("queryPaths", []);
+	const sanitizedPaths = queryPaths.length > 0 ? queryPaths.filter(p => p.trim() !== "") : ["/"];
 
-		let extractedTests: { target: string; type: string }[] = [];
+	let extractedTests: { target: string; type: string }[] = [];
 
-		// Run queries separately for each path
+	for (const path of sanitizedPaths) {
+		const query = testTypes.map(type => `kind(${type}, ${path}/...)`).join(" union ");
+		const command = `bazel query "${query}" --output=label_kind ${useKeepGoing ? "--keep_going" : ""}`;
+		logger.appendLine(`Executing Bazel query: ${command}`);
 
-		for (const path of sanitizedPaths) {
-			const query = testTypes.map(type => `kind(${type}, ${path}/...)`).join(" union ");
-			const command = `bazel query "${query}" ${useKeepGoing ? "--keep_going" : ""}`;
-			logger.appendLine(`Executing Bazel query: ${command}`);
-			const result = await runCommand(command, workspacePath);
-
-			// Parse query output
-			const lines = result.split("\n").map(line => line.trim());
-			const tests = lines
-				.filter(line => line.includes(" rule //"))
-				.map(line => {
-					const parts = line.split(" rule ");
-					return { type: parts[0], target: parts[1] || "unknown_target" };
-				})
-				.filter(entry => entry.target.startsWith("//"));
-
-			// Merge results while avoiding duplicates
-			extractedTests.push(...tests.filter(test => !extractedTests.some(t => t.target === test.target)));
+		let result: string;
+		try {
+			result = await runCommand(command, workspacePath);
+		} catch (error) {
+			logger.appendLine(`⚠️ No test targets found in path "${path}". Skipping.`);
+			continue; // Skip this path, but keep processing others
 		}
 
+		if (!result.trim()) {
+			logger.appendLine(`ℹ️ No test targets found in path: ${path}`); // Log info, but NOT an error
+			continue; // Skip this path but keep results from others
+		}
 
-		logger.appendLine(`Found ${extractedTests.length} test targets in Bazel workspace.`);
-		return extractedTests;
+		const lines = result.split("\n").map(line => line.trim());
 
-	} catch (error) {
-		logger.appendLine(`Bazel query failed: ${error}`);
-		return [];
+		const tests = lines.map(line => {
+			const match = line.match(/^(\S+) rule (\/\/.+)$/);
+			return match ? { type: match[1], target: match[2] } : null;
+		}).filter((entry): entry is { type: string; target: string } => entry !== null);
+
+		extractedTests.push(...tests);
 	}
+
+	logger.appendLine(`✅ Found ${extractedTests.length} test targets in Bazel workspace.`);
+	return extractedTests;
 };
 
 // 📌 Show discovered tests in the Test Explorer
 const showDiscoveredTests = async () => {
-	// if (hasRunTestDiscovery) {
-	// 	logger.appendLine("Skipping duplicate test discovery.");
-	// 	return;
-	// }
-	// hasRunTestDiscovery = true;
 
 	try {
 		const workspacePath = await findBazelWorkspace();
@@ -115,7 +108,7 @@ const showDiscoveredTests = async () => {
 		logger.appendLine(`Bazel workspace found at: ${workspacePath}`);
 		let testEntries = await fetchTestTargets(workspacePath);
 
-		testController.items.replace([]);
+		// 🔹 Do NOT clear previous results here! Instead, merge new results
 		testEntries.forEach(({ target, type }) => {
 			const [packageName, testName] = target.includes(":") ? target.split(":") : [target, target];
 
@@ -137,7 +130,10 @@ const showDiscoveredTests = async () => {
 			testItem.canResolveChildren = false;
 		});
 
-		logger.appendLine(`Registered test targets:\n${testEntries.map(e => e.target).join("\n")}`);
+		// 🔹 Log all accumulated tests at the end
+		logger.appendLine(`Registered test targets:\n${Array.from(testController.items).map(([id, item]) => id).join("\n")}`);
+		hasRunTestDiscovery = true;
+
 	} catch (error) {
 		vscode.window.showErrorMessage(`Failed to discover tests: ${(error as any).message}`);
 		logger.appendLine(`Error in showDiscoveredTests: ${error}`);
@@ -251,8 +247,6 @@ export function activate(context: vscode.ExtensionContext) {
 	}
 	hasActivated = true;
 
-	const statusMessage = vscode.window.setStatusBarMessage("$(sync~spin) Bazel TestExplorer loading...");
-
 	testController = vscode.tests.createTestController('bazelUnityTestController', 'Bazel Unity Tests');
 	context.subscriptions.push(testController);
 
@@ -277,10 +271,6 @@ export function activate(context: vscode.ExtensionContext) {
 		if (isTestExplorerActive) {
 			reloadBazelTests();
 		}
-
-		showDiscoveredTests().finally(() => {
-			statusMessage.dispose(); // 🔹 Entferne die Meldung nach Abschluss
-		});
 	});
 
 	// 📌 Run tests

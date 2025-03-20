@@ -2,11 +2,16 @@
 
 All notable changes to the "bazel-unity-test" extension will be documented here.
 
+## [0.1.6]
+
+### Fixed
+- Add '--output=label_kind' to query.
+
+
 ## [0.1.5]
 
 ### Fixed
 - Add forgotten 'union' to join different //bazel paths queries.
-
 
 ## [0.1.4]
 
