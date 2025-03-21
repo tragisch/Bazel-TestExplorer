@@ -35,8 +35,7 @@
           "type": "array",
           "description": "List of Bazel test types to detect",
           "default": [
-            "cc_test",
-            "unity_test"
+            "cc_test"
           ],
           "items": {
             "type": "string"

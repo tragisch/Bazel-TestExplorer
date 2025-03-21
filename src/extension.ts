@@ -17,6 +17,16 @@ const formatError = (error: unknown): string =>
 
 const RELOAD_INTERVAL_MS = vscode.workspace.getConfiguration("bazelTestRunner").get<number>("reloadIntervalMinutes", 0.5) * 60 * 1000;
 let lastReloadTimestamp = 0;
+let reloadTimeout: NodeJS.Timeout | undefined;
+
+const scheduleReload = (delay = 1000) => {
+	if (reloadTimeout) {
+		clearTimeout(reloadTimeout);
+	}
+	reloadTimeout = setTimeout(() => {
+		reloadBazelTests();
+	}, delay);
+};
 
 // ─── Workspace and Bazel Utilities ─────────────────────────────────────
 export const findBazelWorkspace = async (): Promise<string | null> => {
@@ -223,13 +233,6 @@ const reloadBazelTests = async () => {
 	// Reset discovery flag to force re-querying Bazel
 	testDiscoveryCompleted = false;
 
-	const now = Date.now();
-	if (now - lastReloadTimestamp < RELOAD_INTERVAL_MS) {
-		logger.appendLine(`Skipping test reload: Last update was too recent.`);
-		return;
-	}
-
-	lastReloadTimestamp = now;
 	logger.appendLine("🔄 Reloading Bazel tests...");
 	try {
 		await discoverAndDisplayTests();
@@ -356,10 +359,7 @@ export function activate(context: vscode.ExtensionContext) {
 	// 📌 Automatically Reload When Switching to Test Explorer
 	context.subscriptions.push(
 		vscode.window.onDidChangeVisibleTextEditors(() => {
-			const isTestExplorerActive = vscode.window.activeTextEditor?.document.uri.scheme === "vscode-test-explorer";
-			if (isTestExplorerActive) {
-				reloadBazelTests();
-			}
+			scheduleReload();
 		})
 	);
 
