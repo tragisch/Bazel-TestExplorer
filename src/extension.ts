@@ -12,6 +12,8 @@ let bazelTestController: vscode.TestController; // 🔹 Declare bazelTestControl
 
 // 🛠 Logger for debugging
 const logger = vscode.window.createOutputChannel("Bazel-Test-Logs");
+const formatError = (error: unknown): string =>
+	error instanceof Error ? error.stack || error.message : JSON.stringify(error, null, 2);
 
 const RELOAD_INTERVAL_MS = vscode.workspace.getConfiguration("bazelTestRunner").get<number>("reloadIntervalMinutes", 0.5) * 60 * 1000;
 let lastReloadTimestamp = 0;
@@ -128,8 +130,9 @@ const discoverAndDisplayTests = async () => {
 		testDiscoveryCompleted = true;
 
 	} catch (error) {
-		vscode.window.showErrorMessage(`Failed to discover tests: ${(error as any).message}`);
-		logger.appendLine(`Error in discoverAndDisplayTests: ${error}`);
+		const message = formatError(error);
+		vscode.window.showErrorMessage(`❌ Failed to discover tests:\n${message}`);
+		logger.appendLine(`❌ Error in discoverAndDisplayTests:\n${message}`);
 	}
 };
 
@@ -209,8 +212,8 @@ export const executeBazelTest = async (testItem: vscode.TestItem, workspacePath:
 			run.failed(testItem, new vscode.TestMessage(output));
 		}
 	} catch (error) {
-		const message = `❌ Error executing test: ${(error as Error).message}`;
-		run.appendOutput(message.replace(/\r?\n/g, '\r\n') + "\r\n");
+		const message = formatError(error);
+		run.appendOutput(`❌ Error executing test:\n${message}`.replace(/\r?\n/g, '\r\n') + "\r\n");
 		run.failed(testItem, new vscode.TestMessage(message));
 	}
 };
@@ -228,8 +231,13 @@ const reloadBazelTests = async () => {
 
 	lastReloadTimestamp = now;
 	logger.appendLine("🔄 Reloading Bazel tests...");
-	await discoverAndDisplayTests();
-
+	try {
+		await discoverAndDisplayTests();
+	} catch (error) {
+		const message = formatError(error);
+		vscode.window.showErrorMessage(`❌ Reload failed:\n${message}`);
+		logger.appendLine(`❌ Error in reloadBazelTests:\n${message}`);
+	}
 };
 
 vscode.commands.registerCommand("extension.reloadBazelTests", reloadBazelTests);
@@ -347,35 +355,41 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// 📌 Run tests
 	const runTests = async (request: vscode.TestRunRequest, token: vscode.CancellationToken) => {
-		const run = bazelTestController.createTestRun(request);
-		const workspacePath = await findBazelWorkspace();
-		if (!workspacePath) {
-			vscode.window.showErrorMessage("No Bazel workspace detected.");
-			logger.appendLine("❌ No Bazel workspace detected.");
-			return;
-		}
-
-		logger.appendLine(`🔹 Starting test execution...`);
-		const testPromises: Promise<void>[] = [];
-		const packageResults: Map<string, { passed: number, total: number }> = new Map();
-		const config = getRunnerConfig();
-
-		for (const testItem of request.include ?? []) {
-			run.started(testItem);
-			logger.appendLine(`🔹 Processing test item: ${testItem.id}`);
-
-			if (!testItem.id.includes(":")) {
-				await executeAllTestsInPackage(testItem, config, run, workspacePath, packageResults);
-			} else {
-				await queueIndividualTestExecution(testItem, run, workspacePath, testPromises);
+		try {
+			const run = bazelTestController.createTestRun(request);
+			const workspacePath = await findBazelWorkspace();
+			if (!workspacePath) {
+				vscode.window.showErrorMessage("No Bazel workspace detected.");
+				logger.appendLine("❌ No Bazel workspace detected.");
+				return;
 			}
+
+			logger.appendLine(`🔹 Starting test execution...`);
+			const testPromises: Promise<void>[] = [];
+			const packageResults: Map<string, { passed: number, total: number }> = new Map();
+			const config = getRunnerConfig();
+
+			for (const testItem of request.include ?? []) {
+				run.started(testItem);
+				logger.appendLine(`🔹 Processing test item: ${testItem.id}`);
+
+				if (!testItem.id.includes(":")) {
+					await executeAllTestsInPackage(testItem, config, run, workspacePath, packageResults);
+				} else {
+					await queueIndividualTestExecution(testItem, run, workspacePath, testPromises);
+				}
+			}
+
+			await Promise.allSettled(testPromises);
+			run.end();
+
+			summarizePackageResults(packageResults);
+			logger.appendLine(`✅ Test execution completed.`);
+		} catch (error) {
+			const message = formatError(error);
+			vscode.window.showErrorMessage(`❌ Test run failed:\n${message}`);
+			logger.appendLine(`❌ Error in runTests:\n${message}`);
 		}
-
-		await Promise.allSettled(testPromises);
-		run.end();
-
-		summarizePackageResults(packageResults);
-		logger.appendLine(`✅ Test execution completed.`);
 	};
 
 	bazelTestController.createRunProfile('Run Tests', vscode.TestRunProfileKind.Run, runTests, true);
