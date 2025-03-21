@@ -15,8 +15,6 @@ let logger: vscode.OutputChannel;
 const formatError = (error: unknown): string =>
 	error instanceof Error ? error.stack || error.message : JSON.stringify(error, null, 2);
 
-const RELOAD_INTERVAL_MS = vscode.workspace.getConfiguration("bazelTestRunner").get<number>("reloadIntervalMinutes", 0.5) * 60 * 1000;
-let lastReloadTimestamp = 0;
 let reloadTimeout: NodeJS.Timeout | undefined;
 
 const scheduleReload = (delay = 1000) => {
@@ -115,11 +113,11 @@ const addTestItemToController = (target: string, type: string) => {
 
 	const testTypeLabel = `[${type}]`;
 
-	let testItem = packageItem.children.get(testName);
-	if (!testItem) {
-		testItem = bazelTestController.createTestItem(target, `${testTypeLabel} ${testName}`);
-		packageItem.children.add(testItem);
-	}
+	let testItem;
+	const guessedFilePath = path.join(vscode.workspace.workspaceFolders?.[0].uri.fsPath || '', packageName, `${testName}.c`);
+	const uri = fs.existsSync(guessedFilePath) ? vscode.Uri.file(guessedFilePath) : undefined;
+	testItem = bazelTestController.createTestItem(target, `${testTypeLabel} ${testName}`, uri);
+	packageItem.children.add(testItem);
 
 	testItem.canResolveChildren = false;
 };
@@ -219,7 +217,23 @@ export const executeBazelTest = async (testItem: vscode.TestItem, workspacePath:
 		if (code === 0) {
 			run.passed(testItem);
 		} else {
-			run.failed(testItem, new vscode.TestMessage(output));
+			const message = new vscode.TestMessage(output);
+			
+			const failLine = testLog.find(line => line.includes(":FAIL"));
+			if (failLine) {
+				const match = failLine.match(/^(.+?):(\d+):/);
+				if (match) {
+					const [, file, line] = match;
+					const absolutePath = path.join(workspacePath, file);
+					if (fs.existsSync(absolutePath)) {
+						const uri = vscode.Uri.file(absolutePath);
+						const location = new vscode.Location(uri, new vscode.Position(Number(line) - 1, 0));
+						message.location = location;
+					}
+				}
+			}
+			
+			run.failed(testItem, message);
 		}
 	} catch (error) {
 		const message = formatError(error);
