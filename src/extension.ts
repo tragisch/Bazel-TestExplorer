@@ -11,7 +11,7 @@ let testDiscoveryCompleted = false; // 🔹 Ensure it exists globally
 let bazelTestController: vscode.TestController; // 🔹 Declare bazelTestController globally
 
 // 🛠 Logger for debugging
-const logger = vscode.window.createOutputChannel("Bazel-Test-Logs");
+let logger: vscode.OutputChannel;
 const formatError = (error: unknown): string =>
 	error instanceof Error ? error.stack || error.message : JSON.stringify(error, null, 2);
 
@@ -240,8 +240,6 @@ const reloadBazelTests = async () => {
 	}
 };
 
-vscode.commands.registerCommand("extension.reloadBazelTests", reloadBazelTests);
-
 const getRunnerConfig = () => {
 	const config = vscode.workspace.getConfiguration("bazelTestRunner");
 	return {
@@ -321,6 +319,8 @@ const summarizePackageResults = (
 
 // ─── Test Controller Activation ────────────────────────────────────────
 export function activate(context: vscode.ExtensionContext) {
+	logger = vscode.window.createOutputChannel("Bazel-Test-Logs");
+	context.subscriptions.push(logger);
 	if (extensionActivated) {
 		logger.appendLine("Skipping duplicate activation.");
 		return;
@@ -331,27 +331,37 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(bazelTestController);
 
 	// Listen for VS Code testing settings changes and update accordingly
-	vscode.workspace.onDidChangeConfiguration(e => {
-		if (
-			e.affectsConfiguration('testing.countBadge') ||
-			e.affectsConfiguration('testing.gutterEnabled') ||
-			e.affectsConfiguration('testing.defaultGutterClickAction')
-		) {
-			logger.appendLine("VS Code testing settings updated.");
-			// Automatically update test UI if needed
-		}
-	});
+	context.subscriptions.push(
+		vscode.workspace.onDidChangeConfiguration(e => {
+			if (
+				e.affectsConfiguration('testing.countBadge') ||
+				e.affectsConfiguration('testing.gutterEnabled') ||
+				e.affectsConfiguration('testing.defaultGutterClickAction')
+			) {
+				logger.appendLine("VS Code testing settings updated.");
+				// Automatically update test UI if needed
+			}
+		})
+	);
 
 	// 📌 Register the command properly
-	vscode.commands.registerCommand("extension.showBazelTests", discoverAndDisplayTests);
+	context.subscriptions.push(
+		vscode.commands.registerCommand("extension.showBazelTests", discoverAndDisplayTests)
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand("extension.reloadBazelTests", reloadBazelTests)
+	);
 
 	// 📌 Automatically Reload When Switching to Test Explorer
-	vscode.window.onDidChangeVisibleTextEditors(() => {
-		const isTestExplorerActive = vscode.window.activeTextEditor?.document.uri.scheme === "vscode-test-explorer";
-		if (isTestExplorerActive) {
-			reloadBazelTests();
-		}
-	});
+	context.subscriptions.push(
+		vscode.window.onDidChangeVisibleTextEditors(() => {
+			const isTestExplorerActive = vscode.window.activeTextEditor?.document.uri.scheme === "vscode-test-explorer";
+			if (isTestExplorerActive) {
+				reloadBazelTests();
+			}
+		})
+	);
 
 	// 📌 Run tests
 	const runTests = async (request: vscode.TestRunRequest, token: vscode.CancellationToken) => {
