@@ -130,11 +130,24 @@ const discoverAndDisplayTests = async () => {
 
 		const testEntries = await queryBazelTestTargets(workspacePath);
 
+		const currentTestIds = new Set(testEntries.map(entry => entry.target));
+		bazelTestController.items.forEach((item) => {
+			const id = item.id;
+			if (!currentTestIds.has(id)) {
+				logger.appendLine(`🧹 Removing stale test item: ${id}`);
+				bazelTestController.items.delete(id);
+			}
+		});
+
 		testEntries.forEach(({ target, type }) => {
 			addTestItemToController(target, type);
 		});
 
-		logger.appendLine(`Registered test targets:\n${Array.from(bazelTestController.items).map(([id, item]) => id).join("\n")}`);
+		const testIds: string[] = [];
+		bazelTestController.items.forEach((item) => {
+			testIds.push(item.id);
+		});
+		logger.appendLine(`Registered test targets:\n${testIds.join("\n")}`);
 		testDiscoveryCompleted = true;
 
 	} catch (error) {
@@ -244,7 +257,16 @@ export const executeBazelTest = async (testItem: vscode.TestItem, workspacePath:
 
 		if (code === 0) {
 			run.passed(testItem);
-		} else {
+		} else if (code === 4) {
+			logger.appendLine(`⚠️ Flaky test passed on retry: ${testItem.id}`);
+			const flakyMessage = new vscode.TestMessage("⚠️ This test is marked as flaky (exit code 4). Bazel reran it and it passed.");
+			run.passed(testItem);
+
+			// Optionally decorate the label (avoid duplicates)
+			if (!testItem.label.includes("⚠️ flaky")) {
+				testItem.label += " ⚠️ flaky";
+			}
+		} else if (code !== 0 && code !== 4) {
 			const message = new vscode.TestMessage(output);
 
 			const failLine = testLog.find(line => line.match(/^.+?:\d+:.*FAIL/));
@@ -410,11 +432,11 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// 📌 Register the command properly
 	context.subscriptions.push(
-		vscode.commands.registerCommand("extension.showBazelTests", discoverAndDisplayTests)
+		vscode.commands.registerCommand("extension.reloadBazelTests", reloadBazelTests)
 	);
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand("extension.reloadBazelTests", reloadBazelTests)
+		vscode.commands.registerCommand("extension.showBazelTests", discoverAndDisplayTests)
 	);
 
 	// 📌 Automatically Reload When Switching to Test Explorer
