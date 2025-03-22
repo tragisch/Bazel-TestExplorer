@@ -188,19 +188,47 @@ const parseBazelStdoutOutput = (stdout: string): { bazelLog: string[], testLog: 
 };
 
 // 📌 Format test output
-const generateTestResultMessage = (testId: string, code: number, testLog: string[], bazelLog: string[]): string => {
-	const status = code === 0 ? "✅ **Test Passed**" : "❌ **Test Failed**";
+const generateTestResultMessage = (testId: string, code: number, testLog: string[], bazelLog: string[], fullBazelOut?: string): string => {
+	let status = "";
+	switch (code) {
+		case 0:
+			status = "✅ **Test Passed (Code 0)**";
+			break;
+		case 3:
+			status = "❌ **Some Tests Failed (Code 3)**";
+			break;
+		case 4:
+			status = "⚠️ **Flaky Test Passed (Code 4)**";
+			break;
+		case 1:
+		default:
+			status = `🧨 **Build or Config Error (code ${code})**`;
+			break;
+	}
 	const header = `${status}: ${testId}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-
 	let output = header;
-	if (code === 0) {
-		output += "📄 **Test Log:**\n" + testLog.join("\n") + "\n";
-	} else {
-		output += "📌 **Bazel Output:**\n" + bazelLog.join("\n") + "\n";
-		output += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📄 **Test Log:**\n" + testLog.join("\n") + "\n";
+	switch (code) {
+		case 0:
+			output += "📄 **Test Log:**\n" + testLog.join("\n") + "\n";
+			break;
+		case 3:
+			output += "📄 **Test Log:**\n" + testLog.join("\n") + "\n";
+			output += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📌 **Bazel Output:**\n" + bazelLog.join("\n") + "\n";
+			break;
+		case 4:
+			output += "📄 **Test Log (with flakes):**\n" + testLog.join("\n") + "\n";
+			output += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📌 **Bazel Output:**\n" + bazelLog.join("\n") + "\n";
+			break;
+		case 1:
+		case 1:
+		default:
+			output += "📌 **Bazel Output:**\n" + (fullBazelOut ?? bazelLog.join("\n")) + "\n";
+			if (testLog.length > 0) {
+				output += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📄 **Test Log:**\n" + testLog.join("\n") + "\n";
+			}
+			break;
 	}
 	output += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
-
 	return output;
 };
 
@@ -210,7 +238,7 @@ export const executeBazelTest = async (testItem: vscode.TestItem, workspacePath:
 		logger.appendLine(`Running test: ${testItem.id}`);
 		const { code, stdout } = await spawnBazelTestProcess(testItem.id, workspacePath);
 		const { bazelLog, testLog } = parseBazelStdoutOutput(stdout);
-		const output = generateTestResultMessage(testItem.id, code, testLog, bazelLog);
+		const output = generateTestResultMessage(testItem.id, code, testLog, bazelLog, stdout);
 
 		run.appendOutput(output.replace(/\r?\n/g, '\r\n') + "\r\n");
 
@@ -218,22 +246,41 @@ export const executeBazelTest = async (testItem: vscode.TestItem, workspacePath:
 			run.passed(testItem);
 		} else {
 			const message = new vscode.TestMessage(output);
-			
-			const failLine = testLog.find(line => line.includes(":FAIL"));
+
+			const failLine = testLog.find(line => line.match(/^.+?:\d+:.*FAIL/));
 			if (failLine) {
 				const match = failLine.match(/^(.+?):(\d+):/);
+				logger.appendLine(`🔍 Trying to extract from: ${failLine}`);
 				if (match) {
 					const [, file, line] = match;
-					const absolutePath = path.join(workspacePath, file);
-					if (fs.existsSync(absolutePath)) {
-						const uri = vscode.Uri.file(absolutePath);
+					const fullPath = path.isAbsolute(file)
+						? file
+						: path.join(workspacePath, file);
+					if (fs.existsSync(fullPath)) {
+						const uri = vscode.Uri.file(fullPath);
 						const location = new vscode.Location(uri, new vscode.Position(Number(line) - 1, 0));
 						message.location = location;
+					} else {
+						logger.appendLine(`⚠️ File not found: ${fullPath}`);
 					}
+				} else {
+					logger.appendLine(`⚠️ Regex did not match: ${failLine}`);
 				}
 			}
-			
+
 			run.failed(testItem, message);
+			//open open the raw test log
+			// const logPathLine = testLog.find(line => line.includes("/testlogs/") && line.trim().endsWith(".log"));
+			// const logPathLineClean = logPathLine ? logPathLine.trim() : '';
+			// if (logPathLineClean && fs.existsSync(logPathLineClean)) {
+			// 	vscode.window.showInformationMessage("Test failed. View full test log?", "📄 Open Full Log").then(selection => {
+			// 		if (selection === "📄 Open Full Log") {
+			// 			vscode.workspace.openTextDocument(logPathLineClean).then(doc =>
+			// 				vscode.window.showTextDocument(doc, { preview: true, viewColumn: vscode.ViewColumn.Beside })
+			// 			);
+			// 		}
+			// 	});
+			// }
 		}
 	} catch (error) {
 		const message = formatError(error);
