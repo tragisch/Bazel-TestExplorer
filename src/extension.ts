@@ -114,16 +114,21 @@ const getWorkspaceOrShowError = async (): Promise<string | null> => {
 };
 
 // 📌 Helper function to register discovered test
-const addTestItemToController = (target: string, type: string) => {
+const addTestItemToController = (
+	target: string,
+	testType: string,
+	packageItemCache: Map<string, vscode.TestItem>
+) => {
 	const [packageName, testName] = target.includes(":") ? target.split(":") : [target, target];
 
-	let packageItem = bazelTestController.items.get(packageName);
+	let packageItem = packageItemCache.get(packageName);
 	if (!packageItem) {
 		packageItem = bazelTestController.createTestItem(packageName, packageName);
 		bazelTestController.items.add(packageItem);
+		packageItemCache.set(packageName, packageItem);
 	}
 
-	const testTypeLabel = `[${type}]`;
+	const testTypeLabel = `[${testType}]`;
 
 	let testItem;
 	const guessedFilePath = path.join(vscode.workspace.workspaceFolders?.[0].uri.fsPath || '', packageName, `${testName}.c`);
@@ -137,6 +142,7 @@ const addTestItemToController = (target: string, type: string) => {
 // 📌 Show discovered tests in the Test Explorer
 const discoverAndDisplayTests = async () => {
 	try {
+		const packageItemCache = new Map<string, vscode.TestItem>();
 		const workspacePath = await getWorkspaceOrShowError();
 		if (!workspacePath) return;
 
@@ -152,7 +158,7 @@ const discoverAndDisplayTests = async () => {
 		});
 
 		testEntries.forEach(({ target, type }) => {
-			addTestItemToController(target, type);
+			addTestItemToController(target, type, packageItemCache);
 		});
 
 		const testIds: string[] = [];
