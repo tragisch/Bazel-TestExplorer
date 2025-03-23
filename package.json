@@ -72,6 +72,16 @@
           "items": {
             "type": "string"
           }
+        },
+        "bazelTestRunner.failLinePatterns": {
+          "type": "array",
+          "description": "Custom regular expressions to extract file and line from test failures. The first two capture groups must be filename and line number.",
+          "default": [
+            "^(.+?):(\\d+): Failure"
+          ],
+          "items": {
+            "type": "string"
+          }
         }
       }
     }

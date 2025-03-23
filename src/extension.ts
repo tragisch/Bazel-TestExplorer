@@ -123,7 +123,8 @@ const addTestItemToController = (
 
 	let packageItem = packageItemCache.get(packageName);
 	if (!packageItem) {
-		packageItem = bazelTestController.createTestItem(packageName, packageName);
+		const label = `📦 ${packageName.replace(/^\/\//, "")}`;
+		packageItem = bazelTestController.createTestItem(packageName, label);
 		bazelTestController.items.add(packageItem);
 		packageItemCache.set(packageName, packageItem);
 	}
@@ -287,23 +288,45 @@ export const executeBazelTest = async (testItem: vscode.TestItem, workspacePath:
 			const message = new vscode.TestMessage(output);
 
 			const failLine = testLog.find(line => line.match(/^.+?:\d+:.*FAIL/));
-			if (failLine) {
-				const match = failLine.match(/^(.+?):(\d+):/);
-				logWithTimestamp(`Trying to extract from: ${failLine}`);
-				if (match) {
-					const [, file, line] = match;
-					const fullPath = path.isAbsolute(file)
-						? file
-						: path.join(workspacePath, file);
-					if (fs.existsSync(fullPath)) {
-						const uri = vscode.Uri.file(fullPath);
-						const location = new vscode.Location(uri, new vscode.Position(Number(line) - 1, 0));
-						message.location = location;
+			const config = vscode.workspace.getConfiguration("bazelTestRunner");
+			const customPatterns = config.get<string[]>("failLinePatterns", []);
+			const failPatterns = [
+			  ...customPatterns.map(p => {
+			    try {
+			      return new RegExp(p);
+			    } catch (e) {
+			      logWithTimestamp(`Invalid regex pattern in settings: "${p}"`, "warn");
+			      return null;
+			    }
+			  }).filter((p): p is RegExp => p !== null),
+			  /^(.+?):(\d+): Failure/,        // gtest
+			  /^(.+?):(\d+): FAILED/,         // Catch2
+			  /^(.+?)\((\d+)\): error/,       // doctest
+			  /^(.+?):(\d+): error/,          // generic
+			  /^Error: (.+?):(\d+): /,        // MUnit-style
+			];
+
+			for (const pattern of failPatterns) {
+				const matchLine = testLog.find(line => pattern.test(line));
+				if (matchLine) {
+					const match = matchLine.match(pattern);
+					logWithTimestamp(`Trying to extract from: ${matchLine}`);
+					if (match) {
+						const [, file, line] = match;
+						const fullPath = path.isAbsolute(file)
+							? file
+							: path.join(workspacePath, file);
+						if (fs.existsSync(fullPath)) {
+							const uri = vscode.Uri.file(fullPath);
+							const location = new vscode.Location(uri, new vscode.Position(Number(line) - 1, 0));
+							message.location = location;
+							break;
+						} else {
+							logWithTimestamp(`File not found: ${fullPath}`);
+						}
 					} else {
-						logWithTimestamp(`File not found: ${fullPath}`);
+						logWithTimestamp(`Regex did not match: ${matchLine}`);
 					}
-				} else {
-					logWithTimestamp(`Regex did not match: ${failLine}`);
 				}
 			}
 
@@ -393,9 +416,9 @@ const executeAllTestsInPackage = async (
 		});
 
 		if (isSequential) {
-			await testPromise; // warte, bevor der nächste läuft
+			await testPromise;
 		} else {
-			testPromises.push(testPromise); // parallel sammeln
+			testPromises.push(testPromise); // parallel 
 		}
 	}
 	await Promise.allSettled(testPromises);
@@ -416,7 +439,10 @@ const summarizePackageResults = (
 ) => {
 	for (const [packageId, { passed, total }] of packageResults) {
 		const packageItem = bazelTestController.items.get(packageId);
-		if (packageItem) packageItem.label = `${packageId} (${passed}/${total})`;
+		if (packageItem) {
+			const baseLabel = packageItem.label.split(" (")[0]; // Preserve original icon and base name
+			packageItem.label = `${baseLabel} (${passed}/${total})`;
+		}
 	}
 };
 
