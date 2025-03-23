@@ -4,6 +4,8 @@ import * as path from 'path';
 import { glob } from 'glob';
 import * as fs from 'fs';
 import * as util from 'util';
+let lastReloadTime = 0;
+const COOLDOWN_MS = 3000;
 
 const readFile = util.promisify(fs.readFile);
 let extensionActivated = false;
@@ -28,8 +30,22 @@ const logWithTimestamp = (message: string, level: "info" | "warn" | "error" = "i
 	const indentedMessage = message.split("\n").map(line => `  ${line}`).join("\n");
 	logger.appendLine(`${timestamp} ${tag} ${indentedMessage}`);
 };
+const measure = async <T>(label: string, fn: () => Promise<T>): Promise<T> => {
+	const start = Date.now();
+	const result = await fn();
+	const duration = Date.now() - start;
+	logWithTimestamp(`${label} took ${duration}ms`);
+	return result;
+};
 
 const scheduleReload = (delay = 1000) => {
+	const now = Date.now();
+	if (now - lastReloadTime < COOLDOWN_MS) {
+		logWithTimestamp(`⏳ Reload skipped (cooldown active)`);
+		return;
+	}
+	lastReloadTime = now;
+
 	if (reloadTimeout) {
 		clearTimeout(reloadTimeout);
 	}
@@ -152,7 +168,8 @@ const discoverAndDisplayTests = async () => {
 		const currentTestIds = new Set(testEntries.map(entry => entry.target));
 		bazelTestController.items.forEach((item) => {
 			const id = item.id;
-			if (!currentTestIds.has(id)) {
+			const hasLiveChildren = Array.from(item.children).some(([childId]) => currentTestIds.has(childId));
+			if (!currentTestIds.has(id) && !hasLiveChildren) {
 				logWithTimestamp(`Removing stale test item: ${id}`);
 				bazelTestController.items.delete(id);
 			}
@@ -162,11 +179,15 @@ const discoverAndDisplayTests = async () => {
 			addTestItemToController(target, type, packageItemCache);
 		});
 
-		const testIds: string[] = [];
+		const newTestIds: string[] = [];
 		bazelTestController.items.forEach((item) => {
-			testIds.push(item.id);
+			newTestIds.push(item.id);
 		});
-		logWithTimestamp(`Registered test targets: ${testIds.join("\n")}`);
+
+		if (newTestIds.length !== currentTestIds.size ||
+			!newTestIds.every(id => currentTestIds.has(id))) {
+			logWithTimestamp(`Registered test targets: ${newTestIds.join("\n")}`);
+		}
 
 	} catch (error) {
 		const message = formatError(error);
@@ -285,69 +306,57 @@ export const executeBazelTest = async (testItem: vscode.TestItem, workspacePath:
 		if (code === 0) {
 			run.passed(testItem);
 		} else {
-			let messageText = output;
-			let locationToSet: vscode.Location | undefined = undefined;
-			let message: vscode.TestMessage;
-
-			const failLine = testLog.find(line => line.match(/^.+?:\d+:.*FAIL/));
 			const config = vscode.workspace.getConfiguration("bazelTestRunner");
 			const customPatterns = config.get<string[]>("failLinePatterns", []);
-			const failPatterns = [
+			const failPatterns: { pattern: RegExp; source: string }[] = [
 				...customPatterns.map(p => {
 					try {
-						return new RegExp(p);
+						return { pattern: new RegExp(p), source: "Custom Setting" };
 					} catch (e) {
 						logWithTimestamp(`Invalid regex pattern in settings: "${p}"`, "warn");
 						return null;
 					}
-				}).filter((p): p is RegExp => p !== null),
-				/^(.+?):(\d+): Failure/,        // gtest
-				/^(.+?):(\d+): FAILED/,         // Catch2
-				/^(.+?)\((\d+)\): error/,       // doctest
-				/^(.+?):(\d+): error/,          // generic
-				/^FAIL .*?\((.+?):(\d+)\)$/,    // Greatest
-				/^Error: (.+?):(\d+): /,        // MUnit-style
+				}).filter((p): p is { pattern: RegExp; source: string } => p !== null),
+				{ pattern: /^(.+?):(\d+): Failure/, source: "Built-in" },        // gtest
+				{ pattern: /^(.+?):(\d+): FAILED/, source: "Built-in" },         // Catch2
+				{ pattern: /^(.+?)\((\d+)\): error/, source: "Built-in" },       // doctest
+				{ pattern: /^(.+?):(\d+): error/, source: "Built-in" },          // generic
+				{ pattern: /^FAIL .*?\((.+?):(\d+)\)$/, source: "Built-in" },    // Greatest
+				{ pattern: /^Error: (.+?):(\d+): /, source: "Built-in" },        // MUnit-style
 			];
 
-			const matchedLines: string[] = [];
+			const messages: vscode.TestMessage[] = [];
+			const matchingLines = testLog.filter(line => failPatterns.some(({ pattern }) => pattern.test(line)));
 
-			for (const pattern of failPatterns) {
-				const matchLine = testLog.find(line => pattern.test(line));
-				if (matchLine) {
-					matchedLines.push(matchLine);
-					const match = matchLine.match(pattern);
-					messageText = matchLine;
-					logWithTimestamp(`Trying to extract from: ${matchLine}`);
+			for (const line of matchingLines) {
+				for (const { pattern, source } of failPatterns) {
+					const match = line.match(pattern);
 					if (match) {
-						const [, file, line] = match;
+						const [, file, lineStr] = match;
 						const fullPath = path.isAbsolute(file)
 							? file
 							: path.join(workspacePath, file);
-						logWithTimestamp(`Candidate file: ${fullPath} at line ${line}`);
+						logWithTimestamp(`Pattern matched: [${source}] ${pattern}`);
+						logWithTimestamp(`✔ Found & used: ${fullPath}:${lineStr}`);
 						if (fs.existsSync(fullPath)) {
 							const uri = vscode.Uri.file(fullPath);
-							const location = new vscode.Location(uri, new vscode.Position(Number(line) - 1, 0));
-							locationToSet = location;
-							logWithTimestamp(`Location set to: ${uri.fsPath}:${line}`);
+							const location = new vscode.Location(uri, new vscode.Position(Number(lineStr) - 1, 0));
+							const message = new vscode.TestMessage(line);
+							message.location = location;
+							messages.push(message);
 							break;
 						} else {
 							logWithTimestamp(`File not found: ${fullPath}`);
 						}
-					} else {
-						logWithTimestamp(`Regex did not match: ${matchLine}`);
 					}
 				}
 			}
 
-			if (matchedLines.length === 0) {
-				logWithTimestamp("No matching failLine found in test log.");
+			if (messages.length > 0) {
+				run.failed(testItem, messages);
+			} else {
+				run.failed(testItem, new vscode.TestMessage(output));
 			}
-
-			message = new vscode.TestMessage(messageText);
-			if (locationToSet) {
-			  message.location = locationToSet;
-			}
-			run.failed(testItem, message);
 			//open open the raw test log
 			// const logPathLine = testLog.find(line => line.includes("/testlogs/") && line.trim().endsWith(".log"));
 			// const logPathLineClean = logPathLine ? logPathLine.trim() : '';
@@ -426,7 +435,6 @@ const executeAllTestsInPackage = async (
 			continue;
 		}
 
-		logWithTimestamp(`Running test: ${target}`);
 		const testPromise = executeBazelTest(childTestItem, workspacePath, run).then(() => {
 			const packageEntry = packageResults.get(packageName);
 			if (packageEntry) packageEntry.passed++;
@@ -447,7 +455,6 @@ const queueIndividualTestExecution = async (
 	workspacePath: string,
 	testPromises: Promise<void>[]
 ) => {
-	logWithTimestamp(`Running single test: ${testItem.id}`);
 	testPromises.push(executeBazelTest(testItem, workspacePath, run));
 };
 

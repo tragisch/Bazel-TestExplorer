@@ -19,6 +19,7 @@
   },
   "activationEvents": [
     "onView:workbench.view.testing",
+    "onCommand:extension.reloadBazelTests",
     "workspaceContains:**/MODULE.bazel"
   ],
   "main": "./out/extension.js",
