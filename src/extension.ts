@@ -7,11 +7,10 @@ import * as util from 'util';
 
 const readFile = util.promisify(fs.readFile);
 let extensionActivated = false;
-let testDiscoveryCompleted = false; // 🔹 Ensure it exists globally
 let bazelTestController: vscode.TestController; // 🔹 Declare bazelTestController globally
 
 // 🛠 Logger for debugging
-const outputChannel = vscode.window.createOutputChannel('Log', 'log');
+// const outputChannel = vscode.window.createOutputChannel('Log', 'log'); // ToDo: future colored log output
 let logger: vscode.OutputChannel;
 const formatError = (error: unknown): string =>
 	error instanceof Error ? error.stack || error.message : JSON.stringify(error, null, 2);
@@ -160,8 +159,7 @@ const discoverAndDisplayTests = async () => {
 		bazelTestController.items.forEach((item) => {
 			testIds.push(item.id);
 		});
-		logWithTimestamp(`Registered test targets:\n${testIds.join("\n")}`);
-		testDiscoveryCompleted = true;
+		logWithTimestamp(`Registered test targets: ${testIds.join("\n")}`);
 
 	} catch (error) {
 		const message = formatError(error);
@@ -253,7 +251,6 @@ const generateTestResultMessage = (
 			output += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📌 **Bazel Output:**\n" + bazelLog.join("\n") + "\n";
 			break;
 		case 1:
-		case 1:
 		default:
 			output += "📌 **Bazel Output:**\n" + (fullBazelOut?.trim() ?? bazelLog.join("\n")) + "\n";
 			if (fullStderr && fullStderr.trim()) {
@@ -327,9 +324,6 @@ export const executeBazelTest = async (testItem: vscode.TestItem, workspacePath:
 
 // 📌 Reload Bazel Tests Command
 const reloadBazelTests = async () => {
-	// Reset discovery flag to force re-querying Bazel
-	testDiscoveryCompleted = false;
-
 	logWithTimestamp("Reloading Bazel tests...");
 	try {
 		await discoverAndDisplayTests();
@@ -374,6 +368,8 @@ const executeAllTestsInPackage = async (
 		config.sequentialTestTypes.some(type => target.includes(type))
 	);
 
+	const testPromises: Promise<void>[] = [];
+
 	for (const { target } of filteredTestTargets) {
 		const packageName = target.split(":")[0];
 		const packageItem = bazelTestController.items.get(packageName);
@@ -391,11 +387,12 @@ const executeAllTestsInPackage = async (
 		});
 
 		if (isSequential) {
-			await testPromise;
+			await testPromise; // warte, bevor der nächste läuft
 		} else {
-			await testPromise;
+			testPromises.push(testPromise); // parallel sammeln
 		}
 	}
+	await Promise.allSettled(testPromises);
 };
 
 const queueIndividualTestExecution = async (
