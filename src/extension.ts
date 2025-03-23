@@ -285,41 +285,50 @@ export const executeBazelTest = async (testItem: vscode.TestItem, workspacePath:
 		if (code === 0) {
 			run.passed(testItem);
 		} else {
-			const message = new vscode.TestMessage(output);
+			let messageText = output;
+			let locationToSet: vscode.Location | undefined = undefined;
+			let message: vscode.TestMessage;
 
 			const failLine = testLog.find(line => line.match(/^.+?:\d+:.*FAIL/));
 			const config = vscode.workspace.getConfiguration("bazelTestRunner");
 			const customPatterns = config.get<string[]>("failLinePatterns", []);
 			const failPatterns = [
-			  ...customPatterns.map(p => {
-			    try {
-			      return new RegExp(p);
-			    } catch (e) {
-			      logWithTimestamp(`Invalid regex pattern in settings: "${p}"`, "warn");
-			      return null;
-			    }
-			  }).filter((p): p is RegExp => p !== null),
-			  /^(.+?):(\d+): Failure/,        // gtest
-			  /^(.+?):(\d+): FAILED/,         // Catch2
-			  /^(.+?)\((\d+)\): error/,       // doctest
-			  /^(.+?):(\d+): error/,          // generic
-			  /^Error: (.+?):(\d+): /,        // MUnit-style
+				...customPatterns.map(p => {
+					try {
+						return new RegExp(p);
+					} catch (e) {
+						logWithTimestamp(`Invalid regex pattern in settings: "${p}"`, "warn");
+						return null;
+					}
+				}).filter((p): p is RegExp => p !== null),
+				/^(.+?):(\d+): Failure/,        // gtest
+				/^(.+?):(\d+): FAILED/,         // Catch2
+				/^(.+?)\((\d+)\): error/,       // doctest
+				/^(.+?):(\d+): error/,          // generic
+				/^FAIL .*?\((.+?):(\d+)\)$/,    // Greatest
+				/^Error: (.+?):(\d+): /,        // MUnit-style
 			];
+
+			const matchedLines: string[] = [];
 
 			for (const pattern of failPatterns) {
 				const matchLine = testLog.find(line => pattern.test(line));
 				if (matchLine) {
+					matchedLines.push(matchLine);
 					const match = matchLine.match(pattern);
+					messageText = matchLine;
 					logWithTimestamp(`Trying to extract from: ${matchLine}`);
 					if (match) {
 						const [, file, line] = match;
 						const fullPath = path.isAbsolute(file)
 							? file
 							: path.join(workspacePath, file);
+						logWithTimestamp(`Candidate file: ${fullPath} at line ${line}`);
 						if (fs.existsSync(fullPath)) {
 							const uri = vscode.Uri.file(fullPath);
 							const location = new vscode.Location(uri, new vscode.Position(Number(line) - 1, 0));
-							message.location = location;
+							locationToSet = location;
+							logWithTimestamp(`Location set to: ${uri.fsPath}:${line}`);
 							break;
 						} else {
 							logWithTimestamp(`File not found: ${fullPath}`);
@@ -330,6 +339,14 @@ export const executeBazelTest = async (testItem: vscode.TestItem, workspacePath:
 				}
 			}
 
+			if (matchedLines.length === 0) {
+				logWithTimestamp("No matching failLine found in test log.");
+			}
+
+			message = new vscode.TestMessage(messageText);
+			if (locationToSet) {
+			  message.location = locationToSet;
+			}
 			run.failed(testItem, message);
 			//open open the raw test log
 			// const logPathLine = testLog.find(line => line.includes("/testlogs/") && line.trim().endsWith(".log"));
