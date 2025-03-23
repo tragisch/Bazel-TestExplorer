@@ -2,11 +2,23 @@
 
 All notable changes to the "bazel-unity-test" extension will be documented here.
 
+## [0.1.7]
+
+### Added
+- Multiple test failure locations with gutter annotations (Beta).
+- Support for custom failure patterns via `settings.json`.
+
+### Changed
+- Smarter logging: reduced duplicates, clearer pattern matches.
+- Only remove test packages when fully stale.
+
+### Fixed
+- Delete packages if in BUILD removed
+
 ## [0.1.6]
 
 ### Fixed
 - Add '--output=label_kind' to query.
-
 
 ## [0.1.5]
 
