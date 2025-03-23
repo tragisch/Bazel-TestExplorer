@@ -201,7 +201,14 @@ const parseBazelStdoutOutput = (stdout: string): { bazelLog: string[], testLog: 
 };
 
 // 📌 Format test output
-const generateTestResultMessage = (testId: string, code: number, testLog: string[], bazelLog: string[], fullBazelOut?: string): string => {
+const generateTestResultMessage = (
+	testId: string,
+	code: number,
+	testLog: string[],
+	bazelLog: string[],
+	fullBazelOut?: string,
+	fullStderr?: string
+): string => {
 	let status = "";
 	switch (code) {
 		case 0:
@@ -235,7 +242,10 @@ const generateTestResultMessage = (testId: string, code: number, testLog: string
 		case 1:
 		case 1:
 		default:
-			output += "📌 **Bazel Output:**\n" + (fullBazelOut ?? bazelLog.join("\n")) + "\n";
+			output += "📌 **Bazel Output:**\n" + (fullBazelOut?.trim() ?? bazelLog.join("\n")) + "\n";
+			if (fullStderr && fullStderr.trim()) {
+				output += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📕 **Bazel stderr:**\n" + fullStderr.trim() + "\n";
+			}
 			if (testLog.length > 0) {
 				output += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📄 **Test Log:**\n" + testLog.join("\n") + "\n";
 			}
@@ -249,24 +259,15 @@ const generateTestResultMessage = (testId: string, code: number, testLog: string
 export const executeBazelTest = async (testItem: vscode.TestItem, workspacePath: string, run: vscode.TestRun) => {
 	try {
 		logger.appendLine(`Running test: ${testItem.id}`);
-		const { code, stdout } = await spawnBazelTestProcess(testItem.id, workspacePath);
+		const { code, stdout, stderr } = await spawnBazelTestProcess(testItem.id, workspacePath);
 		const { bazelLog, testLog } = parseBazelStdoutOutput(stdout);
-		const output = generateTestResultMessage(testItem.id, code, testLog, bazelLog, stdout);
+		const output = generateTestResultMessage(testItem.id, code, testLog, bazelLog, stdout, stderr);
 
 		run.appendOutput(output.replace(/\r?\n/g, '\r\n') + "\r\n");
 
 		if (code === 0) {
 			run.passed(testItem);
-		} else if (code === 4) {
-			logger.appendLine(`⚠️ Flaky test passed on retry: ${testItem.id}`);
-			const flakyMessage = new vscode.TestMessage("⚠️ This test is marked as flaky (exit code 4). Bazel reran it and it passed.");
-			run.passed(testItem);
-
-			// Optionally decorate the label (avoid duplicates)
-			if (!testItem.label.includes("⚠️ flaky")) {
-				testItem.label += " ⚠️ flaky";
-			}
-		} else if (code !== 0 && code !== 4) {
+		} else {
 			const message = new vscode.TestMessage(output);
 
 			const failLine = testLog.find(line => line.match(/^.+?:\d+:.*FAIL/));
@@ -433,10 +434,6 @@ export function activate(context: vscode.ExtensionContext) {
 	// 📌 Register the command properly
 	context.subscriptions.push(
 		vscode.commands.registerCommand("extension.reloadBazelTests", reloadBazelTests)
-	);
-
-	context.subscriptions.push(
-		vscode.commands.registerCommand("extension.showBazelTests", discoverAndDisplayTests)
 	);
 
 	// 📌 Automatically Reload When Switching to Test Explorer
