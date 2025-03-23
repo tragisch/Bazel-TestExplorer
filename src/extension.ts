@@ -11,11 +11,24 @@ let testDiscoveryCompleted = false; // 🔹 Ensure it exists globally
 let bazelTestController: vscode.TestController; // 🔹 Declare bazelTestController globally
 
 // 🛠 Logger for debugging
+const outputChannel = vscode.window.createOutputChannel('Log', 'log');
 let logger: vscode.OutputChannel;
 const formatError = (error: unknown): string =>
 	error instanceof Error ? error.stack || error.message : JSON.stringify(error, null, 2);
 
 let reloadTimeout: NodeJS.Timeout | undefined;
+
+const logWithTimestamp = (message: string, level: "info" | "warn" | "error" = "info") => {
+	const now = new Date().toISOString().replace("T", " ").replace("Z", "");
+	const timestamp = `${now} `;
+
+	let tag = `[Info] `;
+	if (level === "warn") tag = `[Warn] `;
+	if (level === "error") tag = `[Error] `;
+
+	const indentedMessage = message.split("\n").map(line => `  ${line}`).join("\n");
+	logger.appendLine(`${timestamp} ${tag} ${indentedMessage}`);
+};
 
 const scheduleReload = (delay = 1000) => {
 	if (reloadTimeout) {
@@ -61,18 +74,18 @@ export const queryBazelTestTargets = async (workspacePath: string): Promise<{ ta
 	for (const path of sanitizedPaths) {
 		const query = testTypes.map(type => `kind(${type}, ${path}/...)`).join(" union ");
 		const command = `bazel query "${query}" --output=label_kind ${useKeepGoing ? "--keep_going" : ""}`;
-		logger.appendLine(`Executing Bazel query: ${command}`);
+		logWithTimestamp(`Executing Bazel query: ${command}`);
 
 		let result: string;
 		try {
 			result = await execShellCommand(command, workspacePath);
 		} catch (error) {
-			logger.appendLine(`⚠️ No test targets found in path "${path}". Skipping.`);
+			logWithTimestamp(`No test targets found in path "${path}". Skipping.`);
 			continue; // Skip this path, but keep processing others
 		}
 
 		if (!result.trim()) {
-			logger.appendLine(`ℹ️ No test targets found in path: ${path}`); // Log info, but NOT an error
+			logWithTimestamp(`No test targets found in path: ${path}`); // Log info, but NOT an error
 			continue; // Skip this path but keep results from others
 		}
 
@@ -86,7 +99,7 @@ export const queryBazelTestTargets = async (workspacePath: string): Promise<{ ta
 		extractedTests.push(...tests);
 	}
 
-	logger.appendLine(`✅ Found ${extractedTests.length} test targets in Bazel workspace.`);
+	logWithTimestamp(`Found ${extractedTests.length} test targets in Bazel workspace.`);
 	return extractedTests;
 };
 
@@ -97,7 +110,7 @@ const getWorkspaceOrShowError = async (): Promise<string | null> => {
 		vscode.window.showErrorMessage("No Bazel workspace detected.");
 		return null;
 	}
-	logger.appendLine(`Bazel workspace found at: ${workspacePath}`);
+	logWithTimestamp(`Bazel workspace found at: ${workspacePath}`);
 	return workspacePath;
 };
 
@@ -134,7 +147,7 @@ const discoverAndDisplayTests = async () => {
 		bazelTestController.items.forEach((item) => {
 			const id = item.id;
 			if (!currentTestIds.has(id)) {
-				logger.appendLine(`🧹 Removing stale test item: ${id}`);
+				logWithTimestamp(`Removing stale test item: ${id}`);
 				bazelTestController.items.delete(id);
 			}
 		});
@@ -147,13 +160,13 @@ const discoverAndDisplayTests = async () => {
 		bazelTestController.items.forEach((item) => {
 			testIds.push(item.id);
 		});
-		logger.appendLine(`Registered test targets:\n${testIds.join("\n")}`);
+		logWithTimestamp(`Registered test targets:\n${testIds.join("\n")}`);
 		testDiscoveryCompleted = true;
 
 	} catch (error) {
 		const message = formatError(error);
 		vscode.window.showErrorMessage(`❌ Failed to discover tests:\n${message}`);
-		logger.appendLine(`❌ Error in discoverAndDisplayTests:\n${message}`);
+		logWithTimestamp(`❌ Error in discoverAndDisplayTests:\n${message}`);
 	}
 };
 
@@ -258,7 +271,7 @@ const generateTestResultMessage = (
 // 📌 Execute Bazel test
 export const executeBazelTest = async (testItem: vscode.TestItem, workspacePath: string, run: vscode.TestRun) => {
 	try {
-		logger.appendLine(`Running test: ${testItem.id}`);
+		logWithTimestamp(`Running test: ${testItem.id}`);
 		const { code, stdout, stderr } = await spawnBazelTestProcess(testItem.id, workspacePath);
 		const { bazelLog, testLog } = parseBazelStdoutOutput(stdout);
 		const output = generateTestResultMessage(testItem.id, code, testLog, bazelLog, stdout, stderr);
@@ -273,7 +286,7 @@ export const executeBazelTest = async (testItem: vscode.TestItem, workspacePath:
 			const failLine = testLog.find(line => line.match(/^.+?:\d+:.*FAIL/));
 			if (failLine) {
 				const match = failLine.match(/^(.+?):(\d+):/);
-				logger.appendLine(`🔍 Trying to extract from: ${failLine}`);
+				logWithTimestamp(`Trying to extract from: ${failLine}`);
 				if (match) {
 					const [, file, line] = match;
 					const fullPath = path.isAbsolute(file)
@@ -284,10 +297,10 @@ export const executeBazelTest = async (testItem: vscode.TestItem, workspacePath:
 						const location = new vscode.Location(uri, new vscode.Position(Number(line) - 1, 0));
 						message.location = location;
 					} else {
-						logger.appendLine(`⚠️ File not found: ${fullPath}`);
+						logWithTimestamp(`File not found: ${fullPath}`);
 					}
 				} else {
-					logger.appendLine(`⚠️ Regex did not match: ${failLine}`);
+					logWithTimestamp(`Regex did not match: ${failLine}`);
 				}
 			}
 
@@ -307,7 +320,7 @@ export const executeBazelTest = async (testItem: vscode.TestItem, workspacePath:
 		}
 	} catch (error) {
 		const message = formatError(error);
-		run.appendOutput(`❌ Error executing test:\n${message}`.replace(/\r?\n/g, '\r\n') + "\r\n");
+		run.appendOutput(`Error executing test:\n${message}`.replace(/\r?\n/g, '\r\n') + "\r\n");
 		run.failed(testItem, new vscode.TestMessage(message));
 	}
 };
@@ -317,13 +330,13 @@ const reloadBazelTests = async () => {
 	// Reset discovery flag to force re-querying Bazel
 	testDiscoveryCompleted = false;
 
-	logger.appendLine("🔄 Reloading Bazel tests...");
+	logWithTimestamp("Reloading Bazel tests...");
 	try {
 		await discoverAndDisplayTests();
 	} catch (error) {
 		const message = formatError(error);
 		vscode.window.showErrorMessage(`❌ Reload failed:\n${message}`);
-		logger.appendLine(`❌ Error in reloadBazelTests:\n${message}`);
+		logWithTimestamp(`❌ Error in reloadBazelTests:\n${message}`);
 	}
 };
 
@@ -347,11 +360,11 @@ const executeAllTestsInPackage = async (
 		return targetPackage === testItem.id;
 	});
 
-	logger.appendLine(`📦 Package detected: ${testItem.id}, Found tests: ${filteredTestTargets.length}`);
+	logWithTimestamp(`Package detected: ${testItem.id}, Found tests: ${filteredTestTargets.length}`);
 
 	if (filteredTestTargets.length === 0) {
 		vscode.window.showErrorMessage(`No tests found in ${testItem.id}`);
-		logger.appendLine(`⚠️ No tests found in package: ${testItem.id}`);
+		logWithTimestamp(`No tests found in package: ${testItem.id}`);
 		return;
 	}
 
@@ -367,11 +380,11 @@ const executeAllTestsInPackage = async (
 		const childTestItem = packageItem?.children.get(target);
 
 		if (!childTestItem) {
-			logger.appendLine(`⚠️ Warning: Test item not found for ${target}`);
+			logWithTimestamp(`Warning: Test item not found for ${target}`);
 			continue;
 		}
 
-		logger.appendLine(`▶️ Running test: ${target}`);
+		logWithTimestamp(`Running test: ${target}`);
 		const testPromise = executeBazelTest(childTestItem, workspacePath, run).then(() => {
 			const packageEntry = packageResults.get(packageName);
 			if (packageEntry) packageEntry.passed++;
@@ -391,7 +404,7 @@ const queueIndividualTestExecution = async (
 	workspacePath: string,
 	testPromises: Promise<void>[]
 ) => {
-	logger.appendLine(`▶️ Running single test: ${testItem.id}`);
+	logWithTimestamp(`Running single test: ${testItem.id}`);
 	testPromises.push(executeBazelTest(testItem, workspacePath, run));
 };
 
@@ -409,7 +422,7 @@ export function activate(context: vscode.ExtensionContext) {
 	logger = vscode.window.createOutputChannel("Bazel-Test-Logs");
 	context.subscriptions.push(logger);
 	if (extensionActivated) {
-		logger.appendLine("Skipping duplicate activation.");
+		logWithTimestamp("Skipping duplicate activation.");
 		return;
 	}
 	extensionActivated = true;
@@ -425,7 +438,7 @@ export function activate(context: vscode.ExtensionContext) {
 				e.affectsConfiguration('testing.gutterEnabled') ||
 				e.affectsConfiguration('testing.defaultGutterClickAction')
 			) {
-				logger.appendLine("VS Code testing settings updated.");
+				logWithTimestamp("VS Code testing settings updated.");
 				// Automatically update test UI if needed
 			}
 		})
@@ -450,18 +463,18 @@ export function activate(context: vscode.ExtensionContext) {
 			const workspacePath = await findBazelWorkspace();
 			if (!workspacePath) {
 				vscode.window.showErrorMessage("No Bazel workspace detected.");
-				logger.appendLine("❌ No Bazel workspace detected.");
+				logWithTimestamp("No Bazel workspace detected.");
 				return;
 			}
 
-			logger.appendLine(`🔹 Starting test execution...`);
+			logWithTimestamp(`Starting test execution...`);
 			const testPromises: Promise<void>[] = [];
 			const packageResults: Map<string, { passed: number, total: number }> = new Map();
 			const config = getRunnerConfig();
 
 			for (const testItem of request.include ?? []) {
 				run.started(testItem);
-				logger.appendLine(`🔹 Processing test item: ${testItem.id}`);
+				logWithTimestamp(`Processing test item: ${testItem.id}`);
 
 				if (!testItem.id.includes(":")) {
 					await executeAllTestsInPackage(testItem, config, run, workspacePath, packageResults);
@@ -474,11 +487,11 @@ export function activate(context: vscode.ExtensionContext) {
 			run.end();
 
 			summarizePackageResults(packageResults);
-			logger.appendLine(`✅ Test execution completed.`);
+			logWithTimestamp(`Test execution completed.`);
 		} catch (error) {
 			const message = formatError(error);
 			vscode.window.showErrorMessage(`❌ Test run failed:\n${message}`);
-			logger.appendLine(`❌ Error in runTests:\n${message}`);
+			logWithTimestamp(`Error in runTests:\n${message}`);
 		}
 	};
 
