@@ -163,7 +163,7 @@ const discoverAndDisplayTests = async () => {
 		const workspacePath = await getWorkspaceOrShowError();
 		if (!workspacePath) return;
 
-		const testEntries = await queryBazelTestTargets(workspacePath);
+		const testEntries = await measure("Query Bazel test targets", () => queryBazelTestTargets(workspacePath));
 
 		const currentTestIds = new Set(testEntries.map(entry => entry.target));
 		bazelTestController.items.forEach((item) => {
@@ -297,7 +297,9 @@ const generateTestResultMessage = (
 export const executeBazelTest = async (testItem: vscode.TestItem, workspacePath: string, run: vscode.TestRun) => {
 	try {
 		logWithTimestamp(`Running test: ${testItem.id}`);
-		const { code, stdout, stderr } = await spawnBazelTestProcess(testItem.id, workspacePath);
+		const { code, stdout, stderr } = await measure(`Execute test: ${testItem.id}`, () =>
+			spawnBazelTestProcess(testItem.id, workspacePath)
+		);
 		const { bazelLog, testLog } = parseBazelStdoutOutput(stdout);
 		const output = generateTestResultMessage(testItem.id, code, testLog, bazelLog, stdout, stderr);
 
@@ -549,7 +551,7 @@ export function activate(context: vscode.ExtensionContext) {
 	};
 
 	bazelTestController.createRunProfile('Run Tests', vscode.TestRunProfileKind.Run, runTests, true);
-	discoverAndDisplayTests();
+	measure("Discover and display tests", () => discoverAndDisplayTests());
 }
 
 // ─── Extension Lifecycle ───────────────────────────────────────────────
