@@ -47,6 +47,25 @@ export const parseBazelStdoutOutput = (stdout: string): { bazelLog: string[], te
   return { bazelLog, testLog };
 };
 
+const getStatusHeader = (code: number, testId: string): string => {
+  const status = ({
+    0: "✅ **Test Passed (Code 0)**",
+    3: "❌ **Some Tests Failed (Code 3)**",
+    4: "⚠️ **Flaky Test Passed (Code 4)**",
+  })[code] ?? `🧨 **Build or Config Error (code ${code})**`;
+
+  return `${status}: ${testId}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+};
+
+const formatTestLog = (log: string[]): string =>
+  log.length > 0 ? `📄 **Test Log:**\n${log.join("\n")}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` : "";
+
+const formatBazelLog = (log: string[]): string =>
+  log.length > 0 ? `📌 **Bazel Output:**\n${log.join("\n")}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` : "";
+
+const formatStderr = (stderr: string): string =>
+  `📕 **Bazel stderr:**\n${stderr.trim()}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+
 export const generateTestResultMessage = (
   testId: string,
   code: number,
@@ -55,46 +74,26 @@ export const generateTestResultMessage = (
   fullBazelOut?: string,
   fullStderr?: string
 ): string => {
-  let status = "";
-  switch (code) {
-    case 0:
-      status = "✅ **Test Passed (Code 0)**";
-      break;
-    case 3:
-      status = "❌ **Some Tests Failed (Code 3)**";
-      break;
-    case 4:
-      status = "⚠️ **Flaky Test Passed (Code 4)**";
-      break;
-    case 1:
-    default:
-      status = `🧨 **Build or Config Error (code ${code})**`;
-      break;
-  }
-  const header = `${status}: ${testId}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  const header = getStatusHeader(code, testId);
   let output = header;
-  switch (code) {
-    case 0:
-      output += "📄 **Test Log:**\n" + testLog.join("\n") + "\n";
-      break;
-    case 3:
-    case 4:
-      output += "📄 **Test Log:**\n" + testLog.join("\n") + "\n";
-      output += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📌 **Bazel Output:**\n" + bazelLog.join("\n") + "\n";
-      break;
-    case 1:
-    default:
-      output += "📌 **Bazel Output:**\n" + (fullBazelOut?.trim() ?? bazelLog.join("\n")) + "\n";
-      if (fullStderr && fullStderr.trim()) {
-        output += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📕 **Bazel stderr:**\n" + fullStderr.trim() + "\n";
-      }
-      if (testLog.length > 0) {
-        output += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📄 **Test Log:**\n" + testLog.join("\n") + "\n";
-      }
-      break;
+
+  if (testLog.length > 0) {
+    output += formatTestLog(testLog);
   }
-  output += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
-  return output;
+
+  if (code === 3 || code === 4) {
+    output += formatBazelLog(bazelLog);
+  }
+
+  if (code === 1 || code > 4) {
+    const bazelOutLines = fullBazelOut?.split('\n') ?? bazelLog;
+    output += formatBazelLog(bazelOutLines);
+    if (fullStderr?.trim()) {
+      output += formatStderr(fullStderr);
+    }
+  }
+
+  return output + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
 };
 
 export const executeBazelTest = async (

@@ -26,6 +26,7 @@ export function activate(context: vscode.ExtensionContext) {
 		})
 	);
 
+
 	bazelTestController.createRunProfile('Run Tests', vscode.TestRunProfileKind.Run, async (request, token) => {
 		const run = bazelTestController.createTestRun(request);
 		const workspacePath = await findBazelWorkspace();

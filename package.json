@@ -19,15 +19,14 @@
   },
   "activationEvents": [
     "onView:workbench.view.testing",
-    "onCommand:extension.reloadBazelTests",
     "workspaceContains:**/MODULE.bazel"
   ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "extension.showBazelTests",
-        "title": "(Re)Load Bazel Tests"
+        "command": "extension.reloadBazelTests",
+        "title": "Bazel-TestExplorer: Reload Tests"
       }
     ],
     "configuration": {

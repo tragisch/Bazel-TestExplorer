@@ -44,7 +44,7 @@ export const discoverAndDisplayTests = async (
       newTestIds.length !== currentTestIds.size ||
       !newTestIds.every((id) => currentTestIds.has(id))
     ) {
-      logWithTimestamp(`Registered test targets: ${newTestIds.join("\n")}`);
+      logWithTimestamp(`Registered test targets:\n ${newTestIds.join("\n ")}`);
     }
   } catch (error) {
     const message = formatError(error);
@@ -63,10 +63,20 @@ export const addTestItemToController = (
     ? target.split(":")
     : [target, target];
 
+  const formatPackageLabel = (bazelPath: string): { label: string; tooltip: string } => {
+    const withoutSlashes = bazelPath.replace(/^\/\//, "");
+    const parts = withoutSlashes.split('/');
+    const root = parts[0] || '';
+    const tail = parts.slice(-2).join('/');
+    const tooltip = `//${withoutSlashes}`;
+    return { label: `${root}: ${tail}`, tooltip };
+  };
+
   let packageItem = packageItemCache.get(packageName);
   if (!packageItem) {
-    const label = `📦 ${packageName.replace(/^\/\//, "")}`;
-    packageItem = controller.createTestItem(packageName, label);
+    const { label, tooltip } = formatPackageLabel(packageName);
+    packageItem = controller.createTestItem(packageName, `📦 ${label}`);
+    packageItem.description = tooltip;
     controller.items.add(packageItem);
     packageItemCache.set(packageName, packageItem);
   }
