@@ -27,8 +27,25 @@
       {
         "command": "extension.reloadBazelTests",
         "title": "Bazel-TestExplorer: Reload Tests"
+      },
+      {
+        "command": "bazelTestExplorer.showTestMetadata",
+        "title": "Bazel-TestExplorer: Show Metadata for Test Target"
+      },
+      {
+        "command": "bazelTestExplorer.showSelectedTestMetadata",
+        "title": "Bazel-TestExplorer: Show Selected Test Metadata"
       }
     ],
+    "menus": {
+      "testing/item/context": [
+        {
+          "command": "bazelTestExplorer.showTestMetadata",
+          "when": "view == workbench.view.testing",
+          "group": "navigation@2"
+        }
+      ]
+    },
     "configuration": {
       "properties": {
         "bazelTestRunner.testTypes": {

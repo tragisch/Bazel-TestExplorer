@@ -4,8 +4,10 @@ import { findBazelWorkspace } from './bazel/workspace';
 import { queryBazelTestTargets } from './bazel/queries';
 import { executeBazelTest } from './bazel/runner';
 import { discoverAndDisplayTests } from './explorer/testTree';
+import { showTestMetadataById } from './explorer/testInfoPanel';
 
 let bazelTestController: vscode.TestController;
+let metadataListenerRegistered = false;
 
 export function activate(context: vscode.ExtensionContext) {
 	initializeLogger();
@@ -23,9 +25,20 @@ export function activate(context: vscode.ExtensionContext) {
 				vscode.window.showErrorMessage(`❌ Reload failed:\n${message}`);
 				logWithTimestamp(`❌ Error in reloadBazelTests:\n${message}`);
 			}
+		}),
+		// Removed invalid object as it does not conform to the expected type
+		vscode.commands.registerCommand('bazelTestExplorer.showSelectedTestMetadata', () => {
+			vscode.window.showInformationMessage("Automatic selection detection not implemented. Please right-click a test and use 'Show Metadata'.");
 		})
 	);
 
+	context.subscriptions.push(
+		vscode.commands.registerCommand('bazelTestExplorer.showTestMetadata', (testItem: vscode.TestItem) => {
+			vscode.window.showInformationMessage(`Clicked on test: ${testItem?.id}`);
+			// Optional: Metadaten anzeigen
+			showTestMetadataById(testItem?.id);
+		})
+	);
 
 	bazelTestController.createRunProfile('Run Tests', vscode.TestRunProfileKind.Run, async (request, token) => {
 		const run = bazelTestController.createTestRun(request);
@@ -44,7 +57,16 @@ export function activate(context: vscode.ExtensionContext) {
 		run.end();
 	}, true);
 
-	measure("Discover and display tests", () => discoverAndDisplayTests(bazelTestController));
+	measure("Discover and display tests", async () => {
+		await discoverAndDisplayTests(bazelTestController);
+	});
+
+	vscode.workspace.onDidChangeConfiguration((e) => {
+		if (e.affectsConfiguration("bazelTestRunner")) {
+			logWithTimestamp("Configuration changed. Reloading tests...");
+			discoverAndDisplayTests(bazelTestController);
+		}
+	});
 }
 
 export function deactivate() { }

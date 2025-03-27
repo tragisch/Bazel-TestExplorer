@@ -1,9 +1,8 @@
-
-
 import * as vscode from 'vscode';
 import { BazelTestTarget } from './types';
 import * as cp from 'child_process';
-import { logWithTimestamp } from '../logging';
+import { logWithTimestamp, logMemoryUsage, measure } from '../logging';
+import { showTestMetadataById } from '../explorer/testInfoPanel';
 
 const execShellCommand = async (command: string, cwd: string): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -17,6 +16,8 @@ const execShellCommand = async (command: string, cwd: string): Promise<string> =
   });
 };
 
+const testMap: Map<string, BazelTestTarget> = new Map();
+
 export const queryBazelTestTargets = async (
   workspacePath: string
 ): Promise<BazelTestTarget[]> => {
@@ -26,7 +27,12 @@ export const queryBazelTestTargets = async (
   const queryPaths: string[] = config.get("queryPaths", []);
   const sanitizedPaths = queryPaths.length > 0 ? queryPaths.filter(p => p.trim() !== "") : ["/"];
 
-  let extractedTests: BazelTestTarget[] = [];
+  const query = testTypes.map(type => `kind(${type}, //...)`).join(" union ");
+  const labelKindCommand = `bazel query "${query}" --output=label_kind`;
+  const jsonProtoCommand = `bazel query "${query}" --output=streamed_jsonproto`;
+
+  await measure("Benchmark: label_kind query", () => execShellCommand(labelKindCommand, workspacePath));
+  await measure("Benchmark: streamed_jsonproto query", () => execShellCommand(jsonProtoCommand, workspacePath));
 
   for (const path of sanitizedPaths) {
     const query = testTypes.map(type => `kind(${type}, ${path}/...)`).join(" union ");
@@ -52,6 +58,9 @@ export const queryBazelTestTargets = async (
       continue;
     }
 
+    logWithTimestamp(`Parsed ${parsed.length} targets`);
+    logMemoryUsage();
+
     for (const target of parsed) {
       if (target.type !== "RULE" || !target.rule) continue;
       const rule = target.rule;
@@ -60,7 +69,7 @@ export const queryBazelTestTargets = async (
       const location = rule.location ?? undefined;
       const tags = rule.attribute?.find((a: any) => a.name === "tags")?.stringListValue?.value ?? [];
 
-      extractedTests.push({
+      testMap.set(targetName, {
         target: targetName,
         type: ruleClass,
         location,
@@ -76,6 +85,10 @@ export const queryBazelTestTargets = async (
     }
   }
 
-  logWithTimestamp(`Found ${extractedTests.length} test targets in Bazel workspace.`);
-  return extractedTests;
+  logWithTimestamp(`Found ${testMap.size} test targets in Bazel workspace.`);
+  return Array.from(testMap.values());
+};
+
+export const getTestTargetById = (target: string): BazelTestTarget | undefined => {
+  return testMap.get(target);
 };

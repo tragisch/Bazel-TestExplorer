@@ -27,3 +27,9 @@ export const measure = async <T>(label: string, fn: () => Promise<T>): Promise<T
     logWithTimestamp(`${label} took ${duration}ms`);
     return result;
 };
+
+export const logMemoryUsage = () => {
+    const mem = process.memoryUsage();
+    const toMB = (bytes: number) => (bytes / 1024 / 1024).toFixed(2) + ' MB';
+    logWithTimestamp(`Memory Usage — RSS: ${toMB(mem.rss)}, Heap Used: ${toMB(mem.heapUsed)}, Heap Total: ${toMB(mem.heapTotal)}`);
+};

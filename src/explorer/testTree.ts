@@ -1,11 +1,10 @@
-
-
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { queryBazelTestTargets } from '../bazel/queries';
 import { getWorkspaceOrShowError } from '../bazel/workspace';
 import { logWithTimestamp, measure, formatError } from '../logging';
+import { showTestMetadataById } from './testInfoPanel';
 
 export const discoverAndDisplayTests = async (
   controller: vscode.TestController
@@ -93,5 +92,17 @@ export const addTestItemToController = (
 
   const testItem = controller.createTestItem(target, `${testTypeLabel} ${testName}`, uri);
   packageItem.children.add(testItem);
+  
+  testItem.busy = false;
   testItem.canResolveChildren = false;
-};
+
+  // Add command to show metadata when selected
+  testItem.tags = [new vscode.TestTag("bazel")]; // optional tagging
+  testItem.description = `Target: ${target}`;
+  
+  // Define the missing command
+  const command = {
+    command: "bazelTestExplorer.showTestMetadata",
+    title: "Bazel-TestExplorer: Show Metadata for Test Target"
+  };
+}
