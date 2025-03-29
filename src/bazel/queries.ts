@@ -6,7 +6,7 @@ import { showTestMetadataById } from '../explorer/testInfoPanel';
 
 const execShellCommand = async (command: string, cwd: string): Promise<string> => {
   return new Promise((resolve, reject) => {
-    cp.exec(command, { cwd, encoding: 'utf-8' }, (error, stdout, stderr) => {
+    cp.exec(command, { cwd, encoding: 'utf-8', maxBuffer: 1024 * 1024 * 10, timeout: 6000 }, (error, stdout, stderr) => {
       if (error) {
         reject(stderr || stdout);
       } else {
@@ -28,11 +28,6 @@ export const queryBazelTestTargets = async (
   const sanitizedPaths = queryPaths.length > 0 ? queryPaths.filter(p => p.trim() !== "") : ["/"];
 
   const query = testTypes.map(type => `kind(${type}, //...)`).join(" union ");
-  const labelKindCommand = `bazel query "${query}" --output=label_kind`;
-  const jsonProtoCommand = `bazel query "${query}" --output=streamed_jsonproto`;
-
-  await measure("Benchmark: label_kind query", () => execShellCommand(labelKindCommand, workspacePath));
-  await measure("Benchmark: streamed_jsonproto query", () => execShellCommand(jsonProtoCommand, workspacePath));
 
   for (const path of sanitizedPaths) {
     const query = testTypes.map(type => `kind(${type}, ${path}/...)`).join(" union ");

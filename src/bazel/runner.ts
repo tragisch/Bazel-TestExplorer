@@ -8,7 +8,16 @@ import { logWithTimestamp, measure, formatError } from '../logging';
 
 export const spawnBazelTestProcess = (testId: string, cwd: string): Promise<{ code: number, stdout: string, stderr: string }> => {
   return new Promise((resolve, reject) => {
-    const bazelProcess = cp.spawn('bazel', ['test', testId, '--test_output=all'], {
+    const config = vscode.workspace.getConfiguration("bazelTestRunner");
+    const testCommand = config.get<string>("testCommand", "bazel") || "bazel";
+    let effectiveTestId = testId;
+    if (/^\/\/[^:]*$/.test(testId)) {
+      effectiveTestId = `${testId}//...`;
+    }
+    logWithTimestamp(`Using test command: ${testCommand} test ${effectiveTestId}`);
+
+
+    const bazelProcess = cp.spawn(testCommand, ['test', effectiveTestId, '--test_output=all'], {
       cwd,
       shell: true
     });

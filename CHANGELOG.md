@@ -2,6 +2,11 @@
 
 All notable changes to the "bazel-unity-test" extension will be documented here.
 
+## [0.1.8]
+
+### Added
+- Meta-Data for test types
+
 ## [0.1.7]
 
 ### Added

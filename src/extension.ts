@@ -1,3 +1,24 @@
+/*
+MIT License
+
+Copyright (c) 2025 @tragisch
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the “Software”), to deal
+in the Software without restriction, including without limitation the rights 
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is 
+furnished to do so, subject to the following conditions:
+
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL 
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN 
+THE SOFTWARE.
+*/
+
 import * as vscode from 'vscode';
 import { initializeLogger, logWithTimestamp, formatError, measure } from './logging';
 import { findBazelWorkspace } from './bazel/workspace';
@@ -49,10 +70,41 @@ export function activate(context: vscode.ExtensionContext) {
 			return;
 		}
 
+		const config = vscode.workspace.getConfiguration("bazelTestRunner");
+		const sequentialTypes: string[] = config.get("sequentialTestTypes", []);
+		
+		const collectAllTests = (item: vscode.TestItem): vscode.TestItem[] => {
+			const collected: vscode.TestItem[] = [];
+			const visit = (node: vscode.TestItem) => {
+				if (node.children.size === 0) {
+					collected.push(node);
+				} else {
+					node.children.forEach(visit);
+				}
+			};
+			visit(item);
+			return collected;
+		};
+		
+		const promises: Promise<void>[] = [];
+		
 		for (const testItem of request.include ?? []) {
-			run.started(testItem);
-			await executeBazelTest(testItem, workspacePath, run);
+			const allTests = collectAllTests(testItem);
+			for (const t of allTests) {
+				run.started(t);
+				const testTypeMatch = t.label.match(/^\[(.+?)\]/);
+				const testType = testTypeMatch?.[1];
+				const isSequential = sequentialTypes.includes(testType ?? "");
+				const promise = executeBazelTest(t, workspacePath, run);
+				if (isSequential) {
+					await promise;
+				} else {
+					promises.push(promise);
+				}
+			}
 		}
+		
+		await Promise.all(promises);
 
 		run.end();
 	}, true);

@@ -2,7 +2,7 @@
   "name": "bazel-testexplorer",
   "displayName": "Bazel-TestExplorer",
   "description": "A VS Code extension to run and manage Bazel tests.",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "engines": {
     "vscode": "^1.97.0"
   },
@@ -58,6 +58,12 @@
             "type": "string"
           }
         },
+      "bazelTestRunner.testCommand": {
+        "type": "string",
+        "description": "Choose whether to use 'bazel' or 'ibazel' to run tests.",
+        "default": "bazel",
+        "enum": ["bazel", "ibazel"]
+      },
         "bazelTestRunner.workspaceRootFile": {
           "type": "string",
           "description": "Bazel workspace root file (MODULE.bazel for Bazel 8+, WORKSPACE for older projects)",
