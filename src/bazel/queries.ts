@@ -1,14 +1,19 @@
 import * as vscode from 'vscode';
 import { BazelTestTarget } from './types';
 import * as cp from 'child_process';
-import { logWithTimestamp, logMemoryUsage, measure } from '../logging';
+import { logWithTimestamp, measure } from '../logging';
 import { showTestMetadataById } from '../explorer/testInfoPanel';
 
 const execShellCommand = async (command: string, cwd: string): Promise<string> => {
   return new Promise((resolve, reject) => {
-    cp.exec(command, { cwd, encoding: 'utf-8', maxBuffer: 1024 * 1024 * 10, timeout: 6000 }, (error, stdout, stderr) => {
+    cp.exec(command, { cwd, encoding: 'utf-8', maxBuffer: 1024 * 1024 * 10, timeout: 25000 }, (error, stdout, stderr) => {
       if (error) {
-        reject(stderr || stdout);
+        if (stdout) {
+          logWithTimestamp(`Command completed with errors, but results are available:\n${stderr}`, "warn");
+          resolve(stdout);
+        } else {
+          reject(stderr || stdout);
+        }
       } else {
         resolve(stdout);
       }
@@ -23,22 +28,19 @@ export const queryBazelTestTargets = async (
 ): Promise<BazelTestTarget[]> => {
   const config = vscode.workspace.getConfiguration("bazelTestRunner");
   const testTypes: string[] = config.get("testTypes", ["cc_test"]);
-  const useKeepGoing = config.get<boolean>("useKeepGoing", false);
   const queryPaths: string[] = config.get("queryPaths", []);
-  const sanitizedPaths = queryPaths.length > 0 ? queryPaths.filter(p => p.trim() !== "") : ["/"];
-
-  const query = testTypes.map(type => `kind(${type}, //...)`).join(" union ");
+  const sanitizedPaths = queryPaths.length > 0 ? queryPaths.filter(p => p.trim() !== "") : ["//"];
 
   for (const path of sanitizedPaths) {
-    const query = testTypes.map(type => `kind(${type}, ${path}/...)`).join(" union ");
-    const command = `bazel query "${query}" --output=streamed_jsonproto ${useKeepGoing ? "--keep_going" : ""}`;
+    const query = testTypes.map(type => `kind(${type}, ${path}...)`).join(" union ");
+    const command = `bazel query "${query}" --keep_going --output=streamed_jsonproto`;
     logWithTimestamp(`Executing Bazel query: ${command}`);
 
     let result: string;
     try {
       result = await execShellCommand(command, workspacePath);
     } catch (error) {
-      logWithTimestamp(`No test targets found in path "${path}". Skipping.`);
+      logWithTimestamp(`Error executing Bazel query for path "${path}": ${error}`, "error");
       continue;
     }
 
@@ -54,10 +56,9 @@ export const queryBazelTestTargets = async (
     }
 
     logWithTimestamp(`Parsed ${parsed.length} targets`);
-    logMemoryUsage();
 
     for (const target of parsed) {
-      if (target.type !== "RULE" || !target.rule) continue;
+      if (target.type !== "RULE" || !target.rule) { continue; }
       const rule = target.rule;
       const targetName = rule.name;
       const ruleClass = rule.ruleClass;

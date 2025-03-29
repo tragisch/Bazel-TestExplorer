@@ -6,9 +6,16 @@ import { getWorkspaceOrShowError } from '../bazel/workspace';
 import { logWithTimestamp, measure, formatError } from '../logging';
 import { showTestMetadataById } from './testInfoPanel';
 
+let isDiscoveringTests = false;
+
 export const discoverAndDisplayTests = async (
   controller: vscode.TestController
 ): Promise<void> => {
+  if (isDiscoveringTests) {
+    logWithTimestamp("Already discovering tests. Skipping.");
+    return;
+  }
+  isDiscoveringTests = true;
   try {
     const packageItemCache = new Map<string, vscode.TestItem>();
     const workspacePath = await getWorkspaceOrShowError();
@@ -49,6 +56,8 @@ export const discoverAndDisplayTests = async (
     const message = formatError(error);
     vscode.window.showErrorMessage(`❌ Failed to discover tests:\n${message}`);
     logWithTimestamp(`❌ Error in discoverAndDisplayTests:\n${message}`);
+  } finally {
+    isDiscoveringTests = false;
   }
 };
 

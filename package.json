@@ -19,7 +19,8 @@
   },
   "activationEvents": [
     "onView:workbench.view.testing",
-    "workspaceContains:**/MODULE.bazel"
+    "workspaceContains:**/MODULE.bazel",
+    "workspaceContains:**/WORKSPACE"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -58,12 +59,6 @@
             "type": "string"
           }
         },
-      "bazelTestRunner.testCommand": {
-        "type": "string",
-        "description": "Choose whether to use 'bazel' or 'ibazel' to run tests.",
-        "default": "bazel",
-        "enum": ["bazel", "ibazel"]
-      },
         "bazelTestRunner.workspaceRootFile": {
           "type": "string",
           "description": "Bazel workspace root file (MODULE.bazel for Bazel 8+, WORKSPACE for older projects)",
@@ -72,11 +67,6 @@
             "MODULE.bazel",
             "WORKSPACE"
           ]
-        },
-        "bazelTestRunner.useKeepGoing": {
-          "type": "boolean",
-          "description": "Use --keep_going when running Bazel queries to continue execution despite errors.",
-          "default": false
         },
         "bazelTestRunner.queryPaths": {
           "type": "array",
