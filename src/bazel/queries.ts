@@ -9,9 +9,12 @@ const execShellCommand = async (command: string, cwd: string): Promise<string> =
     cp.exec(command, { cwd, encoding: 'utf-8', maxBuffer: 1024 * 1024 * 10, timeout: 25000 }, (error, stdout, stderr) => {
       if (error) {
         if (stdout) {
-          logWithTimestamp(`Command completed with errors, but results are available:\n${stderr}`, "warn");
+          // logWithTimestamp(`Command completed with errors, but results are available:\n${stderr}`, "warn");
+          logWithTimestamp('I am here\n');
           resolve(stdout);
         } else {
+
+          logWithTimestamp(`Command failed with error: ${error.message}`, "error");
           reject(stderr || stdout);
         }
       } else {
@@ -27,7 +30,7 @@ export const queryBazelTestTargets = async (
   workspacePath: string
 ): Promise<BazelTestTarget[]> => {
   const config = vscode.workspace.getConfiguration("bazelTestRunner");
-  const testTypes: string[] = config.get("testTypes", ["cc_test"]);
+  const testTypes: string[] = config.get("testTypes", ["cc_test", "unity_test", "java_test"]);
   const queryPaths: string[] = config.get("queryPaths", []);
   const sanitizedPaths = queryPaths.length > 0 ? queryPaths.filter(p => p.trim() !== "") : ["//"];
 
@@ -40,19 +43,18 @@ export const queryBazelTestTargets = async (
     try {
       result = await execShellCommand(command, workspacePath);
     } catch (error) {
-      logWithTimestamp(`Error executing Bazel query for path "${path}": ${error}`, "error");
+      // logWithTimestamp(`Error executing Bazel query for path "${path}": ${ error } `, "error");
       continue;
     }
 
     let parsed: any[] = [];
-    try {
-      parsed = result
-        .trim()
-        .split("\n")
-        .map(line => JSON.parse(line));
-    } catch (e) {
-      logWithTimestamp("Failed to parse Bazel streamed_jsonproto output", "error");
-      continue;
+    for (const line of result.trim().split("\n")) {
+      if (line.trim() === "") continue;
+      try {
+        parsed.push(JSON.parse(line));
+      } catch (e) {
+        logWithTimestamp(`Failed to parse line: ${line.slice(0, 120)}...`, "warn");
+      }
     }
 
     logWithTimestamp(`Parsed ${parsed.length} targets`);
