@@ -40,7 +40,17 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand("extension.reloadBazelTests", async () => {
 			logWithTimestamp("Reloading Bazel tests...");
 			try {
-				await discoverAndDisplayTests(bazelTestController);
+				await vscode.window.withProgress(
+					{
+						location: vscode.ProgressLocation.Window,
+						title: "Bazel Test Explorer",
+						cancellable: false
+					},
+					async (progress) => {
+						progress.report({ message: "Querying Bazel tests..." });
+						await discoverAndDisplayTests(bazelTestController);
+					}
+				);
 			} catch (error) {
 				const message = formatError(error);
 				vscode.window.showErrorMessage(`❌ Reload failed:\n${message}`);
@@ -72,7 +82,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 		const config = vscode.workspace.getConfiguration("bazelTestRunner");
 		const sequentialTypes: string[] = config.get("sequentialTestTypes", []);
-		
+
 		const collectAllTests = (item: vscode.TestItem): vscode.TestItem[] => {
 			const collected: vscode.TestItem[] = [];
 			const visit = (node: vscode.TestItem) => {
@@ -85,9 +95,9 @@ export function activate(context: vscode.ExtensionContext) {
 			visit(item);
 			return collected;
 		};
-		
+
 		const promises: Promise<void>[] = [];
-		
+
 		for (const testItem of request.include ?? []) {
 			const allTests = collectAllTests(testItem);
 			for (const t of allTests) {
@@ -103,20 +113,40 @@ export function activate(context: vscode.ExtensionContext) {
 				}
 			}
 		}
-		
+
 		await Promise.all(promises);
 
 		run.end();
 	}, true);
 
 	measure("Discover and display tests", async () => {
-		await discoverAndDisplayTests(bazelTestController);
+		await vscode.window.withProgress(
+			{
+				location: vscode.ProgressLocation.Window,
+				title: "Bazel Test Explorer",
+				cancellable: false
+			},
+			async (progress) => {
+				progress.report({ message: "Querying Bazel tests..." });
+				await discoverAndDisplayTests(bazelTestController);
+			}
+		);
 	});
 
 	vscode.workspace.onDidChangeConfiguration((e) => {
 		if (e.affectsConfiguration("bazelTestRunner")) {
 			logWithTimestamp("Configuration changed. Reloading tests...");
-			discoverAndDisplayTests(bazelTestController);
+			vscode.window.withProgress(
+				{
+					location: vscode.ProgressLocation.Window,
+					title: "Bazel Test Explorer",
+					cancellable: false
+				},
+				async (progress) => {
+					progress.report({ message: "Querying Bazel tests..." });
+					await discoverAndDisplayTests(bazelTestController);
+				}
+			);
 		}
 	});
 }
