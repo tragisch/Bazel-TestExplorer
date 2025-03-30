@@ -2,6 +2,14 @@
 
 All notable changes to the "bazel-unity-test" extension will be documented here.
 
+## [0.1.9]
+
+### Added
+- automatic detection of Workspace file.
+
+### Fixed
+- increased performance for large repositories
+
 ## [0.1.8]
 
 ### Added
