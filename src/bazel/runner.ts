@@ -1,44 +1,46 @@
-
-
 import * as vscode from 'vscode';
 import * as cp from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
+import { runBazelCommand } from './process';
 import { logWithTimestamp, measure, formatError } from '../logging';
 
+// ───────────────────────────────────────────────────────────────
+// Public API
+// ───────────────────────────────────────────────────────────────
+
+export const executeBazelTest = async (
+  testItem: vscode.TestItem,
+  workspacePath: string,
+  run: vscode.TestRun
+) => {
+  try {
+    const { code, stdout, stderr } = await measure(`Execute test: ${testItem.id}`, () =>
+      initiateBazelTest(testItem.id, workspacePath)
+    );
+    const { bazelLog, testLog } = parseBazelStdoutOutput(stdout);
+    const output = generateTestResultMessage(testItem.id, code, testLog, bazelLog, stdout, stderr);
+
+    run.appendOutput(output.replace(/\r?\n/g, '\r\n') + "\r\n");
+    handleTestResult(run, testItem, code, output, testLog, workspacePath);
+
+  } catch (error) {
+    const message = formatError(error);
+    run.appendOutput(`Error executing test:\n${message}`.replace(/\r?\n/g, '\r\n') + "\r\n");
+    run.failed(testItem, new vscode.TestMessage(message));
+  }
+};
+
 export const initiateBazelTest = (testId: string, cwd: string): Promise<{ code: number, stdout: string, stderr: string }> => {
-  return new Promise((resolve, reject) => {
-    let effectiveTestId = testId;
+  let effectiveTestId = testId;
 
-    // If the testId is a directory, append "..." to it
-    if (/^\/\/[^:]*$/.test(testId)) {
-      effectiveTestId = `${testId}//...`;
-    }
-    const testCommand = "bazel";
-    logWithTimestamp(`Using test command: ${testCommand} test ${effectiveTestId}`);
+  // If the testId is a file path, we need to ensure it is in the correct format for Bazel
+  if (/^\/\/[^:]*$/.test(testId)) {
+    effectiveTestId = `${testId}//...`;
+  }
 
-    const bazelProcess = cp.spawn(testCommand, ['test', effectiveTestId, '--test_output=all'], {
-      cwd,
-      shell: true
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    bazelProcess.stdout.on('data', data => {
-      stdout += data.toString();
-    });
-
-    bazelProcess.stderr.on('data', data => {
-      stderr += data.toString();
-    });
-
-    bazelProcess.on('close', code => {
-      resolve({ code: code ?? 1, stdout, stderr });
-    });
-
-    bazelProcess.on('error', reject);
-  });
+  const args = ['test', effectiveTestId, '--test_output=all'];
+  return runBazelCommand(args, cwd);
 };
 
 export const parseBazelStdoutOutput = (stdout: string): { bazelLog: string[], testLog: string[] } => {
@@ -55,6 +57,99 @@ export const parseBazelStdoutOutput = (stdout: string): { bazelLog: string[], te
 
   return { bazelLog, testLog };
 };
+
+// ───────────────────────────────────────────────────────────────
+// Analyse test results
+// ───────────────────────────────────────────────────────────────
+
+function handleTestResult(
+  run: vscode.TestRun,
+  testItem: vscode.TestItem,
+  code: number,
+  output: string,
+  testLog: string[],
+  workspacePath: string
+) {
+  if (code === 0) {
+    run.passed(testItem);
+  } else {
+    const messages = analyzeTestFailures(testLog, workspacePath, testItem);
+    if (messages.length > 0) {
+      run.failed(testItem, messages);
+    } else {
+      run.failed(testItem, new vscode.TestMessage(output));
+    }
+  }
+}
+
+function analyzeTestFailures(testLog: string[], workspacePath: string, testItem: vscode.TestItem): vscode.TestMessage[] {
+  const config = vscode.workspace.getConfiguration("bazelTestRunner");
+  const customPatterns = config.get<string[]>("failLinePatterns", []);
+  const failPatterns: { pattern: RegExp; source: string }[] = [
+    ...customPatterns.map(p => {
+      try {
+        return { pattern: new RegExp(p), source: "Custom Setting" };
+      } catch (e) {
+        logWithTimestamp(`Invalid regex pattern in settings: "${p}"`, "warn");
+        return null;
+      }
+    }).filter((p): p is { pattern: RegExp; source: string } => p !== null),
+    { pattern: /^(.+?):(\d+): Failure/, source: "Built-in" },
+    { pattern: /^(.+?):(\d+): FAILED/, source: "Built-in" },
+    { pattern: /^(.+?)\((\d+)\): error/, source: "Built-in" },
+    { pattern: /^(.+?):(\d+): error/, source: "Built-in" },
+    { pattern: /^FAIL .*?\((.+?):(\d+)\)$/, source: "Built-in" },
+    { pattern: /^Error: (.+?):(\d+): /, source: "Built-in" },
+  ];
+
+  const messages: vscode.TestMessage[] = [];
+  const matchingLines = testLog.filter(line => failPatterns.some(({ pattern }) => pattern.test(line)));
+
+  for (const line of matchingLines) {
+    for (const { pattern, source } of failPatterns) {
+      const match = line.match(pattern);
+      if (match) {
+        const [, file, lineStr] = match;
+        const fullPath = path.isAbsolute(file)
+          ? file
+          : path.join(workspacePath, file);
+        logWithTimestamp(`Pattern matched: [${source}] ${pattern}`);
+        logWithTimestamp(`✔ Found & used: ${fullPath}:${lineStr}`);
+        if (fs.existsSync(fullPath)) {
+          const uri = vscode.Uri.file(fullPath);
+          const location = new vscode.Location(uri, new vscode.Position(Number(lineStr) - 1, 0));
+          const message = new vscode.TestMessage(line);
+          message.location = location;
+          messages.push(message);
+          break;
+        } else {
+          logWithTimestamp(`File not found: ${fullPath}`);
+        }
+      }
+    }
+  }
+
+  return messages;
+}
+
+function generateTestResultMessage(
+  testId: string,
+  code: number,
+  testLog: string[],
+  bazelLog: string[],
+  stdout: string,
+  stderr: string
+): string {
+  const header = getStatusHeader(code, testId);
+  const formattedTestLog = formatTestLog(testLog);
+  const formattedBazelLog = formatBazelLog(bazelLog);
+  const formattedStderr = stderr.trim() ? formatStderr(stderr) : '';
+  return `${header}${formattedTestLog}${formattedBazelLog}${formattedStderr}`;
+}
+
+// ───────────────────────────────────────────────────────────────
+// Formatting functions
+// ───────────────────────────────────────────────────────────────
 
 const getStatusHeader = (code: number, testId: string): string => {
   const status = ({
@@ -74,110 +169,3 @@ const formatBazelLog = (log: string[]): string =>
 
 const formatStderr = (stderr: string): string =>
   `📕 **Bazel stderr:**\n${stderr.trim()}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-
-export const generateTestResultMessage = (
-  testId: string,
-  code: number,
-  testLog: string[],
-  bazelLog: string[],
-  fullBazelOut?: string,
-  fullStderr?: string
-): string => {
-  const header = getStatusHeader(code, testId);
-  let output = header;
-
-  if (testLog.length > 0) {
-    output += formatTestLog(testLog);
-  }
-
-  if (code === 3 || code === 4) {
-    output += formatBazelLog(bazelLog);
-  }
-
-  if (code === 1 || code > 4) {
-    const bazelOutLines = fullBazelOut?.split('\n') ?? bazelLog;
-    output += formatBazelLog(bazelOutLines);
-    if (fullStderr?.trim()) {
-      output += formatStderr(fullStderr);
-    }
-  }
-
-  return output + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
-};
-
-export const executeBazelTest = async (
-  testItem: vscode.TestItem,
-  workspacePath: string,
-  run: vscode.TestRun
-) => {
-  try {
-    logWithTimestamp(`Running test: ${testItem.id}`);
-    const { code, stdout, stderr } = await measure(`Execute test: ${testItem.id}`, () =>
-      initiateBazelTest(testItem.id, workspacePath)
-    );
-    const { bazelLog, testLog } = parseBazelStdoutOutput(stdout);
-    const output = generateTestResultMessage(testItem.id, code, testLog, bazelLog, stdout, stderr);
-
-    run.appendOutput(output.replace(/\r?\n/g, '\r\n') + "\r\n");
-
-    if (code === 0) {
-      run.passed(testItem);
-    } else {
-      const config = vscode.workspace.getConfiguration("bazelTestRunner");
-      const customPatterns = config.get<string[]>("failLinePatterns", []);
-      const failPatterns: { pattern: RegExp; source: string }[] = [
-        ...customPatterns.map(p => {
-          try {
-            return { pattern: new RegExp(p), source: "Custom Setting" };
-          } catch (e) {
-            logWithTimestamp(`Invalid regex pattern in settings: "${p}"`, "warn");
-            return null;
-          }
-        }).filter((p): p is { pattern: RegExp; source: string } => p !== null),
-        { pattern: /^(.+?):(\d+): Failure/, source: "Built-in" },
-        { pattern: /^(.+?):(\d+): FAILED/, source: "Built-in" },
-        { pattern: /^(.+?)\((\d+)\): error/, source: "Built-in" },
-        { pattern: /^(.+?):(\d+): error/, source: "Built-in" },
-        { pattern: /^FAIL .*?\((.+?):(\d+)\)$/, source: "Built-in" },
-        { pattern: /^Error: (.+?):(\d+): /, source: "Built-in" },
-      ];
-
-      const messages: vscode.TestMessage[] = [];
-      const matchingLines = testLog.filter(line => failPatterns.some(({ pattern }) => pattern.test(line)));
-
-      for (const line of matchingLines) {
-        for (const { pattern, source } of failPatterns) {
-          const match = line.match(pattern);
-          if (match) {
-            const [, file, lineStr] = match;
-            const fullPath = path.isAbsolute(file)
-              ? file
-              : path.join(workspacePath, file);
-            logWithTimestamp(`Pattern matched: [${source}] ${pattern}`);
-            logWithTimestamp(`✔ Found & used: ${fullPath}:${lineStr}`);
-            if (fs.existsSync(fullPath)) {
-              const uri = vscode.Uri.file(fullPath);
-              const location = new vscode.Location(uri, new vscode.Position(Number(lineStr) - 1, 0));
-              const message = new vscode.TestMessage(line);
-              message.location = location;
-              messages.push(message);
-              break;
-            } else {
-              logWithTimestamp(`File not found: ${fullPath}`);
-            }
-          }
-        }
-      }
-
-      if (messages.length > 0) {
-        run.failed(testItem, messages);
-      } else {
-        run.failed(testItem, new vscode.TestMessage(output));
-      }
-    }
-  } catch (error) {
-    const message = formatError(error);
-    run.appendOutput(`Error executing test:\n${message}`.replace(/\r?\n/g, '\r\n') + "\r\n");
-    run.failed(testItem, new vscode.TestMessage(message));
-  }
-};
