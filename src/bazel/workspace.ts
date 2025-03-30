@@ -1,19 +1,21 @@
-
-
 import * as vscode from 'vscode';
 import { glob } from 'glob';
 import * as path from 'path';
 import { logWithTimestamp } from '../logging';
 
 export const findBazelWorkspace = async (): Promise<string | null> => {
-  const config = vscode.workspace.getConfiguration("bazelTestRunner");
-  const workspaceRootFile = config.get<string>("workspaceRootFile", "MODULE.bazel");
-  const workspaceFiles = await glob(`**/${workspaceRootFile}*`, {
-    nodir: true,
-    absolute: true,
-    cwd: vscode.workspace.rootPath || "."
-  });
-  return workspaceFiles.length > 0 ? path.dirname(workspaceFiles[0]) : null;
+  const possibleFiles = ['MODULE.bazel', 'WORKSPACE.bazel', 'WORKSPACE'];
+  for (const file of possibleFiles) {
+    const matches = await glob(`**/${file}`, {
+      nodir: true,
+      absolute: true,
+      cwd: vscode.workspace.rootPath || "."
+    });
+    if (matches.length > 0) {
+      return path.dirname(matches[0]);
+    }
+  }
+  return null;
 };
 
 export const getWorkspaceOrShowError = async (): Promise<string | null> => {

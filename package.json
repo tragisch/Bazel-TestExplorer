@@ -59,15 +59,6 @@
             "type": "string"
           }
         },
-        "bazelTestRunner.workspaceRootFile": {
-          "type": "string",
-          "description": "Bazel workspace root file (MODULE.bazel for Bazel 8+, WORKSPACE for older projects)",
-          "default": "MODULE.bazel",
-          "enum": [
-            "MODULE.bazel",
-            "WORKSPACE"
-          ]
-        },
         "bazelTestRunner.queryPaths": {
           "type": "array",
           "description": "List of relative Bazel paths (i.e. //tests) where tests should be queried. If left empty, defaults to querying the entire workspace ('//...').",
