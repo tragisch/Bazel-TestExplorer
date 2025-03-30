@@ -6,15 +6,16 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { logWithTimestamp, measure, formatError } from '../logging';
 
-export const spawnBazelTestProcess = (testId: string, cwd: string): Promise<{ code: number, stdout: string, stderr: string }> => {
+export const initiateBazelTest = (testId: string, cwd: string): Promise<{ code: number, stdout: string, stderr: string }> => {
   return new Promise((resolve, reject) => {
     let effectiveTestId = testId;
+
+    // If the testId is a directory, append "..." to it
     if (/^\/\/[^:]*$/.test(testId)) {
       effectiveTestId = `${testId}//...`;
     }
     const testCommand = "bazel";
     logWithTimestamp(`Using test command: ${testCommand} test ${effectiveTestId}`);
-
 
     const bazelProcess = cp.spawn(testCommand, ['test', effectiveTestId, '--test_output=all'], {
       cwd,
@@ -112,7 +113,7 @@ export const executeBazelTest = async (
   try {
     logWithTimestamp(`Running test: ${testItem.id}`);
     const { code, stdout, stderr } = await measure(`Execute test: ${testItem.id}`, () =>
-      spawnBazelTestProcess(testItem.id, workspacePath)
+      initiateBazelTest(testItem.id, workspacePath)
     );
     const { bazelLog, testLog } = parseBazelStdoutOutput(stdout);
     const output = generateTestResultMessage(testItem.id, code, testLog, bazelLog, stdout, stderr);
