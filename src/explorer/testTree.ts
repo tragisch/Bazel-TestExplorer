@@ -50,7 +50,15 @@ export const discoverAndDisplayTests = async (
       newTestIds.length !== currentTestIds.size ||
       !newTestIds.every((id) => currentTestIds.has(id))
     ) {
-      logWithTimestamp(`Registered test targets:\n ${newTestIds.join("\n ")}`);
+      const maxDisplayCount = 10;
+      const displayedTestIds = newTestIds.slice(0, maxDisplayCount);
+      const additionalCount = newTestIds.length - maxDisplayCount;
+
+      logWithTimestamp(
+        `Registered test targets:\n ${displayedTestIds.join("\n ")}${
+          additionalCount > 0 ? `\n ...and ${additionalCount} more.` : ""
+        }`
+      );
     }
   } catch (error) {
     const message = formatError(error);

@@ -82,7 +82,7 @@ function parseBazelLine(line: string): void {
       visibility: getAttribute(rule, "visibility")?.stringListValue ?? []
     });
   } catch (e) {
-    // Handle parse error if needed
+    logWithTimestamp(`Failed to parse Bazel line: ${line}`, "warn");
   }
 }
 
