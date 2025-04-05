@@ -55,8 +55,7 @@ export const discoverAndDisplayTests = async (
       const additionalCount = newTestIds.length - maxDisplayCount;
 
       logWithTimestamp(
-        `Registered test targets:\n ${displayedTestIds.join("\n ")}${
-          additionalCount > 0 ? `\n ...and ${additionalCount} more.` : ""
+        `Registered test packages:\n ${displayedTestIds.join("\n ")}${additionalCount > 0 ? `\n ...and ${additionalCount} more.` : ""
         }`
       );
     }
@@ -109,14 +108,14 @@ export const addTestItemToController = (
 
   const testItem = controller.createTestItem(target, `${testTypeLabel} ${testName}`, uri);
   packageItem.children.add(testItem);
-  
+
   testItem.busy = false;
   testItem.canResolveChildren = false;
 
   // Add command to show metadata when selected
   testItem.tags = [new vscode.TestTag("bazel")]; // optional tagging
   testItem.description = `Target: ${target}`;
-  
+
   // Define the missing command
   const command = {
     command: "bazelTestExplorer.showTestMetadata",

@@ -54,6 +54,7 @@ async function executeSingleBazelQuery(query: string, workspacePath: string): Pr
   logWithTimestamp(`Query completed in ${duration}s`);
   if (code !== 0) {
     logWithTimestamp(`Bazel query failed with exit code ${code}.`, "warn");
+    
   }
 }
 

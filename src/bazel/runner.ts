@@ -16,14 +16,12 @@ export const executeBazelTest = async (
 ) => {
   try {
     const { code, stdout, stderr } = await measure(`Execute test: ${testItem.id}`, () =>
-      initiateBazelTest(testItem.id, workspacePath)
+      initiateBazelTest(testItem.id, workspacePath, run, testItem)
     );
     const { bazelLog, testLog } = parseBazelStdoutOutput(stdout);
     const output = generateTestResultMessage(testItem.id, code, testLog, bazelLog, stdout, stderr);
 
-    run.appendOutput(output.replace(/\r?\n/g, '\r\n') + "\r\n");
     handleTestResult(run, testItem, code, output, testLog, workspacePath);
-
   } catch (error) {
     const message = formatError(error);
     run.appendOutput(`Error executing test:\n${message}`.replace(/\r?\n/g, '\r\n') + "\r\n");
@@ -31,16 +29,26 @@ export const executeBazelTest = async (
   }
 };
 
-export const initiateBazelTest = (testId: string, cwd: string): Promise<{ code: number, stdout: string, stderr: string }> => {
+export const initiateBazelTest = async (
+  testId: string,
+  cwd: string,
+  run: vscode.TestRun,
+  testItem: vscode.TestItem
+): Promise<{ code: number; stdout: string; stderr: string }> => {
   let effectiveTestId = testId;
 
-  // If the testId is a file path, we need to ensure it is in the correct format for Bazel
   if (/^\/\/[^:]*$/.test(testId)) {
     effectiveTestId = `${testId}//...`;
   }
 
   const args = ['test', effectiveTestId, '--test_output=all'];
-  return runBazelCommand(args, cwd);
+
+  return runBazelCommand(
+    args,
+    cwd,
+    (line) => run.appendOutput(line.replace(/\r?\n/g, '\r\n') + '\r\n'), // Zeilenumbrüche normalisieren
+    (line) => run.appendOutput(line.replace(/\r?\n/g, '\r\n') + '\r\n')  // Zeilenumbrüche normalisieren
+  );
 };
 
 export const parseBazelStdoutOutput = (stdout: string): { bazelLog: string[], testLog: string[] } => {
