@@ -18,12 +18,22 @@ export const executeBazelTest = async (
     const { code, stdout, stderr } = await measure(`Execute test: ${testItem.id}`, () =>
       initiateBazelTest(testItem.id, workspacePath)
     );
-    const { bazelLog, testLog } = parseBazelStdoutOutput(stdout);
-    const output = generateTestResultMessage(testItem.id, code, testLog, bazelLog, stdout, stderr);
+
+    const output = generateTestResultMessage(testItem.id, code, stdout, stderr);
 
     run.appendOutput(output.replace(/\r?\n/g, '\r\n') + "\r\n");
-    handleTestResult(run, testItem, code, output, testLog, workspacePath);
 
+    // Spezifische Behandlung basierend auf Exit-Code
+    if (code === 0) {
+      run.passed(testItem);
+    } else if (code === 3) {
+      run.failed(testItem, new vscode.TestMessage(`❌ Some tests fails.`));
+    } else if (code === 4) {
+      run.skipped(testItem);
+      vscode.window.showWarningMessage(`⚠️ Flaky tests: ${testItem.id}`);
+    } else {
+      run.failed(testItem, new vscode.TestMessage(`🧨 Errors during tests (Code ${code}).`));
+    }
   } catch (error) {
     const message = formatError(error);
     run.appendOutput(`Error executing test:\n${message}`.replace(/\r?\n/g, '\r\n') + "\r\n");
@@ -60,7 +70,7 @@ export const parseBazelStdoutOutput = (stdout: string): { bazelLog: string[], te
 
 // ───────────────────────────────────────────────────────────────
 // Analyse test results
-// ───────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────
 
 function handleTestResult(
   run: vscode.TestRun,
@@ -135,15 +145,23 @@ function analyzeTestFailures(testLog: string[], workspacePath: string, testItem:
 function generateTestResultMessage(
   testId: string,
   code: number,
-  testLog: string[],
-  bazelLog: string[],
   stdout: string,
   stderr: string
 ): string {
   const header = getStatusHeader(code, testId);
-  const formattedTestLog = formatTestLog(testLog);
-  const formattedBazelLog = formatBazelLog(bazelLog);
-  const formattedStderr = stderr.trim() ? formatStderr(stderr) : '';
+
+  // Filtere redundante Informationen aus dem Test-Log und Bazel-Output
+  const { bazelLog, testLog } = parseBazelStdoutOutput(stdout);
+  const formattedTestLog = testLog.length > 0
+    ? `📄 **Test Log:**\n${testLog.join("\n")}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
+    : "";
+  const formattedBazelLog = bazelLog.length > 0
+    ? `📌 **Bazel Output:**\n${bazelLog.join("\n")}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
+    : "";
+  const formattedStderr = stderr.trim()
+    ? `📕 **Bazel stderr:**\n${stderr.trim()}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
+    : "";
+
   return `${header}${formattedTestLog}${formattedBazelLog}${formattedStderr}`;
 }
 
