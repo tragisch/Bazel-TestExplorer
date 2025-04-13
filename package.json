@@ -2,7 +2,8 @@
   "name": "bazel-testexplorer",
   "displayName": "Bazel-TestExplorer",
   "description": "A VS Code extension to run and manage Bazel tests.",
-  "version": "0.1.9",
+  "version": "0.1.10",
+  "icon": "images/icon_Bazel_TestExplorer.png",
   "engines": {
     "vscode": "^1.97.0"
   },
@@ -91,27 +92,26 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
-    "pretest": "npm run compile && npm run lint",
-    "lint": "eslint src",
-    "test": "vscode-test",
-    "package": "vsce package --yarn"
+    "test": "mocha -r ts-node/register src/test/*.test.ts"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
-    "@types/node": "20.x",
-    "@types/vscode": "^1.97.0",
+    "@types/node": "^20.17.30",
+    "@types/vscode": "^1.99.1",
     "@typescript-eslint/eslint-plugin": "^8.25.0",
     "@typescript-eslint/parser": "^8.25.0",
     "@vscode/test-cli": "^0.0.10",
-    "@vscode/test-electron": "^2.4.1",
+    "@vscode/test-electron": "^2.5.2",
     "eslint": "^9.21.0",
-    "typescript": "^5.7.3"
+    "knip": "^5.47.0",
+    "mocha": "^11.1.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3",
+    "vscode-test": "^1.6.1"
   },
   "dependencies": {
     "brace-expansion": "^4.0.0",
+    "fast-glob": "^3.3.3",
     "glob": "^10.3.0"
   }
 }

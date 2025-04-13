@@ -150,13 +150,13 @@ function generateTestResultMessage(
 ): string {
   const header = getStatusHeader(code, testId);
 
-  // Filtere redundante Informationen aus dem Test-Log und Bazel-Output
+  // Filtere redundante Informationen
   const { bazelLog, testLog } = parseBazelStdoutOutput(stdout);
   const formattedTestLog = testLog.length > 0
     ? `📄 **Test Log:**\n${testLog.join("\n")}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
     : "";
   const formattedBazelLog = bazelLog.length > 0
-    ? `📌 **Bazel Output:**\n${bazelLog.join("\n")}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
+    ? `📌 **Bazel Output:**\n${bazelLog.filter(line => !testLog.includes(line)).join("\n")}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
     : "";
   const formattedStderr = stderr.trim()
     ? `📕 **Bazel stderr:**\n${stderr.trim()}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
