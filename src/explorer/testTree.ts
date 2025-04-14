@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2025 @tragisch <https://github.com/tragisch>
+ * SPDX-License-Identifier: MIT
+ * 
+ * This file is part of a project licensed under the MIT License.
+ * See the LICENSE file in the root directory for details.
+ */
+
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -55,7 +63,7 @@ export const discoverAndDisplayTests = async (
       const additionalCount = newTestIds.length - maxDisplayCount;
 
       logWithTimestamp(
-        `Registered test packages:\n ${displayedTestIds.join("\n ")}${additionalCount > 0 ? `\n ...and ${additionalCount} more.` : ""
+        `Registered test targets:\n ${displayedTestIds.join("\n ")}${additionalCount > 0 ? `\n ...and ${additionalCount} more.` : ""
         }`
       );
     }

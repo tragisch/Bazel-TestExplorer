@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2025 @tragisch <https://github.com/tragisch>
+ * SPDX-License-Identifier: MIT
+ * 
+ * This file is part of a project licensed under the MIT License.
+ * See the LICENSE file in the root directory for details.
+ */
+
 import * as vscode from 'vscode';
 import * as cp from 'child_process';
 import * as path from 'path';
@@ -22,8 +30,18 @@ export const executeBazelTest = async (
     const output = generateTestResultMessage(testItem.id, code, stdout, stderr);
 
     run.appendOutput(output.replace(/\r?\n/g, '\r\n') + "\r\n");
-    handleTestResult(run, testItem, code, output, testLog, workspacePath);
 
+    // Spezifische Behandlung basierend auf Exit-Code
+    if (code === 0) {
+      run.passed(testItem);
+    } else if (code === 3) {
+      run.failed(testItem, new vscode.TestMessage(`❌ Some tests fails.`));
+    } else if (code === 4) {
+      run.skipped(testItem);
+      vscode.window.showWarningMessage(`⚠️ Flaky tests: ${testItem.id}`);
+    } else {
+      run.failed(testItem, new vscode.TestMessage(`🧨 Errors during tests (Code ${code}).`));
+    }
   } catch (error) {
     const message = formatError(error);
     run.appendOutput(`Error executing test:\n${message}`.replace(/\r?\n/g, '\r\n') + "\r\n");
@@ -150,13 +168,13 @@ function generateTestResultMessage(
 ): string {
   const header = getStatusHeader(code, testId);
 
-  // Filtere redundante Informationen aus dem Test-Log und Bazel-Output
+  // Filtere redundante Informationen
   const { bazelLog, testLog } = parseBazelStdoutOutput(stdout);
   const formattedTestLog = testLog.length > 0
     ? `📄 **Test Log:**\n${testLog.join("\n")}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
     : "";
   const formattedBazelLog = bazelLog.length > 0
-    ? `📌 **Bazel Output:**\n${bazelLog.join("\n")}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
+    ? `📌 **Bazel Output:**\n${bazelLog.filter(line => !testLog.includes(line)).join("\n")}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
     : "";
   const formattedStderr = stderr.trim()
     ? `📕 **Bazel stderr:**\n${stderr.trim()}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
