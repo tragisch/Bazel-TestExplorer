@@ -12,6 +12,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { runBazelCommand } from './process';
 import { logWithTimestamp, measure, formatError } from '../logging';
+import { info } from 'console';
 
 // ───────────────────────────────────────────────────────────────
 // Public API
@@ -27,24 +28,54 @@ export const executeBazelTest = async (
       initiateBazelTest(testItem.id, workspacePath, run, testItem)
     );
 
-    const output = generateTestResultMessage(testItem.id, code, stdout, stderr);
+    // const output = generateTestResultMessage(testItem.id, code, stdout, stderr);
+    // const { bazelLog } = parseBazelStdoutOutput(stderr);
 
-    run.appendOutput(output.replace(/\r?\n/g, '\r\n') + "\r\n");
+    //clear testresult window
+
+
+    const { input: testLog } = parseBazelOutput(stdout);
+    const { input: bazelLog } = parseBazelOutput(stderr);
 
     // Spezifische Behandlung basierend auf Exit-Code
     if (code === 0) {
+      if (testLog.length > 0) {
+        // testLog.map(line => {
+        //   const cleaned = line.replace(/^\s+/, "");
+        //   logWithTimestamp(`Zeile (vorher): ${JSON.stringify(line)}`);
+        //   logWithTimestamp(`Zeile (cleaned): ${JSON.stringify(cleaned)}`);
+        //   return cleaned;
+        // });
+        const outputBlock = [
+          getStatusHeader(code, testItem.id),
+          '----- BEGIN OUTPUT -----',
+          ...testLog,
+          '------ END OUTPUT ------'
+        ].join("\n");
+
+        run.appendOutput(outputBlock.replace(/\r?\n/g, '\r\n') + '\r\n', undefined, testItem);
+      }
       run.passed(testItem);
     } else if (code === 3) {
-      run.failed(testItem, new vscode.TestMessage(`❌ Some tests fails.`));
+      handleTestResult(run, testItem, code, bazelLog, testLog, workspacePath);
     } else if (code === 4) {
       run.skipped(testItem);
       vscode.window.showWarningMessage(`⚠️ Flaky tests: ${testItem.id}`);
     } else {
-      run.failed(testItem, new vscode.TestMessage(`🧨 Errors during tests (Code ${code}).`));
+      const cleaned = bazelLog.filter(line => line.trim() !== "").join("\n");
+      const cleaned_with_Header = getStatusHeader(code, testItem.id) + cleaned;
+      run.failed(testItem, new vscode.TestMessage(`🧨 Errors during tests (Code ${code}):\n\n${cleaned_with_Header}`));
+      const outputBlock = [
+        getStatusHeader(code, testItem.id),
+        '----- BEGIN OUTPUT -----',
+        ...bazelLog,
+        '------ END OUTPUT ------'
+      ].join("\n");
+      run.appendOutput(outputBlock.replace(/\r?\n/g, '\r\n') + '\r\n', undefined, testItem);
     }
   } catch (error) {
     const message = formatError(error);
-    run.appendOutput(`Error executing test:\n${message}`.replace(/\r?\n/g, '\r\n') + "\r\n");
+    logWithTimestamp(`Error executing test ${testItem.id}: ${message}`, "error");
     run.failed(testItem, new vscode.TestMessage(message));
   }
 };
@@ -66,24 +97,24 @@ export const initiateBazelTest = async (
   return runBazelCommand(
     args,
     cwd,
-    (line) => run.appendOutput(line.replace(/\r?\n/g, '\r\n') + '\r\n'), // Zeilenumbrüche normalisieren
-    (line) => run.appendOutput(line.replace(/\r?\n/g, '\r\n') + '\r\n')  // Zeilenumbrüche normalisieren
   );
 };
 
-export const parseBazelStdoutOutput = (stdout: string): { bazelLog: string[], testLog: string[] } => {
-  const bazelLog: string[] = [];
-  const testLog: string[] = [];
 
-  stdout.split("\n").forEach(line => {
-    if (line.startsWith("INFO:") || line.startsWith("WARNING:") || line.includes("Test execution time")) {
-      bazelLog.push(line);
-    } else {
-      testLog.push(line);
-    }
+
+export const parseBazelOutput = (stdout: string): { input: string[] } => {
+  const input: string[] = [];
+  stdout.split(/\r?\n/).forEach(line => {
+    // WICHTIG: Kein trimStart(), um Einrückung zu bewahren.
+    input.push(
+      line
+        .replace(/\t/g, '  ')
+        .replace(/\r/g, '')
+        .replace(/\x1b\[[0-9;]*m/g, '') // ANSI escape
+        .replace(/[^\x00-\x7F]/g, '')    // non-ASCII characters
+    );
   });
-
-  return { bazelLog, testLog };
+  return { input };
 };
 
 // ───────────────────────────────────────────────────────────────
@@ -94,18 +125,27 @@ function handleTestResult(
   run: vscode.TestRun,
   testItem: vscode.TestItem,
   code: number,
-  output: string,
+  bazelLog: string[],
   testLog: string[],
   workspacePath: string
 ) {
   if (code === 0) {
-    run.passed(testItem);
+    run.passed(testItem); // just to be sure
   } else {
     const messages = analyzeTestFailures(testLog, workspacePath, testItem);
+    logWithTimestamp(`Analyzed test failures for ${testItem.id}: ${messages.length} messages found.`);
     if (messages.length > 0) {
       run.failed(testItem, messages);
+      const outputBlock = [
+        getStatusHeader(code, testItem.id),
+        '----- BEGIN OUTPUT -----',
+        ...testLog,
+        '------ END OUTPUT ------'
+      ].join("\n");
+
+      run.appendOutput(outputBlock.replace(/\r?\n/g, '\r\n') + '\r\n', undefined, testItem);
     } else {
-      run.failed(testItem, new vscode.TestMessage(output));
+      run.failed(testItem, new vscode.TestMessage(bazelLog.join("\n")));
     }
   }
 }
@@ -127,6 +167,7 @@ function analyzeTestFailures(testLog: string[], workspacePath: string, testItem:
     { pattern: /^(.+?)\((\d+)\): error/, source: "Built-in" },
     { pattern: /^(.+?):(\d+): error/, source: "Built-in" },
     { pattern: /^FAIL .*?\((.+?):(\d+)\)$/, source: "Built-in" },
+    { pattern: /^(.+?):(\d+):.+?:FAIL:/, source: "Built-in" },
     { pattern: /^Error: (.+?):(\d+): /, source: "Built-in" },
   ];
 
@@ -156,32 +197,38 @@ function analyzeTestFailures(testLog: string[], workspacePath: string, testItem:
       }
     }
   }
-
   return messages;
 }
 
-function generateTestResultMessage(
-  testId: string,
-  code: number,
-  stdout: string,
-  stderr: string
-): string {
-  const header = getStatusHeader(code, testId);
+// function generateTestResultMessage(
+//   testId: string,
+//   code: number,
+//   stdout: string,
+//   stderr: string
+// ): string {
+//   const header = getStatusHeader(code, testId);
 
-  // Filtere redundante Informationen
-  const { bazelLog, testLog } = parseBazelStdoutOutput(stdout);
-  const formattedTestLog = testLog.length > 0
-    ? `📄 **Test Log:**\n${testLog.join("\n")}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
-    : "";
-  const formattedBazelLog = bazelLog.length > 0
-    ? `📌 **Bazel Output:**\n${bazelLog.filter(line => !testLog.includes(line)).join("\n")}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
-    : "";
-  const formattedStderr = stderr.trim()
-    ? `📕 **Bazel stderr:**\n${stderr.trim()}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
-    : "";
+//   const { bazelLog, testLog } = parseBazelStdoutOutput(stdout);
+//   const formattedTestLog = testLog.length > 0
+//     ? `📄 **Test Log:**\n${testLog.join("\n")}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
+//     : "";
 
-  return `${header}${formattedTestLog}${formattedBazelLog}${formattedStderr}`;
-}
+//   // Improved logic: show stderr block if any line is not a Bazel message
+//   const stderrLines = stderr.trim().split("\n").map(line => line.trim());
+
+//   let formattedBazelLog = "";
+//   let formattedStderr = "";
+//   if (code !== 0) {
+//     formattedBazelLog = bazelLog.length > 0
+//       ? `📌 **Bazel Output:**\n${bazelLog.filter(line => !testLog.includes(line)).join("\n")}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
+//       : "";
+//     formattedStderr = stderrLines.join("\n")
+//       ? `📕 **Bazel stderr:**\n${stderrLines.join("\n")}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
+//       : "";
+//   }
+
+//   return `${header}${formattedTestLog}${formattedBazelLog}${formattedStderr}`;
+// }
 
 // ───────────────────────────────────────────────────────────────
 // Formatting functions
@@ -196,12 +243,3 @@ const getStatusHeader = (code: number, testId: string): string => {
 
   return `${status}: ${testId}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
 };
-
-const formatTestLog = (log: string[]): string =>
-  log.length > 0 ? `📄 **Test Log:**\n${log.join("\n")}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` : "";
-
-const formatBazelLog = (log: string[]): string =>
-  log.length > 0 ? `📌 **Bazel Output:**\n${log.join("\n")}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` : "";
-
-const formatStderr = (stderr: string): string =>
-  `📕 **Bazel stderr:**\n${stderr.trim()}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
