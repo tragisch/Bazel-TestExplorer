@@ -49,7 +49,7 @@
       ]
     },
     "configuration": {
-      "title": "Bazel Test Runner",
+      "title": "Bazel Test Explorer",
       "properties": {
         "bazelTestRunner.testTypes": {
           "type": "array",

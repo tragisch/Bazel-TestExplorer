@@ -12,6 +12,9 @@ It uses 'bazel query' to identify test-cases and 'bazel test' to perform them.
 - **Gutter Markers (Beta)** - Multiple failure locations supported.
 - **Query Paths** - Optional set for relative Bazel paths (i.e. //tests) where tests should be queried (useful in Repos with submodules).
 
+## Screenshot
+![Example](images/Example_TestRun.png)
+
 ## Installation
 1. Install the extension from the VS Code Marketplace.
 2. Ensure Bazel is installed.
