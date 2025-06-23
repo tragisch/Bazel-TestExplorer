@@ -10,6 +10,7 @@ import * as vscode from 'vscode';
 import { glob } from 'glob';
 import * as path from 'path';
 import { logWithTimestamp } from '../logging';
+import * as fs from 'fs';
 
 export const findBazelWorkspace = async (): Promise<string | null> => {
   const possibleFiles = ['MODULE.bazel', 'WORKSPACE.bazel', 'WORKSPACE'];
@@ -32,6 +33,7 @@ export const getWorkspaceOrShowError = async (): Promise<string | null> => {
     vscode.window.showErrorMessage("No Bazel workspace detected.");
     return null;
   }
-  logWithTimestamp(`Bazel workspace found at: ${workspacePath}`);
+  logWithTimestamp(`cwd used: ${workspacePath}`);
+  logWithTimestamp(`Exists .bazelrc: ${fs.existsSync(path.join(workspacePath, ".bazelrc"))}`);
   return workspacePath;
 };

@@ -2,7 +2,11 @@
 
 All notable changes to the "bazel-unity-test" extension will be documented here.
 
-## [0.1.1 - 0.1.9]
+## [0.1.11]
+- fix issues
+- add bazel test args for settings
+
+## [0.1.1 - 0.1.10]
 
 ### Added
 - automatic detection of Workspace file.

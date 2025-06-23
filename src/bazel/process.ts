@@ -8,6 +8,8 @@
 
 import * as cp from 'child_process';
 import * as readline from 'readline';
+import * as fs from 'fs';
+import * as path from 'path';
 import { logWithTimestamp } from '../logging';
 
 export function runBazelCommand(

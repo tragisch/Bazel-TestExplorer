@@ -8,6 +8,7 @@ It uses 'bazel query' to identify test-cases and 'bazel test' to perform them.
 - **View tests** - in Test Explorer.
 - **View test report** - in Test Results.
 - **Customizable Test Types** – Configure additional test types like 'java_test', 'py_test', ... .
+- **New: Bazel Test args** - Add test args to Bazel, i.e. --config=linux, ... .
 - **Gutter Markers (Beta)** - Multiple failure locations supported.
 - **Query Paths** - Optional set for relative Bazel paths (i.e. //tests) where tests should be queried (useful in Repos with submodules).
 

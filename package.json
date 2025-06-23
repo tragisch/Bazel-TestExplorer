@@ -2,7 +2,7 @@
   "name": "bazel-testexplorer",
   "displayName": "Bazel-TestExplorer",
   "description": "A VS Code extension to run and manage Bazel tests.",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "icon": "images/icon_Bazel_TestExplorer.png",
   "engines": {
     "vscode": "^1.99.0"
@@ -49,6 +49,7 @@
       ]
     },
     "configuration": {
+      "title": "Bazel Test Runner",
       "properties": {
         "bazelTestRunner.testTypes": {
           "type": "array",
@@ -74,6 +75,14 @@
           "default": [
             "java_test"
           ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "bazelTestRunner.testArgs": {
+          "type": "array",
+          "description": "Additional command line arguments to pass to 'bazel test'. Example: ['--config=ci', '--build_tests_only']",
+          "default": [],
           "items": {
             "type": "string"
           }

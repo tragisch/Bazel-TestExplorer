@@ -12,7 +12,6 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { runBazelCommand } from './process';
 import { logWithTimestamp, measure, formatError } from '../logging';
-import { info } from 'console';
 
 // ───────────────────────────────────────────────────────────────
 // Public API
@@ -28,9 +27,6 @@ export const executeBazelTest = async (
       initiateBazelTest(testItem.id, workspacePath, run, testItem)
     );
 
-    // const output = generateTestResultMessage(testItem.id, code, stdout, stderr);
-    // const { bazelLog } = parseBazelStdoutOutput(stderr);
-
     //clear testresult window
 
 
@@ -40,12 +36,6 @@ export const executeBazelTest = async (
     // Spezifische Behandlung basierend auf Exit-Code
     if (code === 0) {
       if (testLog.length > 0) {
-        // testLog.map(line => {
-        //   const cleaned = line.replace(/^\s+/, "");
-        //   logWithTimestamp(`Zeile (vorher): ${JSON.stringify(line)}`);
-        //   logWithTimestamp(`Zeile (cleaned): ${JSON.stringify(cleaned)}`);
-        //   return cleaned;
-        // });
         const outputBlock = [
           getStatusHeader(code, testItem.id),
           '----- BEGIN OUTPUT -----',
@@ -92,7 +82,9 @@ export const initiateBazelTest = async (
     effectiveTestId = `${testId}//...`;
   }
 
-  const args = ['test', effectiveTestId, '--test_output=all'];
+  const config = vscode.workspace.getConfiguration("bazelTestRunner");
+  const additionalArgs: string[] = config.get("testArgs", []);
+  const args = ['test', effectiveTestId, '--test_output=all', ...additionalArgs];
 
   return runBazelCommand(
     args,
@@ -199,36 +191,6 @@ function analyzeTestFailures(testLog: string[], workspacePath: string, testItem:
   }
   return messages;
 }
-
-// function generateTestResultMessage(
-//   testId: string,
-//   code: number,
-//   stdout: string,
-//   stderr: string
-// ): string {
-//   const header = getStatusHeader(code, testId);
-
-//   const { bazelLog, testLog } = parseBazelStdoutOutput(stdout);
-//   const formattedTestLog = testLog.length > 0
-//     ? `📄 **Test Log:**\n${testLog.join("\n")}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
-//     : "";
-
-//   // Improved logic: show stderr block if any line is not a Bazel message
-//   const stderrLines = stderr.trim().split("\n").map(line => line.trim());
-
-//   let formattedBazelLog = "";
-//   let formattedStderr = "";
-//   if (code !== 0) {
-//     formattedBazelLog = bazelLog.length > 0
-//       ? `📌 **Bazel Output:**\n${bazelLog.filter(line => !testLog.includes(line)).join("\n")}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
-//       : "";
-//     formattedStderr = stderrLines.join("\n")
-//       ? `📕 **Bazel stderr:**\n${stderrLines.join("\n")}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`
-//       : "";
-//   }
-
-//   return `${header}${formattedTestLog}${formattedBazelLog}${formattedStderr}`;
-// }
 
 // ───────────────────────────────────────────────────────────────
 // Formatting functions
