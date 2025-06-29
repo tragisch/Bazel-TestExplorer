@@ -158,39 +158,56 @@ function analyzeTestFailures(testLog: string[], workspacePath: string, testItem:
     }).filter((p): p is { pattern: RegExp; source: string } => p !== null),
     { pattern: /^(.+?):(\d+): Failure/, source: "Built-in" },
     { pattern: /^(.+?):(\d+): FAILED/, source: "Built-in" },
+    { pattern: /^(.+?):(\d+):\d+: error/, source: "Built-in" },
     { pattern: /^(.+?)\((\d+)\): error/, source: "Built-in" },
     { pattern: /^(.+?):(\d+): error/, source: "Built-in" },
     { pattern: /^FAIL .*?\((.+?):(\d+)\)$/, source: "Built-in" },
     { pattern: /^(.+?):(\d+):.+?:FAIL:/, source: "Built-in" },
     { pattern: /^Error: (.+?):(\d+): /, source: "Built-in" },
-    { pattern: /^\[FAIL\]\s+([^\s:]+\/[^\s:]+):\d+: Assertion Failed/, source: "Criterion (extended)" },
+    { pattern: /^\[----\] (.+?):(\d+): Assertion Failed$/, source: "Built-in" },
   ];
 
   const messages: vscode.TestMessage[] = [];
   const matchingLines = testLog.filter(line => failPatterns.some(({ pattern }) => pattern.test(line)));
 
   for (const line of matchingLines) {
+    let bestMatch: {
+      match: RegExpMatchArray;
+      pattern: RegExp;
+      source: string;
+    } | null = null;
     for (const { pattern, source } of failPatterns) {
       const match = line.match(pattern);
       if (match) {
-        const [, file, lineStr] = match;
-        // Robust path normalization and fallback
-        const normalizedPath = path.normalize(file);
-        const fullPath = path.isAbsolute(normalizedPath)
-          ? normalizedPath
-          : path.join(workspacePath, normalizedPath);
-        logWithTimestamp(`Pattern matched: [${source}] ${pattern}`);
-        logWithTimestamp(`✔ Found & used: ${fullPath}:${lineStr}`);
-        if (fs.existsSync(fullPath)) {
-          const uri = vscode.Uri.file(fullPath);
-          const location = new vscode.Location(uri, new vscode.Position(Number(lineStr) - 1, 0));
-          const message = new vscode.TestMessage(line);
-          message.location = location;
-          messages.push(message);
-          break;
-        } else {
-          logWithTimestamp(`File not found: ${fullPath}`);
+        if (!bestMatch || match[0].length > bestMatch.match[0].length) {
+          bestMatch = { match, pattern, source };
         }
+      }
+    }
+    if (bestMatch) {
+      const [, file, lineStr] = bestMatch.match;
+      const normalizedPath = path.normalize(file);
+      const fullPath = path.isAbsolute(normalizedPath)
+        ? normalizedPath
+        : path.join(workspacePath, normalizedPath);
+      const fallbackPath = path.join(workspacePath, path.basename(normalizedPath));
+      logWithTimestamp(`Pattern matched: [${bestMatch.source}] ${bestMatch.pattern}`);
+      logWithTimestamp(`✔ Found & used: ${file}:${lineStr}`);
+      if (fs.existsSync(fullPath)) {
+        const uri = vscode.Uri.file(fullPath);
+        const location = new vscode.Location(uri, new vscode.Position(Number(lineStr) - 1, 0));
+        const message = new vscode.TestMessage(line);
+        message.location = location;
+        messages.push(message);
+      } else if (fs.existsSync(fallbackPath)) {
+        logWithTimestamp(`Fallback used: ${fallbackPath}`);
+        const uri = vscode.Uri.file(fallbackPath);
+        const location = new vscode.Location(uri, new vscode.Position(Number(lineStr) - 1, 0));
+        const message = new vscode.TestMessage(line);
+        message.location = location;
+        messages.push(message);
+      } else {
+        logWithTimestamp(`File not found: ${fullPath}`);
       }
     }
   }
