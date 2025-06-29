@@ -196,14 +196,16 @@ function analyzeTestFailures(testLog: string[], workspacePath: string, testItem:
       if (fs.existsSync(fullPath)) {
         const uri = vscode.Uri.file(fullPath);
         const location = new vscode.Location(uri, new vscode.Position(Number(lineStr) - 1, 0));
-        const message = new vscode.TestMessage(line);
+        const fullText = [line, '', ...testLog].join("\n");
+        const message = new vscode.TestMessage(fullText);
         message.location = location;
         messages.push(message);
       } else if (fs.existsSync(fallbackPath)) {
         logWithTimestamp(`Fallback used: ${fallbackPath}`);
         const uri = vscode.Uri.file(fallbackPath);
         const location = new vscode.Location(uri, new vscode.Position(Number(lineStr) - 1, 0));
-        const message = new vscode.TestMessage(line);
+        const fullText = [line, '', ...testLog].join("\n");
+        const message = new vscode.TestMessage(fullText);
         message.location = location;
         messages.push(message);
       } else {
