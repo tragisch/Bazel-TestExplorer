@@ -25,20 +25,18 @@ export function runBazelCommand(
         let stdout = '';
         let stderr = '';
 
-        // Verarbeite stdout zeilenweise
         const rl = readline.createInterface({ input: proc.stdout });
         rl.on('line', line => {
-            const normalizedLine = line.replace(/\r?\n/g, '\r\n'); // Zeilenumbrüche normalisieren
+            const normalizedLine = line.replace(/\r?\n/g, '\r\n');
             stdout += normalizedLine + '\n';
-            if (onLine) onLine(normalizedLine); // Live-Ausgabe von stdout
+            if (onLine) onLine(normalizedLine);
         });
 
-        // Verarbeite stderr zeilenweise
         const errorRl = readline.createInterface({ input: proc.stderr });
         errorRl.on('line', line => {
-            const normalizedLine = line.replace(/\r?\n/g, '\r\n'); // Zeilenumbrüche normalisieren
+            const normalizedLine = line.replace(/\r?\n/g, '\r\n');
             stderr += normalizedLine + '\n';
-            if (onErrorLine) onErrorLine(normalizedLine); // Live-Ausgabe von stderr
+            if (onErrorLine) onErrorLine(normalizedLine);
         });
 
         proc.on('close', code => {

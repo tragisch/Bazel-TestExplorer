@@ -53,7 +53,6 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		vscode.commands.registerCommand('bazelTestExplorer.showTestMetadata', (testItem: vscode.TestItem) => {
 			vscode.window.showInformationMessage(`Clicked on test: ${testItem?.id}`);
-			// Optional: Metadaten anzeigen
 			showTestMetadataById(testItem?.id);
 		})
 	);

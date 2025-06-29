@@ -33,7 +33,6 @@ export const executeBazelTest = async (
     const { input: testLog } = parseBazelOutput(stdout);
     const { input: bazelLog } = parseBazelOutput(stderr);
 
-    // Spezifische Behandlung basierend auf Exit-Code
     if (code === 0) {
       if (testLog.length > 0) {
         const outputBlock = [
@@ -97,13 +96,8 @@ export const initiateBazelTest = async (
 export const parseBazelOutput = (stdout: string): { input: string[] } => {
   const input: string[] = [];
   stdout.split(/\r?\n/).forEach(line => {
-    // WICHTIG: Kein trimStart(), um Einrückung zu bewahren.
     input.push(
       line
-        .replace(/\t/g, '  ')
-        .replace(/\r/g, '')
-        .replace(/\x1b\[[0-9;]*m/g, '') // ANSI escape
-        .replace(/[^\x00-\x7F]/g, '')    // non-ASCII characters
     );
   });
   return { input };
@@ -137,7 +131,15 @@ function handleTestResult(
 
       run.appendOutput(outputBlock.replace(/\r?\n/g, '\r\n') + '\r\n', undefined, testItem);
     } else {
-      run.failed(testItem, new vscode.TestMessage(bazelLog.join("\n")));
+      const fallbackOutput = [
+        getStatusHeader(code, testItem.id),
+        '----- BEGIN OUTPUT -----',
+        ...testLog.length ? testLog : bazelLog,
+        '------ END OUTPUT ------'
+      ].join("\n");
+
+      run.failed(testItem, new vscode.TestMessage(fallbackOutput));
+      run.appendOutput(fallbackOutput.replace(/\r?\n/g, '\r\n') + '\r\n', undefined, testItem);
     }
   }
 }
@@ -161,6 +163,7 @@ function analyzeTestFailures(testLog: string[], workspacePath: string, testItem:
     { pattern: /^FAIL .*?\((.+?):(\d+)\)$/, source: "Built-in" },
     { pattern: /^(.+?):(\d+):.+?:FAIL:/, source: "Built-in" },
     { pattern: /^Error: (.+?):(\d+): /, source: "Built-in" },
+    { pattern: /^\[FAIL\]\s+([^\s:]+\/[^\s:]+):\d+: Assertion Failed/, source: "Criterion (extended)" },
   ];
 
   const messages: vscode.TestMessage[] = [];
@@ -171,9 +174,11 @@ function analyzeTestFailures(testLog: string[], workspacePath: string, testItem:
       const match = line.match(pattern);
       if (match) {
         const [, file, lineStr] = match;
-        const fullPath = path.isAbsolute(file)
-          ? file
-          : path.join(workspacePath, file);
+        // Robust path normalization and fallback
+        const normalizedPath = path.normalize(file);
+        const fullPath = path.isAbsolute(normalizedPath)
+          ? normalizedPath
+          : path.join(workspacePath, normalizedPath);
         logWithTimestamp(`Pattern matched: [${source}] ${pattern}`);
         logWithTimestamp(`✔ Found & used: ${fullPath}:${lineStr}`);
         if (fs.existsSync(fullPath)) {
