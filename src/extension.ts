@@ -20,6 +20,9 @@ let metadataListenerRegistered = false;
 export function activate(context: vscode.ExtensionContext) {
 	initializeLogger();
 
+	const extensionVersion = vscode.extensions.getExtension("tragisch.bazel-testexplorer")?.packageJSON.version;
+	logWithTimestamp(`Bazel Test Explorer v${extensionVersion} aktiviert.`);
+
 	bazelTestController = vscode.tests.createTestController('bazelUnityTestController', 'Bazel Unity Tests');
 	context.subscriptions.push(bazelTestController);
 
