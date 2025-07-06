@@ -45,8 +45,8 @@ export const discoverAndDisplayTests = async (
       }
     });
 
-    testEntries.forEach(({ target, type }) => {
-      addTestItemToController(controller, target, type, packageItemCache);
+    testEntries.forEach(({ target, type, tags }) => {
+      addTestItemToController(controller, target, type, tags ?? [], packageItemCache);
     });
 
     const newTestIds: string[] = [];
@@ -80,6 +80,7 @@ export const addTestItemToController = (
   controller: vscode.TestController,
   target: string,
   testType: string,
+  tags: string[],
   packageItemCache: Map<string, vscode.TestItem>
 ): void => {
   const [packageName, testName] = target.includes(":")
@@ -121,7 +122,7 @@ export const addTestItemToController = (
   testItem.canResolveChildren = false;
 
   // Add command to show metadata when selected
-  testItem.tags = [new vscode.TestTag("bazel")]; // optional tagging
+  testItem.tags = ["bazel", ...(tags || [])].map(t => new vscode.TestTag(t));
   testItem.description = `Target: ${target}`;
 
   // Define the missing command
