@@ -7,8 +7,10 @@ It uses 'bazel query' to identify test-cases and 'bazel test' to perform them.
 ## Features
 - **View tests** - in Test Explorer.
 - **View test report** - in Test Results.
-- **Customizable Test Types** – Configure additional test types like 'java_test', 'py_test', ... .
-- **New: Bazel Test args** - Add test args to Bazel, i.e. --config=linux, ... .
+- **ShowMetadata** - show test-target attributes.
+- **New: Filter for test tags** -  i.e. @smoke
+- **Customizable Test Types** – Configure additional test types like 'java_test', 'py_test', 'rust_test', ... .
+- **Bazel Test args** - Add test args to Bazel, i.e. --config=linux, ... .
 - **Gutter Markers (Beta)** - Multiple failure locations supported.
 - **Query Paths** - Optional set for relative Bazel paths (i.e. //tests) where tests should be queried (useful in Repos with submodules).
 
@@ -27,5 +29,11 @@ It uses 'bazel query' to identify test-cases and 'bazel test' to perform them.
 - **Code Coverage Integration**.
 - **Debugging Support**.
 
+## Tested with
+- cc_test: boost.test, catch2, criterion, doctest, gtest, munit, ThrowTheSwitch, unittest_cpp
+- py_test: doctest, pytest, unittest
+- rust_test: build-in
+- java_test: JUnit
+- go_test: build-in
 ## License
 MIT License
