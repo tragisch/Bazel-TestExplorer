@@ -16,6 +16,6 @@ export interface BazelTestTarget {
     size?: string;
     flaky?: boolean;
     toolchain?: string;
-    compatiblePlatforms?: string[];
+    deps?: string[];
     visibility?: string[];
 }

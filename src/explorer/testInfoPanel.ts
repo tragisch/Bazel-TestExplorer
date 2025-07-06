@@ -51,7 +51,7 @@ function renderHtml(target: BazelTestTarget): string {
         <li><b>Toolchain:</b> ${target.toolchain ?? '–'}</li>
         <li><b>Tags:</b> ${target.tags?.join(', ') ?? '–'}</li>
         <li><b>Visibility:</b> ${target.visibility?.join(', ') ?? '–'}</li>
-        <li><b>Compatible Platforms:</b> ${target.compatiblePlatforms?.join(', ') ?? '–'}</li>
+        <li><b>Dependencies:</b> ${target.deps?.join(', ') ?? '–'}</li>
         <li><b>Srcs:</b> ${target.srcs?.join(', ') ?? '–'}</li>
         <li><b>Location:</b> ${target.location ?? '–'}</li>
       </ul>

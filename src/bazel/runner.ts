@@ -12,6 +12,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { runBazelCommand } from './process';
 import { logWithTimestamp, measure, formatError } from '../logging';
+import { log } from 'console';
 
 // ───────────────────────────────────────────────────────────────
 // Public API
@@ -164,7 +165,12 @@ function analyzeTestFailures(testLog: string[], workspacePath: string, testItem:
     { pattern: /^FAIL .*?\((.+?):(\d+)\)$/, source: "Built-in" },
     { pattern: /^(.+?):(\d+):.+?:FAIL:/, source: "Built-in" },
     { pattern: /^Error: (.+?):(\d+): /, source: "Built-in" },
+    { pattern: /^\s*File "(.*?)", line (\d+), in .+$/, source: "Python Traceback" },
+    { pattern: /^(.+?):(\d+): AssertionError$/, source: "Python AssertionError" },
     { pattern: /^\[----\] (.+?):(\d+): Assertion Failed$/, source: "Built-in" },
+    { pattern: /^.*panicked at .*?([^\s:]+):(\d+):\d+:$/, source: "Rust panic" },
+    { pattern: /^(.*):(\d+):\s+ERROR:\s+(REQUIRE|CHECK|CHECK_EQ)\(\s*(.*?)\s*\)\s+is\s+NOT\s+correct!/, source: "Built-in" },
+    { pattern: /^Assertion failed: .*?, function .*?, file (.+?), line (\d+)\./, source: "Built-in" },
   ];
 
   const messages: vscode.TestMessage[] = [];
@@ -187,22 +193,14 @@ function analyzeTestFailures(testLog: string[], workspacePath: string, testItem:
     if (bestMatch) {
       const [, file, lineStr] = bestMatch.match;
       const normalizedPath = path.normalize(file);
-      const fullPath = path.isAbsolute(normalizedPath)
-        ? normalizedPath
-        : path.join(workspacePath, normalizedPath);
-      const fallbackPath = path.join(workspacePath, path.basename(normalizedPath));
+      const trimmedPath = normalizedPath.includes(`${path.sep}_main${path.sep}`)
+        ? normalizedPath.substring(normalizedPath.indexOf(`${path.sep}_main${path.sep}`) + "_main".length + 1)
+        : normalizedPath;
+      const fullPath = path.join(workspacePath, trimmedPath);
       logWithTimestamp(`Pattern matched: [${bestMatch.source}] ${bestMatch.pattern}`);
       logWithTimestamp(`✔ Found & used: ${file}:${lineStr}`);
       if (fs.existsSync(fullPath)) {
         const uri = vscode.Uri.file(fullPath);
-        const location = new vscode.Location(uri, new vscode.Position(Number(lineStr) - 1, 0));
-        const fullText = [line, '', ...testLog].join("\n");
-        const message = new vscode.TestMessage(fullText);
-        message.location = location;
-        messages.push(message);
-      } else if (fs.existsSync(fallbackPath)) {
-        logWithTimestamp(`Fallback used: ${fallbackPath}`);
-        const uri = vscode.Uri.file(fallbackPath);
         const location = new vscode.Location(uri, new vscode.Position(Number(lineStr) - 1, 0));
         const fullText = [line, '', ...testLog].join("\n");
         const message = new vscode.TestMessage(fullText);
@@ -213,6 +211,7 @@ function analyzeTestFailures(testLog: string[], workspacePath: string, testItem:
       }
     }
   }
+
   return messages;
 }
 

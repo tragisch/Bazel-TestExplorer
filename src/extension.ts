@@ -57,6 +57,15 @@ export function activate(context: vscode.ExtensionContext) {
 		})
 	);
 
+	context.subscriptions.push(
+		vscode.window.onDidChangeWindowState((windowState) => {
+			if (windowState.focused) {
+				logWithTimestamp("🔄 Window focus regained, reloading Bazel tests...");
+				vscode.commands.executeCommand("extension.reloadBazelTests");
+			}
+		})
+	);
+
 	bazelTestController.createRunProfile('Run Tests', vscode.TestRunProfileKind.Run, async (request, token) => {
 		const run = bazelTestController.createTestRun(request);
 		const workspacePath = await findBazelWorkspace();

@@ -62,7 +62,7 @@ async function executeSingleBazelQuery(query: string, workspacePath: string): Pr
   logWithTimestamp(`Query completed in ${duration}s`);
   if (code !== 0) {
     logWithTimestamp(`Bazel query failed with exit code ${code}.`, "warn");
-    
+
   }
 }
 
@@ -75,19 +75,19 @@ function parseBazelLine(line: string): void {
 
     const rule = target.rule;
     const targetName = rule.name;
-    const tags = getAttribute(rule, "tags")?.stringListValue?.value ?? [];
+    // const tags = getAttribute(rule, "tags")?.stringListValue?.value ?? [];
 
     testMap.set(targetName, {
       target: targetName,
       type: rule.ruleClass,
       location: rule.location ?? undefined,
-      tags,
+      tags: getAttribute(rule, "tags")?.stringListValue ?? [],
       srcs: getAttribute(rule, "srcs")?.stringListValue ?? [],
       timeout: getAttribute(rule, "timeout")?.stringValue ?? undefined,
       size: getAttribute(rule, "size")?.stringValue ?? undefined,
       flaky: getAttribute(rule, "flaky")?.booleanValue ?? false,
       toolchain: getAttribute(rule, "$cc_toolchain")?.stringValue ?? undefined,
-      compatiblePlatforms: getAttribute(rule, "target_compatible_with")?.stringListValue ?? [],
+      deps: getAttribute(rule, "deps")?.stringListValue ?? [],
       visibility: getAttribute(rule, "visibility")?.stringListValue ?? []
     });
   } catch (e) {
