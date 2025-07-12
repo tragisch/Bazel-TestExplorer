@@ -9,3 +9,16 @@ vsc-extension-quickstart.md
 **/*.map
 **/*.ts
 **/.vscode-test.*
+
+# Git und OS-spezifisches Zeug
+.git/
+.gitignore
+.DS_Store
+Thumbs.db
+
+# Lokale Release-Notizen
+CHANGELOG.md
+README.md  # Optional, wenn du ein separates Marketplace-README verwendest
+
+# Lizenz evtl. drinlassen, je nach Policy
+# LICENSE

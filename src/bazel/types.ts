@@ -17,5 +17,6 @@ export interface BazelTestTarget {
     flaky?: boolean;
     toolchain?: string;
     deps?: string[];
+    tests?: string[];
     visibility?: string[];
 }

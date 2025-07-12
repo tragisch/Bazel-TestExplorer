@@ -52,6 +52,7 @@ function renderHtml(target: BazelTestTarget): string {
         <li><b>Tags:</b> ${target.tags?.join(', ') ?? '–'}</li>
         <li><b>Visibility:</b> ${target.visibility?.join(', ') ?? '–'}</li>
         <li><b>Dependencies:</b> ${target.deps?.join(', ') ?? '–'}</li>
+        <li><b>Tests:</b> ${target.tests?.join(', ') ?? '–'}</li>
         <li><b>Srcs:</b> ${target.srcs?.join(', ') ?? '–'}</li>
         <li><b>Location:</b> ${target.location ?? '–'}</li>
       </ul>

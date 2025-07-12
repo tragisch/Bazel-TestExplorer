@@ -39,8 +39,9 @@ function sanitizeQueryPaths(queryPaths: string[]): string[] {
 }
 
 function buildBazelQueries(paths: string[], testTypes: string[]): string[] {
+  const allTypes = [...new Set([...testTypes, "test_suite"])];
   return paths.map(path =>
-    `"${testTypes.map(type => `kind(${type}, ${path}...)`).join(" union ")}"`
+    `"${allTypes.map(type => `kind(${type}, ${path}...)`).join(" union ")}"`
   );
 }
 
@@ -75,7 +76,6 @@ function parseBazelLine(line: string): void {
 
     const rule = target.rule;
     const targetName = rule.name;
-    // const tags = getAttribute(rule, "tags")?.stringListValue?.value ?? [];
 
     testMap.set(targetName, {
       target: targetName,
@@ -88,6 +88,7 @@ function parseBazelLine(line: string): void {
       flaky: getAttribute(rule, "flaky")?.booleanValue ?? false,
       toolchain: getAttribute(rule, "$cc_toolchain")?.stringValue ?? undefined,
       deps: getAttribute(rule, "deps")?.stringListValue ?? [],
+      tests: getAttribute(rule, "tests")?.stringListValue ?? [],
       visibility: getAttribute(rule, "visibility")?.stringListValue ?? []
     });
   } catch (e) {

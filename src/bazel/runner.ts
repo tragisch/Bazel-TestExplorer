@@ -24,9 +24,66 @@ export const executeBazelTest = async (
   run: vscode.TestRun
 ) => {
   try {
+    const typeMatch = testItem.label.match(/\[(.*?)\]/);
+    const testType = typeMatch?.[1] ?? "";
+    const isSuite = testType === "test_suite";
+
     const { code, stdout, stderr } = await measure(`Execute test: ${testItem.id}`, () =>
       initiateBazelTest(testItem.id, workspacePath, run, testItem)
     );
+
+    if (isSuite) {
+      const resultLines = stdout.split(/\r?\n/).filter(line => line.match(/^\/\/.* (PASSED|FAILED|TIMEOUT|FLAKY)/));
+
+      let passed = 0;
+      let failed = 0;
+
+      const rows = resultLines.map(line => {
+        const parts = line.trim().split(/\s+/);
+
+        let target: string;
+        let status: "PASSED" | "FAILED" | "TIMEOUT" | "FLAKY" | string;
+        let isCached: string;
+        let testTime: string;
+
+        if (parts.length === 5) {
+          target = parts[0];
+          isCached = parts[1];
+          status = parts[2];
+          testTime = parts[4];
+        } else {
+          target = parts[0];
+          status = parts[1];
+          isCached = "";
+          testTime = parts[3];
+        }
+
+        const symbolMap: Record<string, string> = {
+          PASSED: "✅ Passed",
+          FAILED: "❌ Failed",
+          TIMEOUT: "⏱ Timeout",
+          FLAKY: "⚠️ Flaky",
+        };
+        const symbol = symbolMap[status] ?? `${status}`;
+
+        if (status === "PASSED") passed++;
+        else if (status === "FAILED") failed++;
+
+        return `${target}  : ${symbol} (${isCached ? "cached, " : ""}${testTime})`;
+      });
+
+      const summaryHeader = `🧪 Test-Suite: ${testItem.id} : ${passed} Passed / ${failed} Failed`;
+      const resultBlock = [summaryHeader, "────────────────────────────────────────────", ...rows].join("\n");
+
+      const statusMessage = new vscode.TestMessage(`🧪 Suite Result:\n\n${resultBlock}`);
+      if (code === 0) {
+        run.passed(testItem);
+      } else {
+        run.failed(testItem, statusMessage);
+      }
+      run.appendOutput(resultBlock.replace(/\r?\n/g, '\r\n') + '\r\n', undefined, testItem);
+      return;
+    }
 
     //clear testresult window
 
@@ -84,7 +141,7 @@ export const initiateBazelTest = async (
 
   const config = vscode.workspace.getConfiguration("bazelTestRunner");
   const additionalArgs: string[] = config.get("testArgs", []);
-  const args = ['test', effectiveTestId, '--test_output=all', ...additionalArgs];
+  const args = ['test', effectiveTestId, '--test_output=all --test_verbose_timeout_warnings', ...additionalArgs];
 
   return runBazelCommand(
     args,

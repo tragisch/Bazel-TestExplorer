@@ -45,9 +45,15 @@ export const discoverAndDisplayTests = async (
       }
     });
 
-    testEntries.forEach(({ target, type, tags }) => {
-      addTestItemToController(controller, target, type, tags ?? [], packageItemCache);
-    });
+    testEntries
+      .sort((a, b) => {
+        const aIsSuite = a.type === "test_suite" ? -1 : 0;
+        const bIsSuite = b.type === "test_suite" ? -1 : 0;
+        return aIsSuite - bIsSuite || a.target.localeCompare(b.target);
+      })
+      .forEach(({ target, type, tags }) => {
+        addTestItemToController(controller, target, type, tags ?? [], packageItemCache);
+      });
 
     const newTestIds: string[] = [];
     controller.items.forEach((item) => {
@@ -115,7 +121,8 @@ export const addTestItemToController = (
     ? vscode.Uri.file(guessedFilePath)
     : undefined;
 
-  const testItem = controller.createTestItem(target, `${testTypeLabel} ${testName}`, uri);
+  const icon = testType === "test_suite" ? "🧪" : "";
+  const testItem = controller.createTestItem(target, `${icon} ${testTypeLabel} ${testName}`, uri);
   packageItem.children.add(testItem);
 
   testItem.busy = false;
