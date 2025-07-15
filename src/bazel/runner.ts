@@ -15,6 +15,19 @@ import { logWithTimestamp, measure, formatError } from '../logging';
 import { log } from 'console';
 
 // ───────────────────────────────────────────────────────────────
+// Bazel Test Configuration
+// ───────────────────────────────────────────────────────────────
+
+/**
+ * Default flags for Bazel test execution
+ */
+const DEFAULT_BAZEL_TEST_FLAGS = [
+  '--test_output=all',
+  '--test_summary=detailed',
+  '--test_verbose_timeout_warnings'
+] as const;
+
+// ───────────────────────────────────────────────────────────────
 // Public API
 // ───────────────────────────────────────────────────────────────
 
@@ -141,7 +154,7 @@ export const initiateBazelTest = async (
 
   const config = vscode.workspace.getConfiguration("bazelTestRunner");
   const additionalArgs: string[] = config.get("testArgs", []);
-  const args = ['test', effectiveTestId, '--test_output=all --test_verbose_timeout_warnings', ...additionalArgs];
+  const args = ['test', effectiveTestId, ...DEFAULT_BAZEL_TEST_FLAGS, ...additionalArgs];
 
   return runBazelCommand(
     args,

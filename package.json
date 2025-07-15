@@ -2,7 +2,7 @@
   "name": "bazel-testexplorer",
   "displayName": "Bazel-TestExplorer",
   "description": "A VS Code extension to run and manage Bazel tests.",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "icon": "images/icon_Bazel_TestExplorer.png",
   "engines": {
     "vscode": "^1.99.0"

@@ -2,13 +2,15 @@
 
 All notable changes to the "bazel-unity-test" extension will be documented here.
 
-## [0.1.12]
-- fix issues in gutter annotations
-- add Filter for test-tags, i.e. @smoke, @release, ...
+## [0.1.13]
+- fix issues.
+- add support for test_suites
 
-## [0.1.1 - 0.1.11]
+
+## [0.1.1 - 0.1.12]
 
 ### Added
+- Add Filter for test-tags, i.e. @smoke, @release, ...
 - Bazel test args for settings, i.e. '--config=linux'
 - Automatic detection of Workspace file.
 - Meta-Data for test types, i.e. 'rust_test', 'py_test', ..

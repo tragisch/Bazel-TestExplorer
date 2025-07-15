@@ -16,9 +16,5 @@ vsc-extension-quickstart.md
 .DS_Store
 Thumbs.db
 
-# Lokale Release-Notizen
-CHANGELOG.md
-README.md  # Optional, wenn du ein separates Marketplace-README verwendest
-
 # Lizenz evtl. drinlassen, je nach Policy
 # LICENSE
