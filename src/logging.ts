@@ -16,8 +16,16 @@ export const initializeLogger = (): vscode.OutputChannel => {
 };
 
 export const logWithTimestamp = (message: string, level: "info" | "warn" | "error" = "info") => {
-    const now = new Date().toISOString().replace("T", " ").replace("Z", "");
-    const timestamp = `${now} `;
+    const now = new Date();
+    const timestamp = now.toLocaleString(undefined, {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+    });
     let tag = `[Info] `;
     if (level === "warn") tag = `[Warn] `;
     if (level === "error") tag = `[Error] `;
