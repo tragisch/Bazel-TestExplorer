@@ -7,10 +7,11 @@
  */
 
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { initializeLogger, logWithTimestamp, formatError, measure } from './logging';
 import { findBazelWorkspace } from './bazel/workspace';
 import { queryBazelTestTargets } from './bazel/queries';
-import { executeBazelTest } from './bazel/runner';
+import { executeBazelTest, discoverIndividualTestCases } from './bazel/runner';
 import { discoverAndDisplayTests } from './explorer/testTree';
 import { showTestMetadataById } from './explorer/testInfoPanel';
 
@@ -25,6 +26,67 @@ export function activate(context: vscode.ExtensionContext) {
 
 	bazelTestController = vscode.tests.createTestController('bazelUnityTestController', 'Bazel Unity Tests');
 	context.subscriptions.push(bazelTestController);
+
+	bazelTestController.resolveHandler = async (item) => {
+		if (!item) {
+			// Root discovery - discover all test targets
+			await discoverAndDisplayTests(bazelTestController);
+			return;
+		}
+
+		// Individual test case discovery for a specific test item
+		const workspacePath = await findBazelWorkspace();
+		if (!workspacePath) {
+			logWithTimestamp("No Bazel workspace found during resolve");
+			return;
+		}
+
+		// Only resolve children for non-test_suite targets
+		const typeMatch = item.label.match(/\[(.*?)\]/);
+		const testType = typeMatch?.[1] ?? "";
+
+		// Skip if children are already resolved
+		if (item.children.size > 0) {
+			logWithTimestamp(`Children already present for ${item.id}; skip discovery.`);
+			return;
+		}
+
+		if (testType === "test_suite") {
+			return; // Test suites don't have individual test cases
+		}
+
+		try {
+			logWithTimestamp(`Resolving children for ${item.id}`);
+			const result = await discoverIndividualTestCases(item.id, workspacePath, testType);
+
+			// Add individual test cases as children
+			for (const testCase of result.testCases) {
+				const testCaseId = `${item.id}::${testCase.name}`;
+				const existing = item.children.get(testCaseId);
+
+				if (!existing) {
+					const statusIcon = '🧪';  //testCase.status === 'FAIL' ? '❌' : testCase.status === 'PASS' ? '✅' : '🔘';
+					const testCaseItem = bazelTestController.createTestItem(
+						testCaseId,
+						`${statusIcon} ${testCase.name}`,
+						vscode.Uri.file(path.join(workspacePath, testCase.file))
+					);
+
+					testCaseItem.range = new vscode.Range(
+						new vscode.Position(testCase.line - 1, 0),
+						new vscode.Position(testCase.line - 1, 0)
+					);
+
+					testCaseItem.description = `Line ${testCase.line}`;
+					testCaseItem.canResolveChildren = false;
+
+					item.children.add(testCaseItem);
+				}
+			}
+		} catch (error) {
+			logWithTimestamp(`Failed to resolve children for ${item.id}: ${formatError(error)}`);
+		}
+	};
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand("extension.reloadBazelTests", async () => {
@@ -60,9 +122,19 @@ export function activate(context: vscode.ExtensionContext) {
 		})
 	);
 
+	// Throttle focus-based reloads
+	let lastReloadAt = 0;
+	const RELOAD_DEBOUNCE_MS = 5000; // configurable later via settings
+	let isDiscoveringTests = false; // Used for debounce
 	context.subscriptions.push(
 		vscode.window.onDidChangeWindowState((windowState) => {
 			if (windowState.focused) {
+				const now = Date.now();
+				if (now - lastReloadAt < RELOAD_DEBOUNCE_MS || isDiscoveringTests) {
+					logWithTimestamp("🔄 Window focus: debounce/skip reload.");
+					return;
+				}
+				lastReloadAt = now;
 				logWithTimestamp("🔄 Window focus regained, reloading Bazel tests...");
 				vscode.commands.executeCommand("extension.reloadBazelTests");
 			}

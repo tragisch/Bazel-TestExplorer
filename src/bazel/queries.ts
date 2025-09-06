@@ -6,6 +6,8 @@
  * See the LICENSE file in the root directory for details.
  */
 
+// Bazel query: 
+
 import * as vscode from 'vscode';
 import { BazelTestTarget } from './types';
 import { logWithTimestamp, measure } from '../logging';

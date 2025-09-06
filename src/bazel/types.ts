@@ -20,3 +20,36 @@ export interface BazelTestTarget {
     tests?: string[];
     visibility?: string[];
 }
+
+/**
+ * Represents an individual test case within a Bazel test target
+ */
+export interface IndividualTestCase {
+    /** The name of the test case (e.g., "test_sm_create") */
+    name: string;
+    /** File path where the test is defined */
+    file: string;
+    /** Line number where the test is defined */
+    line: number;
+    /** The parent Bazel target (e.g., "//app/matrix:test_sm") */
+    parentTarget: string;
+    /** Status of the test case: PASS, FAIL, etc. */
+    status?: 'PASS' | 'FAIL' | 'TIMEOUT' | 'SKIP';
+    /** Error message if the test failed */
+    errorMessage?: string;
+}
+
+/**
+ * Result of parsing Bazel test output for individual test cases
+ */
+export interface TestCaseParseResult {
+    /** List of individual test cases found */
+    testCases: IndividualTestCase[];
+    /** Summary information */
+    summary: {
+        total: number;
+        passed: number;
+        failed: number;
+        ignored: number;
+    };
+}

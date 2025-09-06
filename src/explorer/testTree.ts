@@ -121,12 +121,12 @@ export const addTestItemToController = (
     ? vscode.Uri.file(guessedFilePath)
     : undefined;
 
-  const icon = testType === "test_suite" ? "🧪" : "";
+  const icon = testType === "test_suite" ? "🗂️" : "";
   const testItem = controller.createTestItem(target, `${icon} ${testTypeLabel} ${testName}`, uri);
   packageItem.children.add(testItem);
 
   testItem.busy = false;
-  testItem.canResolveChildren = false;
+  testItem.canResolveChildren = testType !== "test_suite"; // Non-suite tests can have individual test cases
 
   // Add command to show metadata when selected
   testItem.tags = ["bazel", ...(tags || [])].map(t => new vscode.TestTag(t));
