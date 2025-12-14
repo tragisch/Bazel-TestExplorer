@@ -1,15 +1,3 @@
-// Mapping from Bazel rule/test type to allowed pattern IDs
-// Note: Many C/C++ tests (cc_test) can use different frameworks (Unity, gtest, catch2, etc.).
-// Therefore we include Unity patterns for cc_test as well.
-const PATTERN_IDS_BY_TEST_TYPE: Record<string, string[]> = {
-  unity_test: ["unity_c_standard", "unity_c_with_message"],
-  cc_test: ["unity_c_standard", "unity_c_with_message", "gtest_cpp", "parentheses_format"],
-  py_test: ["pytest_python"],
-  rust_test: ["rust_test"],
-  go_test: ["go_test"],
-  java_test: ["junit_java"],
-};
-
 /*
  * Copyright (c) 2025 @tragisch <https://github.com/tragisch>
  * SPDX-License-Identifier: MIT
@@ -19,14 +7,15 @@ const PATTERN_IDS_BY_TEST_TYPE: Record<string, string[]> = {
  */
 
 import * as vscode from 'vscode';
-import * as cp from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import { runBazelCommand } from './process';
 import { logWithTimestamp, measure, formatError } from '../logging';
-import { log } from 'console';
+import { analyzeTestFailures } from './parseFailures';
 import { IndividualTestCase, TestCaseParseResult } from './types';
-import { getAllTestPatterns, normalizeStatus, TestCasePattern } from './testPatterns';
+import { PATTERN_IDS_BY_TEST_TYPE, getAllTestPatterns, TestCasePattern } from './testPatterns';
+import { discoverIndividualTestCases } from './discovery';
+import { splitOutputLines, extractTestCasesFromOutput } from './parseOutput';
 
 // ───────────────────────────────────────────────────────────────
 // Bazel Test Configuration
@@ -42,25 +31,216 @@ const DEFAULT_BAZEL_TEST_FLAGS = [
 ] as const;
 
 // ───────────────────────────────────────────────────────────────
-// Discovery cache for test case discovery
+// Suite summary helpers
 // ───────────────────────────────────────────────────────────────
 
-interface CacheEntry { result: TestCaseParseResult; stdoutHash: string; timestamp: number; }
-const discoveryCache = new Map<string, CacheEntry>();
-const DISCOVERY_CACHE_MS_DEFAULT = 15000;
+const extractSuiteSummaryFromStdout = (stdout: string) => {
+  const resultLines = stdout
+    .split(/\r?\n/)
+    .filter(line => line.match(/^\/\/.* (PASSED|FAILED|TIMEOUT|FLAKY)/));
 
-// Get the discovery cache TTL from configuration or use default
-function getDiscoveryTtlMs(): number {
-  try {
-    const vscode = require('vscode');
-    const cfg = vscode.workspace.getConfiguration('bazelTestRunner');
-    return (cfg.get('discoveryCacheMs', DISCOVERY_CACHE_MS_DEFAULT) as number);
-  } catch { return DISCOVERY_CACHE_MS_DEFAULT; }
+  let passed = 0;
+  let failed = 0;
+
+  const rows = resultLines.map(line => {
+    const parts = line.trim().split(/\s+/);
+
+    let target: string;
+    let status: 'PASSED' | 'FAILED' | 'TIMEOUT' | 'FLAKY' | string;
+    let isCached: string;
+    let testTime: string;
+
+    if (parts.length === 5) {
+      target = parts[0];
+      isCached = parts[1];
+      status = parts[2];
+      testTime = parts[4];
+    } else {
+      target = parts[0];
+      status = parts[1];
+      isCached = '';
+      testTime = parts[3];
+    }
+
+    const symbolMap: Record<string, string> = {
+      PASSED: '✅ Passed',
+      FAILED: '❌ Failed',
+      TIMEOUT: '⏱ Timeout',
+      FLAKY: '⚠️ Flaky',
+    };
+    const symbol = symbolMap[status] ?? `${status}`;
+
+    if (status === 'PASSED') passed++;
+    else if (status === 'FAILED') failed++;
+
+    return `${target}  : ${symbol} (${isCached ? 'cached, ' : ''}${testTime})`;
+  });
+
+  return { rows, passed, failed };
+};
+
+const emitSuiteResult = (
+  run: vscode.TestRun,
+  testItem: vscode.TestItem,
+  code: number,
+  rows: string[],
+  passed: number,
+  failed: number
+) => {
+  const summaryHeader = `🗂️ Test-Suite: ${testItem.id} : ${passed} Passed / ${failed} Failed`;
+  const resultBlock = [summaryHeader, '────────────────────────────────────────────', ...rows].join('\n');
+
+  const statusMessage = new vscode.TestMessage(`Suite Result:\n\n${resultBlock}`);
+  if (code === 0) {
+    run.passed(testItem);
+  } else {
+    run.failed(testItem, statusMessage);
+  }
+  run.appendOutput(resultBlock.replace(/\r?\n/g, '\r\n') + '\r\n', undefined, testItem);
+};
+
+// ───────────────────────────────────────────────────────────────
+// Small helpers to reduce duplication
+// ───────────────────────────────────────────────────────────────
+
+const combineOutputs = (stdout: string, stderr: string): string =>
+  [stdout, stderr].filter(Boolean).join('\n');
+
+const appendOutputBlock = (
+  run: vscode.TestRun,
+  testItem: vscode.TestItem,
+  code: number,
+  lines: string[]
+) => {
+  if (!lines || lines.length === 0) return;
+  const block = [
+    getStatusHeader(code, testItem.id),
+    '----- BEGIN OUTPUT -----',
+    ...lines,
+    '------ END OUTPUT ------'
+  ].join('\n');
+  run.appendOutput(block.replace(/\r?\n/g, '\r\n') + '\r\n', undefined, testItem);
+};
+
+const parseCasesWithFallback = (
+  combined: string,
+  targetId: string,
+  allowedPatternIds: string[] | undefined,
+  warnContext?: string
+) => {
+  let result = extractTestCasesFromOutput(combined, targetId, allowedPatternIds);
+  if (allowedPatternIds && result.testCases.length === 0) {
+    if (warnContext) {
+      logWithTimestamp(warnContext, 'warn');
+    }
+    result = extractTestCasesFromOutput(combined, targetId, undefined);
+  }
+  return result;
+};
+
+const setFailedWithLocation = (
+  run: vscode.TestRun,
+  item: vscode.TestItem,
+  workspacePath: string,
+  message: string,
+  file?: string,
+  line?: number
+) => {
+  const testMessage = new vscode.TestMessage(message);
+  if (file) {
+    const fullPath = path.isAbsolute(file) ? file : path.join(workspacePath, file);
+    if (fs.existsSync(fullPath)) {
+      const uri = vscode.Uri.file(fullPath);
+      const lineZeroBased = Math.max(0, (line || 0) - 1);
+      testMessage.location = new vscode.Location(uri, new vscode.Position(lineZeroBased, 0));
+    }
+  }
+  run.failed(item, testMessage);
+};
+
+// Build a framework-aware filter for individual tests based on pattern templates.
+function buildIndividualFilter(
+  testCaseName: string,
+  allowedPatternIds?: string[],
+  context?: { suite?: string; className?: string; file?: string; targetId?: string; preferredPatternId?: string }
+): string {
+  const patterns = getAllTestPatterns();
+  const byId = new Map<string, TestCasePattern>(patterns.map(p => [p.id, p]));
+  // If a specific framework/pattern is known, use it directly
+  if (context?.preferredPatternId && byId.has(context.preferredPatternId)) {
+    const p = byId.get(context.preferredPatternId)!;
+    const template = p.filterTemplate || '${name}';
+    const replace = (tpl: string) =>
+      tpl
+        .replace(/\$\{name\}/g, testCaseName)
+        .replace(/\$\{suite\}/g, (context?.suite && context.suite.length ? context.suite : '*'))
+        .replace(/\$\{class\}/g, (context?.className && context.className.length ? context.className : '*'))
+        .replace(/\$\{file\}/g, (context?.file && context.file.length ? context.file : '*'));
+    return replace(template);
+  }
+
+  const pool: TestCasePattern[] = (allowedPatternIds && allowedPatternIds.length)
+    ? allowedPatternIds.map(id => byId.get(id)).filter((p): p is TestCasePattern => !!p)
+    : patterns;
+  const candidates = pool.filter(p => p.supportsIndividual !== false && !!p.filterTemplate);
+  // Prefer templates that require extra context (suite/class/file) over plain name-only templates
+  const prefersContext = (tpl: string) => /\$\{suite\}|\$\{class\}|\$\{file\}/.test(tpl);
+  const candidate = candidates.find(p => prefersContext(p.filterTemplate!)) || candidates[0];
+  let template = candidate?.filterTemplate || '${name}';
+  // Heuristic: if target path hints at gtest and no better template was chosen, prefer gtest style
+  if (template === '${name}' && context?.targetId && /(^|\/)gtest(:|\/)/.test(context.targetId)) {
+    template = '${suite}.${name}';
+  }
+  const replace = (tpl: string) =>
+    tpl
+      .replace(/\$\{name\}/g, testCaseName)
+      .replace(/\$\{suite\}/g, (context?.suite && context.suite.length ? context.suite : '*'))
+      .replace(/\$\{class\}/g, (context?.className && context.className.length ? context.className : '*'))
+      .replace(/\$\{file\}/g, (context?.file && context.file.length ? context.file : '*'));
+  return replace(template);
 }
 
-function sha1(input: string): string {
-  const crypto = require('crypto');
-  return crypto.createHash('sha1').update(input).digest('hex');
+export function callRunBazelCommandForTest(opts: {
+  testId: string;             // Bazel target id, e.g. //pkg:test or //pkg
+  cwd: string;                // working directory (workspace root)
+  filter?: string;            // optional --test_filter value for individual test case
+  logCommand?: boolean;       // default true
+  collectStdout?: boolean;    // default true
+  collectStderr?: boolean;    // default true
+  extraArgs?: string[];       // additional args appended after defaults
+}): Promise<{ code: number; stdout: string; stderr: string }>;
+export async function callRunBazelCommandForTest(
+  opts: { testId: string; cwd: string; filter?: string; logCommand?: boolean; collectStdout?: boolean; collectStderr?: boolean; extraArgs?: string[] }
+): Promise<{ code: number; stdout: string; stderr: string }> {
+
+  let effectiveTestId = opts.testId;
+
+  // Expand package paths like "//pkg" or "//" to recursive selectors
+  if (/^\/\/[^:]*$/.test(effectiveTestId)) {
+    if (effectiveTestId === '//') {
+      effectiveTestId = '//...';
+    } else if (!effectiveTestId.endsWith('/...')) {
+      effectiveTestId = `${effectiveTestId}/...`;
+    }
+  }
+
+  const config = vscode.workspace.getConfiguration('bazelTestRunner');
+  const configArgs: string[] = config.get('testArgs', []);
+
+  const args = ['test', effectiveTestId, ...DEFAULT_BAZEL_TEST_FLAGS];
+  if (opts.filter && opts.filter.length > 0) {
+    args.push(`--test_filter=${opts.filter}`);
+  }
+  if (Array.isArray(opts.extraArgs) && opts.extraArgs.length > 0) {
+    args.push(...opts.extraArgs);
+  }
+  args.push(...configArgs);
+
+  return runBazelCommand(args, opts.cwd, {
+    logCommand: opts.logCommand !== false,
+    collectStdout: opts.collectStdout !== false,
+    collectStderr: opts.collectStderr !== false,
+  });
 }
 
 // ───────────────────────────────────────────────────────────────
@@ -73,286 +253,20 @@ export const executeBazelTest = async (
   run: vscode.TestRun
 ) => {
   try {
-    // Check if this is an individual test case (contains "::")
+
+    // Check if this is an individual test case (contains "::") and run
     const isIndividualTestCase = testItem.id.includes('::');
 
     if (isIndividualTestCase) {
       await executeIndividualTestCase(testItem, workspacePath, run);
-      return;
+    } else {
+      await executeTestTarget(testItem, workspacePath, run);
     }
-
-    const typeMatch = testItem.label.match(/\[(.*?)\]/);
-    const testType = typeMatch?.[1] ?? "";
-    const isSuite = testType === "test_suite";
-
-    const { code, stdout, stderr } = await measure(`Execute test: ${testItem.id}`, () =>
-      initiateBazelTest(testItem.id, workspacePath, run, testItem)
-    );
-
-    if (isSuite) {
-      // ...existing suite handling code...
-      const resultLines = stdout.split(/\r?\n/).filter(line => line.match(/^\/\/.* (PASSED|FAILED|TIMEOUT|FLAKY)/));
-
-      let passed = 0;
-      let failed = 0;
-
-      const rows = resultLines.map(line => {
-        const parts = line.trim().split(/\s+/);
-
-        let target: string;
-        let status: "PASSED" | "FAILED" | "TIMEOUT" | "FLAKY" | string;
-        let isCached: string;
-        let testTime: string;
-
-        if (parts.length === 5) {
-          target = parts[0];
-          isCached = parts[1];
-          status = parts[2];
-          testTime = parts[4];
-        } else {
-          target = parts[0];
-          status = parts[1];
-          isCached = "";
-          testTime = parts[3];
-        }
-
-        const symbolMap: Record<string, string> = {
-          PASSED: "✅ Passed",
-          FAILED: "❌ Failed",
-          TIMEOUT: "⏱ Timeout",
-          FLAKY: "⚠️ Flaky",
-        };
-        const symbol = symbolMap[status] ?? `${status}`;
-
-        if (status === "PASSED") passed++;
-        else if (status === "FAILED") failed++;
-
-        return `${target}  : ${symbol} (${isCached ? "cached, " : ""}${testTime})`;
-      });
-
-      const summaryHeader = `🗂️ Test-Suite: ${testItem.id} : ${passed} Passed / ${failed} Failed`;
-      const resultBlock = [summaryHeader, "────────────────────────────────────────────", ...rows].join("\n");
-
-      const statusMessage = new vscode.TestMessage(`Suite Result:\n\n${resultBlock}`);
-      if (code === 0) {
-        run.passed(testItem);
-      } else {
-        run.failed(testItem, statusMessage);
-      }
-      run.appendOutput(resultBlock.replace(/\r?\n/g, '\r\n') + '\r\n', undefined, testItem);
-      return;
-    }
-
-    // Handle regular test targets - parse individual test cases and update their status
-    await executeTargetWithIndividualTestCases(testItem, workspacePath, run, code, stdout, stderr);
 
   } catch (error) {
     const message = formatError(error);
     logWithTimestamp(`Error executing test ${testItem.id}: ${message}`, "error");
     run.failed(testItem, new vscode.TestMessage(message));
-  }
-};
-
-export const initiateBazelTest = async (
-  testId: string,
-  cwd: string,
-  run: vscode.TestRun,
-  testItem: vscode.TestItem
-): Promise<{ code: number; stdout: string; stderr: string }> => {
-  let effectiveTestId = testId;
-
-  if (/^\/\/[^:]*$/.test(testId)) {
-    effectiveTestId = `${testId}//...`;
-  }
-
-  const config = vscode.workspace.getConfiguration("bazelTestRunner");
-  const additionalArgs: string[] = config.get("testArgs", []);
-  const args = ['test', effectiveTestId, ...DEFAULT_BAZEL_TEST_FLAGS, ...additionalArgs];
-
-  return runBazelCommand(
-    args,
-    cwd,
-  );
-};
-
-
-
-export const parseBazelOutput = (stdout: string): { input: string[] } => {
-  const input: string[] = [];
-  stdout.split(/\r?\n/).forEach(line => {
-    input.push(
-      line
-    );
-  });
-  return { input };
-};
-
-/**
- * Parses Bazel test output to extract individual test cases using configurable patterns
- * @param stdout 
- * @param parentTarget 
- * @param allowedPatternIds restricts patterns to those with matching id (optional)
- */
-export const parseIndividualTestCases = (
-  stdout: string,
-  parentTarget: string,
-  allowedPatternIds?: string[]
-): TestCaseParseResult => {
-  const lines = stdout.split(/\r?\n/);
-  const testCases: IndividualTestCase[] = [];
-
-  // Get all available test patterns, filter if allowedPatternIds given
-  const all = getAllTestPatterns();
-  const testPatterns = allowedPatternIds && allowedPatternIds.length
-    ? all.filter(p => allowedPatternIds.includes(p.id))
-    : all;
-
-  let totalTests = 0;
-  let passedTests = 0;
-  let failedTests = 0;
-  let ignoredTests = 0;
-
-  for (const line of lines) {
-    let bestMatch: {
-      match: RegExpMatchArray;
-      pattern: TestCasePattern;
-    } | null = null;
-
-    // Try each pattern until we find a match
-    for (const testPattern of testPatterns) {
-      const match = line.match(testPattern.pattern);
-      if (match) {
-        // Prefer more specific matches (longer matched strings)
-        if (!bestMatch || match[0].length > bestMatch.match[0].length) {
-          bestMatch = { match, pattern: testPattern };
-        }
-      }
-    }
-
-    if (bestMatch) {
-      const { match, pattern } = bestMatch;
-      const groups = pattern.groups;
-
-      // Extract information based on pattern configuration
-      const file = groups.file > 0 ? match[groups.file] : '';
-      const lineStr = groups.line > 0 ? match[groups.line] : '0';
-      const testName = match[groups.testName] || '';
-      const rawStatus = match[groups.status] || 'FAIL';
-      const errorMessage = groups.message && groups.message > 0 ? match[groups.message] : undefined;
-
-      // Normalize status to common format
-      const status = normalizeStatus(rawStatus);
-
-      // Skip if essential information is missing
-      if (!testName) {
-        continue;
-      }
-
-      const testCase: IndividualTestCase = {
-        name: testName,
-        file: file,
-        line: parseInt(lineStr, 10) || 0,
-        parentTarget: parentTarget,
-        status: status,
-        errorMessage: errorMessage?.trim()
-      };
-
-      testCases.push(testCase);
-      totalTests++;
-
-      // Log which pattern was used for debugging (only if debug env set)
-      if (process.env.BAZEL_TESTEXPLORER_DEBUG === '1') {
-        logWithTimestamp(`Matched test case "${testName}" using pattern: ${pattern.framework} (${pattern.id})`);
-      }
-
-      switch (status) {
-        case 'PASS':
-          passedTests++;
-          break;
-        case 'FAIL':
-        case 'TIMEOUT':
-          failedTests++;
-          break;
-        case 'SKIP':
-          ignoredTests++;
-          break;
-      }
-    }
-  }
-
-  // Parse summary line if available (e.g., "38 Tests 1 Failures 0 Ignored")
-  const summaryPattern = /(\d+)\s+Tests?\s+(\d+)\s+Failures?\s+(\d+)\s+Ignored/;
-  for (const line of lines) {
-    const summaryMatch = line.match(summaryPattern);
-    if (summaryMatch) {
-      totalTests = parseInt(summaryMatch[1], 10);
-      failedTests = parseInt(summaryMatch[2], 10);
-      ignoredTests = parseInt(summaryMatch[3], 10);
-      passedTests = totalTests - failedTests - ignoredTests;
-      break;
-    }
-  }
-
-  logWithTimestamp(`Parsed ${testCases.length} individual test cases from ${parentTarget}`);
-
-  return {
-    testCases,
-    summary: {
-      total: totalTests,
-      passed: passedTests,
-      failed: failedTests,
-      ignored: ignoredTests
-    }
-  };
-};
-
-/**
- * Discovers individual test cases within a Bazel test target
- * by running the test with --test_output=all and parsing the results.
- * Uses a cache to avoid repeated discovery.
- * @param testTarget 
- * @param workspacePath 
- * @param testType - Bazel rule/test type (optional)
- */
-export const discoverIndividualTestCases = async (
-  testTarget: string,
-  workspacePath: string,
-  testType?: string
-): Promise<TestCaseParseResult> => {
-  try {
-    const ttl = getDiscoveryTtlMs();
-    const cache = discoveryCache.get(testTarget);
-    if (cache && (Date.now() - cache.timestamp) < ttl) {
-      logWithTimestamp(`Using cached test case discovery for ${testTarget}`);
-      return cache.result;
-    }
-
-    logWithTimestamp(`Discovering individual test cases for ${testTarget}`);
-
-    // Run the test to get output with individual test case results
-    const { stdout, stderr } = await runBazelCommand(
-      ['test', testTarget, ...DEFAULT_BAZEL_TEST_FLAGS],
-      workspacePath
-    );
-
-    const combined = [stdout, stderr].filter(Boolean).join("\n");
-    const allowed = testType ? PATTERN_IDS_BY_TEST_TYPE[testType] : undefined;
-    let result = parseIndividualTestCases(combined, testTarget, allowed);
-    if (allowed && result.testCases.length === 0) {
-      logWithTimestamp(`No test cases matched with restricted patterns for ${testTarget} [${testType}]. Trying all patterns as fallback.`, "warn");
-      result = parseIndividualTestCases(combined, testTarget, undefined);
-    }
-    const entry: CacheEntry = { result, stdoutHash: sha1(stdout), timestamp: Date.now() };
-    discoveryCache.set(testTarget, entry);
-
-    logWithTimestamp(`Found ${result.testCases.length} test cases in ${testTarget}`);
-    return result;
-  } catch (error) {
-    logWithTimestamp(`Failed to discover test cases for ${testTarget}: ${formatError(error)}`);
-    return {
-      testCases: [],
-      summary: { total: 0, passed: 0, failed: 0, ignored: 0 }
-    };
   }
 };
 
@@ -369,89 +283,69 @@ export const executeIndividualTestCase = async (
   try {
     logWithTimestamp(`Executing individual test case: ${testCaseName} in ${parentTarget} using --test_filter`);
 
-    // Use --test_filter to run only the specific test case
-    const config = vscode.workspace.getConfiguration("bazelTestRunner");
-    const additionalArgs: string[] = config.get("testArgs", []);
-
-    const testTypeMatch = testItem.label.match(/\[(.*?)\]/);
-    const testType = testTypeMatch?.[1];
+    // try to discover test type from parent label
+    const parentLabel = (testItem as any).parent?.label ?? testItem.label;
+    const testType = /\[(.*?)\]/.exec(parentLabel)?.[1];
     const allowedPatternIds = PATTERN_IDS_BY_TEST_TYPE[testType || ''];
 
-    const testFilterArgs = [
-      'test',
+    // Try to discover exact framework/context for precise filter building
+    let preferredPatternId: string | undefined;
+    let suite: string | undefined;
+    let className: string | undefined;
+    let file: string | undefined;
+    try {
+      const discovery = await discoverIndividualTestCases(parentTarget, workspacePath, testType);
+      const discovered = discovery.testCases.find(tc => tc.name === testCaseName);
+      if (discovered) {
+        preferredPatternId = discovered.frameworkId;
+        suite = discovered.suite;
+        className = discovered.className;
+        file = discovered.file;
+      }
+    } catch {}
+
+    const filter = buildIndividualFilter(testCaseName, allowedPatternIds, {
+      targetId: parentTarget,
+      preferredPatternId,
+      suite,
+      className,
+      file,
+    });
+
+    const { code, stdout, stderr } = await callRunBazelCommandForTest({
+      testId: parentTarget,
+      cwd: workspacePath,
+      filter
+    });
+
+    const combined = combineOutputs(stdout, stderr);
+    const result = parseCasesWithFallback(
+      combined,
       parentTarget,
-      ...DEFAULT_BAZEL_TEST_FLAGS,
-      `--test_filter=${testCaseName}`,
-      ...additionalArgs
-    ];
+      allowedPatternIds,
+      `No test cases matched with restricted patterns for ${parentTarget} using --test_filter. Trying all patterns as fallback.`
+    );
 
-    logWithTimestamp(`Running Bazel command: bazel ${testFilterArgs.join(' ')}`);
-
-    const { code, stdout, stderr } = await runBazelCommand(testFilterArgs, workspacePath);
-
-    const combined = [stdout, stderr].filter(Boolean).join("\n");
-    let result = parseIndividualTestCases(combined, parentTarget, allowedPatternIds);
-    if (allowedPatternIds && result.testCases.length === 0) {
-      logWithTimestamp(`No test cases matched with restricted patterns for ${parentTarget} using --test_filter. Trying all patterns as fallback.`, "warn");
-      result = parseIndividualTestCases(combined, parentTarget, undefined);
-    }
     const targetTestCase = result.testCases.find(tc => tc.name === testCaseName);
 
+    const testLog = splitOutputLines(stdout);
+    appendOutputBlock(run, testItem, code, testLog);
+
     if (!targetTestCase) {
-      // If the specific test case isn't found, it might still be in the summary
-      // or the test runner might use different output format
-      const { input: testLog } = parseBazelOutput(stdout);
-      const { input: bazelLog } = parseBazelOutput(stderr);
-
-      const combinedOutput = [...testLog, ...bazelLog].join('\n');
-
       if (code === 0) {
         run.passed(testItem);
       } else {
         run.failed(testItem, new vscode.TestMessage(`Test case ${testCaseName} execution completed with code ${code}`));
       }
-
-      const outputBlock = [
-        getStatusHeader(code, testItem.id),
-        '----- BEGIN OUTPUT -----',
-        ...testLog,
-        '------ END OUTPUT ------'
-      ].join("\n");
-      run.appendOutput(outputBlock.replace(/\r?\n/g, '\r\n') + '\r\n', undefined, testItem);
       return;
     }
-
-    const { input: testLog } = parseBazelOutput(stdout);
-    const outputBlock = [
-      getStatusHeader(code, testItem.id),
-      '----- BEGIN OUTPUT -----',
-      ...testLog,
-      '------ END OUTPUT ------'
-    ].join("\n");
-
-    run.appendOutput(outputBlock.replace(/\r?\n/g, '\r\n') + '\r\n', undefined, testItem);
 
     if (targetTestCase.status === 'PASS') {
       run.passed(testItem);
     } else if (targetTestCase.status === 'FAIL') {
       let message = `Test case failed: ${testCaseName}`;
-      if (targetTestCase.errorMessage) {
-        message += `\n${targetTestCase.errorMessage}`;
-      }
-
-      const testMessage = new vscode.TestMessage(message);
-
-      // Add location information if available
-      if (targetTestCase.file) {
-        const fullPath = path.join(workspacePath, targetTestCase.file);
-        if (fs.existsSync(fullPath)) {
-          const uri = vscode.Uri.file(fullPath);
-          const location = new vscode.Location(uri, new vscode.Position(targetTestCase.line - 1, 0));
-          testMessage.location = location;
-        }
-      }
-
-      run.failed(testItem, testMessage);
+      if (targetTestCase.errorMessage) message += `\n${targetTestCase.errorMessage}`;
+      setFailedWithLocation(run, testItem, workspacePath, message, targetTestCase.file, targetTestCase.line);
     } else {
       run.skipped(testItem);
     }
@@ -463,32 +357,44 @@ export const executeIndividualTestCase = async (
   }
 };
 
+
 /**
  * Executes a test target and updates individual test case statuses
  */
-export const executeTargetWithIndividualTestCases = async (
+export const executeTestTarget = async (
   testItem: vscode.TestItem,
   workspacePath: string,
-  run: vscode.TestRun,
-  code: number,
-  stdout: string,
-  stderr: string
+  run: vscode.TestRun
 ): Promise<void> => {
-  const { input: testLog } = parseBazelOutput(stdout);
-  const { input: bazelLog } = parseBazelOutput(stderr);
+  const { code, stdout, stderr } = await measure(`Execute test: ${testItem.id}`, () =>
+    callRunBazelCommandForTest({ testId: testItem.id, cwd: workspacePath })
+  );
 
-  // Derive testType from label to restrict pattern IDs
+  const testLog = splitOutputLines(stdout);
+  const bazelLog = splitOutputLines(stderr);
+
+  // Derive testType from label, i.e. "cc_test":
   const typeMatch = testItem.label.match(/\[(.*?)\]/);
   const testType = typeMatch?.[1];
+  // check if this type is known:
   const allowedPatternIds = PATTERN_IDS_BY_TEST_TYPE[testType || ''];
 
-  // Parse individual test cases from the output (combine stdout/stderr)
-  const combined = [stdout, stderr].filter(Boolean).join("\n");
-  let result = parseIndividualTestCases(combined, testItem.id, allowedPatternIds);
-  if (allowedPatternIds && result.testCases.length === 0) {
-    logWithTimestamp(`No test cases matched with restricted patterns for ${testItem.id} [${testType}]. Trying all patterns as fallback.`, "warn");
-    result = parseIndividualTestCases(combined, testItem.id, undefined);
+  // Suite handling
+  if (testType === "test_suite") {
+    const { rows, passed, failed } = extractSuiteSummaryFromStdout(stdout);
+    emitSuiteResult(run, testItem, code, rows, passed, failed);
+    return;
   }
+
+  // Parse individual test cases from the output (combine stdout/stderr)
+  const combined = combineOutputs(stdout, stderr);
+  
+  const result = parseCasesWithFallback(
+    combined,
+    testItem.id,
+    allowedPatternIds,
+    `No test cases matched with restricted patterns for ${testItem.id} [${testType}]. Trying all patterns as fallback.`
+  );
 
   // Update individual test case statuses if they exist as children
   for (const testCase of result.testCases) {
@@ -504,18 +410,7 @@ export const executeTargetWithIndividualTestCases = async (
           message += `\n${testCase.errorMessage}`;
         }
 
-        const testMessage = new vscode.TestMessage(message);
-
-        if (testCase.file) {
-          const fullPath = path.join(workspacePath, testCase.file);
-          if (fs.existsSync(fullPath)) {
-            const uri = vscode.Uri.file(fullPath);
-            const location = new vscode.Location(uri, new vscode.Position(testCase.line - 1, 0));
-            testMessage.location = location;
-          }
-        }
-
-        run.failed(childItem, testMessage);
+        setFailedWithLocation(run, childItem, workspacePath, message, testCase.file, testCase.line);
       } else {
         run.skipped(childItem);
       }
@@ -524,16 +419,7 @@ export const executeTargetWithIndividualTestCases = async (
 
   // Handle the main test target status
   if (code === 0) {
-    if (testLog.length > 0) {
-      const outputBlock = [
-        getStatusHeader(code, testItem.id),
-        '----- BEGIN OUTPUT -----',
-        ...testLog,
-        '------ END OUTPUT ------'
-      ].join("\n");
-
-      run.appendOutput(outputBlock.replace(/\r?\n/g, '\r\n') + '\r\n', undefined, testItem);
-    }
+    appendOutputBlock(run, testItem, code, testLog);
     run.passed(testItem);
   } else if (code === 3) {
     handleTestResult(run, testItem, code, bazelLog, testLog, workspacePath);
@@ -544,13 +430,7 @@ export const executeTargetWithIndividualTestCases = async (
     const cleaned = bazelLog.filter(line => line.trim() !== "").join("\n");
     const cleaned_with_Header = getStatusHeader(code, testItem.id) + cleaned;
     run.failed(testItem, new vscode.TestMessage(`🧨 Errors during tests (Code ${code}):\n\n${cleaned_with_Header}`));
-    const outputBlock = [
-      getStatusHeader(code, testItem.id),
-      '----- BEGIN OUTPUT -----',
-      ...bazelLog,
-      '------ END OUTPUT ------'
-    ].join("\n");
-    run.appendOutput(outputBlock.replace(/\r?\n/g, '\r\n') + '\r\n', undefined, testItem);
+    appendOutputBlock(run, testItem, code, bazelLog);
   }
 };
 
@@ -595,75 +475,7 @@ function handleTestResult(
   }
 }
 
-function analyzeTestFailures(testLog: string[], workspacePath: string, testItem: vscode.TestItem): vscode.TestMessage[] {
-  const config = vscode.workspace.getConfiguration("bazelTestRunner");
-  const customPatterns = config.get<string[]>("failLinePatterns", []);
-  const failPatterns: { pattern: RegExp; source: string }[] = [
-    ...customPatterns.map(p => {
-      try {
-        return { pattern: new RegExp(p), source: "Custom Setting" };
-      } catch (e) {
-        logWithTimestamp(`Invalid regex pattern in settings: "${p}"`, "warn");
-        return null;
-      }
-    }).filter((p): p is { pattern: RegExp; source: string } => p !== null),
-    { pattern: /^(.+?):(\d+): Failure/, source: "Built-in" },
-    { pattern: /^(.+?):(\d+): FAILED/, source: "Built-in" },
-    { pattern: /^(.+?):(\d+):\d+: error/, source: "Built-in" },
-    { pattern: /^(.+?)\((\d+)\): error/, source: "Built-in" },
-    { pattern: /^(.+?):(\d+): error/, source: "Built-in" },
-    { pattern: /^FAIL .*?\((.+?):(\d+)\)$/, source: "Built-in" },
-    { pattern: /^(.+?):(\d+):.+?:FAIL:/, source: "Built-in" },
-    { pattern: /^Error: (.+?):(\d+): /, source: "Built-in" },
-    { pattern: /^\s*File "(.*?)", line (\d+), in .+$/, source: "Python Traceback" },
-    { pattern: /^(.+?):(\d+): AssertionError$/, source: "Python AssertionError" },
-    { pattern: /^\[----\] (.+?):(\d+): Assertion Failed$/, source: "Built-in" },
-    { pattern: /^.*panicked at .*?([^\s:]+):(\d+):\d+:$/, source: "Rust panic" },
-    { pattern: /^(.*):(\d+):\s+ERROR:\s+(REQUIRE|CHECK|CHECK_EQ)\(\s*(.*?)\s*\)\s+is\s+NOT\s+correct!/, source: "Built-in" },
-    { pattern: /^Assertion failed: .*?, function .*?, file (.+?), line (\d+)\./, source: "Built-in" },
-  ];
-
-  const messages: vscode.TestMessage[] = [];
-  const matchingLines = testLog.filter(line => failPatterns.some(({ pattern }) => pattern.test(line)));
-
-  for (const line of matchingLines) {
-    let bestMatch: {
-      match: RegExpMatchArray;
-      pattern: RegExp;
-      source: string;
-    } | null = null;
-    for (const { pattern, source } of failPatterns) {
-      const match = line.match(pattern);
-      if (match) {
-        if (!bestMatch || match[0].length > bestMatch.match[0].length) {
-          bestMatch = { match, pattern, source };
-        }
-      }
-    }
-    if (bestMatch) {
-      const [, file, lineStr] = bestMatch.match;
-      const normalizedPath = path.normalize(file);
-      const trimmedPath = normalizedPath.includes(`${path.sep}_main${path.sep}`)
-        ? normalizedPath.substring(normalizedPath.indexOf(`${path.sep}_main${path.sep}`) + "_main".length + 1)
-        : normalizedPath;
-      const fullPath = path.join(workspacePath, trimmedPath);
-      logWithTimestamp(`Pattern matched: [${bestMatch.source}] ${bestMatch.pattern}`);
-      logWithTimestamp(`✔ Found & used: ${file}:${lineStr}`);
-      if (fs.existsSync(fullPath)) {
-        const uri = vscode.Uri.file(fullPath);
-        const location = new vscode.Location(uri, new vscode.Position(Number(lineStr) - 1, 0));
-        const fullText = [line, '', ...testLog].join("\n");
-        const message = new vscode.TestMessage(fullText);
-        message.location = location;
-        messages.push(message);
-      } else {
-        logWithTimestamp(`File not found: ${fullPath}`);
-      }
-    }
-  }
-
-  return messages;
-}
+// analyzeTestFailures moved to parseFailures.ts
 
 // ───────────────────────────────────────────────────────────────
 // Formatting functions

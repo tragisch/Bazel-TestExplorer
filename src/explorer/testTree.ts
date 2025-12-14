@@ -36,9 +36,12 @@ export const discoverAndDisplayTests = async (
     const currentTestIds = new Set(testEntries.map(entry => entry.target));
     controller.items.forEach((item) => {
       const id = item.id;
-      const hasLiveChildren = Array.from(item.children).some(([childId]) =>
-        currentTestIds.has(childId)
-      );
+      let hasLiveChildren = false;
+      item.children.forEach((child) => {
+        if (currentTestIds.has(child.id)) {
+          hasLiveChildren = true;
+        }
+      });
       if (!currentTestIds.has(id) && !hasLiveChildren) {
         logWithTimestamp(`Removing stale test item: ${id}`);
         controller.items.delete(id);
@@ -132,9 +135,5 @@ export const addTestItemToController = (
   testItem.tags = ["bazel", ...(tags || [])].map(t => new vscode.TestTag(t));
   testItem.description = `Target: ${target}`;
 
-  // Define the missing command
-  const command = {
-    command: "bazelTestExplorer.showTestMetadata",
-    title: "Bazel-TestExplorer: Show Metadata for Test Target"
-  };
+  // Command wiring is handled via package.json menus
 }

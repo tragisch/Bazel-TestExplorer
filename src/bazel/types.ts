@@ -37,6 +37,12 @@ export interface IndividualTestCase {
     status?: 'PASS' | 'FAIL' | 'TIMEOUT' | 'SKIP';
     /** Error message if the test failed */
     errorMessage?: string;
+    /** Optional: test suite name (e.g., for gtest) */
+    suite?: string;
+    /** Optional: class name (e.g., for JUnit) */
+    className?: string;
+    /** Optional: id of the pattern/framework that matched */
+    frameworkId?: string;
 }
 
 /**

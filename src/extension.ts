@@ -10,13 +10,13 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { initializeLogger, logWithTimestamp, formatError, measure } from './logging';
 import { findBazelWorkspace } from './bazel/workspace';
-import { queryBazelTestTargets } from './bazel/queries';
-import { executeBazelTest, discoverIndividualTestCases } from './bazel/runner';
+import { executeBazelTest } from './bazel/runner';
+import { discoverIndividualTestCases } from './bazel/discovery';
 import { discoverAndDisplayTests } from './explorer/testTree';
 import { showTestMetadataById } from './explorer/testInfoPanel';
 
 let bazelTestController: vscode.TestController;
-let metadataListenerRegistered = false;
+//
 
 export function activate(context: vscode.ExtensionContext) {
 	initializeLogger();
@@ -64,24 +64,26 @@ export function activate(context: vscode.ExtensionContext) {
 				const testCaseId = `${item.id}::${testCase.name}`;
 				const existing = item.children.get(testCaseId);
 
-				if (!existing) {
-					const statusIcon = '🧪';  //testCase.status === 'FAIL' ? '❌' : testCase.status === 'PASS' ? '✅' : '🔘';
-					const testCaseItem = bazelTestController.createTestItem(
-						testCaseId,
-						`${statusIcon} ${testCase.name}`,
-						vscode.Uri.file(path.join(workspacePath, testCase.file))
-					);
+                if (!existing) {
+                    const statusIcon = '🧪';  //testCase.status === 'FAIL' ? '❌' : testCase.status === 'PASS' ? '✅' : '🔘';
+                    const uri = testCase.file ? vscode.Uri.file(path.join(workspacePath, testCase.file)) : undefined;
+                    const testCaseItem = bazelTestController.createTestItem(
+                        testCaseId,
+                        `${statusIcon} ${testCase.name}`,
+                        uri
+                    );
 
-					testCaseItem.range = new vscode.Range(
-						new vscode.Position(testCase.line - 1, 0),
-						new vscode.Position(testCase.line - 1, 0)
-					);
+                    const lineZeroBased = Math.max(0, (testCase.line || 0) - 1);
+                    testCaseItem.range = new vscode.Range(
+                        new vscode.Position(lineZeroBased, 0),
+                        new vscode.Position(lineZeroBased, 0)
+                    );
 
-					testCaseItem.description = `Line ${testCase.line}`;
-					testCaseItem.canResolveChildren = false;
+                    testCaseItem.description = testCase.line > 0 ? `Line ${testCase.line}` : undefined;
+                    testCaseItem.canResolveChildren = false;
 
-					item.children.add(testCaseItem);
-				}
+                    item.children.add(testCaseItem);
+                }
 			}
 		} catch (error) {
 			logWithTimestamp(`Failed to resolve children for ${item.id}: ${formatError(error)}`);
@@ -125,17 +127,16 @@ export function activate(context: vscode.ExtensionContext) {
 	// Throttle focus-based reloads
 	let lastReloadAt = 0;
 	const RELOAD_DEBOUNCE_MS = 5000; // configurable later via settings
-	let isDiscoveringTests = false; // Used for debounce
-	context.subscriptions.push(
-		vscode.window.onDidChangeWindowState((windowState) => {
-			if (windowState.focused) {
-				const now = Date.now();
-				if (now - lastReloadAt < RELOAD_DEBOUNCE_MS || isDiscoveringTests) {
-					logWithTimestamp("🔄 Window focus: debounce/skip reload.");
-					return;
-				}
-				lastReloadAt = now;
-				logWithTimestamp("🔄 Window focus regained, reloading Bazel tests...");
+    context.subscriptions.push(
+        vscode.window.onDidChangeWindowState((windowState) => {
+            if (windowState.focused) {
+                const now = Date.now();
+                if (now - lastReloadAt < RELOAD_DEBOUNCE_MS) {
+                    logWithTimestamp("🔄 Window focus: debounce/skip reload.");
+                    return;
+                }
+                lastReloadAt = now;
+                logWithTimestamp("🔄 Window focus regained, reloading Bazel tests...");
 				vscode.commands.executeCommand("extension.reloadBazelTests");
 			}
 		})

@@ -16,9 +16,16 @@ export interface TestCasePattern {
         testName: number;
         status: number;
         message?: number;
+        suite?: number;   // optional: suite/testcase group (e.g., gtest)
+        class?: number;   // optional: class group (e.g., junit)
     };
     description: string;
     example: string;
+    // Whether this framework supports individual test execution
+    supportsIndividual?: boolean;
+    // Template to build a filter string for individual test execution
+    // Supported placeholders: ${name}, ${suite}, ${class}, ${file}
+    filterTemplate?: string;
 }
 
 // We now filter the patterns below by their `id` using `PATTERN_IDS_BY_TEST_TYPE` in runner.ts to avoid trying all regexes unnecessarily.
@@ -35,7 +42,9 @@ export const BUILTIN_TEST_PATTERNS: TestCasePattern[] = [
             message: 5
         },
         description: "Standard Unity C test framework output",
-        example: "app/matrix/tests/test_sm.c:40:test_sm_active_library_should_return_non_null:PASS"
+        example: "app/matrix/tests/test_sm.c:40:test_sm_active_library_should_return_non_null:PASS",
+        supportsIndividual: true,
+        filterTemplate: '${name}'
     },
     {
         id: "unity_c_with_message",
@@ -49,7 +58,9 @@ export const BUILTIN_TEST_PATTERNS: TestCasePattern[] = [
             message: 5
         },
         description: "Unity C test framework with detailed error messages",
-        example: "app/matrix/tests/test_sm.c:576:test_sm_determinant_5x5:FAIL: Expected -120120 Was -120120.008"
+        example: "app/matrix/tests/test_sm.c:576:test_sm_determinant_5x5:FAIL: Expected -120120 Was -120120.008",
+        supportsIndividual: true,
+        filterTemplate: '${name}'
     },
     {
         id: "gtest_cpp",
@@ -60,10 +71,13 @@ export const BUILTIN_TEST_PATTERNS: TestCasePattern[] = [
             line: 0,
             testName: 3,
             status: 1,
-            message: 0
+            message: 0,
+            suite: 2
         },
         description: "Google Test C++ framework output",
-        example: "[  PASSED  ] MatrixTest.test_sm_create (5 ms)"
+        example: "[  PASSED  ] MatrixTest.test_sm_create (5 ms)",
+        supportsIndividual: true,
+        filterTemplate: '${suite}.${name}'
     },
     {
         id: "pytest_python",
@@ -77,7 +91,9 @@ export const BUILTIN_TEST_PATTERNS: TestCasePattern[] = [
             message: 4
         },
         description: "Python PyTest framework output",
-        example: "tests/test_matrix.py::test_sm_create PASSED"
+        example: "tests/test_matrix.py::test_sm_create PASSED",
+        supportsIndividual: true,
+        filterTemplate: '${file}::${name}'
     },
     {
         id: "go_test",
@@ -91,7 +107,9 @@ export const BUILTIN_TEST_PATTERNS: TestCasePattern[] = [
             message: 0
         },
         description: "Go test framework output",
-        example: "=== PASS TestMatrixCreate"
+        example: "=== PASS TestMatrixCreate",
+        supportsIndividual: true,
+        filterTemplate: '${name}'
     },
     {
         id: "rust_test",
@@ -105,7 +123,9 @@ export const BUILTIN_TEST_PATTERNS: TestCasePattern[] = [
             message: 3
         },
         description: "Rust test framework output",
-        example: "test matrix::test_sm_create ... ok"
+        example: "test matrix::test_sm_create ... ok",
+        supportsIndividual: true,
+        filterTemplate: '${name}'
     },
     {
         id: "junit_java",
@@ -116,10 +136,13 @@ export const BUILTIN_TEST_PATTERNS: TestCasePattern[] = [
             line: 0,
             testName: 1,
             status: 3,
-            message: 4
+            message: 4,
+            class: 2
         },
         description: "JUnit Java framework output",
-        example: "testMatrixCreate(MatrixTest): PASS"
+        example: "testMatrixCreate(MatrixTest): PASS",
+        supportsIndividual: true,
+        filterTemplate: '${class}#${name}'
     },
     {
         id: "parentheses_format",
@@ -133,9 +156,23 @@ export const BUILTIN_TEST_PATTERNS: TestCasePattern[] = [
             message: 5
         },
         description: "Generic test framework with file(line): format",
-        example: "matrix_test.c(45): test_create: PASS"
+        example: "matrix_test.c(45): test_create: PASS",
+        supportsIndividual: true,
+        filterTemplate: '${name}'
     }
 ];
+
+// Mapping from Bazel rule/test type to allowed pattern IDs
+// Note: Many C/C++ tests (cc_test) can use different frameworks (Unity, gtest, catch2, etc.).
+// Therefore we include Unity patterns for cc_test as well.
+export const PATTERN_IDS_BY_TEST_TYPE: Record<string, string[]> = {
+    unity_test: ["unity_c_standard", "unity_c_with_message"],
+    cc_test: ["unity_c_standard", "unity_c_with_message", "gtest_cpp", "parentheses_format"],
+    py_test: ["pytest_python"],
+    rust_test: ["rust_test"],
+    go_test: ["go_test"],
+    java_test: ["junit_java"],
+};
 
 export const STATUS_MAPPING: Record<string, 'PASS' | 'FAIL' | 'TIMEOUT' | 'SKIP'> = {
     'PASS': 'PASS',

@@ -18,7 +18,7 @@ export const findBazelWorkspace = async (): Promise<string | null> => {
     const matches = await glob(`**/${file}`, {
       nodir: true,
       absolute: true,
-      cwd: vscode.workspace.rootPath || "."
+      cwd: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || "."
     });
     if (matches.length > 0) {
       return path.dirname(matches[0]);
