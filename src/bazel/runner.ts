@@ -12,6 +12,7 @@ import { logWithTimestamp, measure, formatError } from '../logging';
 import { ConfigurationService } from '../configuration';
 import { analyzeTestFailures } from './parseFailures';
 import { extractTestCasesFromOutput } from './testcase/parseOutput';
+import { TestFramework } from './testFilterStrategies';
 
 // ───────────────────────────────────────────────────────────────
 // Bazel Test Configuration
@@ -25,6 +26,37 @@ const DEFAULT_BAZEL_TEST_FLAGS = [
   '--test_summary=detailed',
   '--test_verbose_timeout_warnings'
 ] as const;
+
+/**
+ * Maps Bazel test type to test framework identifier
+ */
+function mapTestTypeToFramework(testType: string): TestFramework {
+  const lowerType = testType.toLowerCase();
+  
+  if (lowerType.includes('gtest') || lowerType === 'cc_test') {
+    return 'gtest';
+  }
+  if (lowerType.includes('pytest') || lowerType.includes('py_test')) {
+    return 'pytest';
+  }
+  if (lowerType.includes('criterion')) {
+    return 'criterion';
+  }
+  if (lowerType.includes('doctest')) {
+    return 'doctest';
+  }
+  if (lowerType.includes('rust')) {
+    return 'rust';
+  }
+  if (lowerType.includes('go')) {
+    return 'go';
+  }
+  if (lowerType.includes('java') || lowerType.includes('junit')) {
+    return 'java';
+  }
+  
+  return 'other';
+}
 
 // ───────────────────────────────────────────────────────────────
 // Public API
@@ -160,11 +192,20 @@ export const initiateBazelTest = async (
     const typeMatch = testItem.label.match(/\[(.*?)\]/);
     const testType = typeMatch?.[1] ?? "";
     
-    logWithTimestamp(`Running individual test case: ${effectiveTestId}::${testName} [${testType}]`);
+    // Import and use test filter strategies
+    const { getTestFilterArgs, supportsTestFilter } = require('./testFilterStrategies');
+    const framework = mapTestTypeToFramework(testType);
+    
+    if (supportsTestFilter(framework)) {
+      filterArgs = getTestFilterArgs(testName, framework);
+      logWithTimestamp(`Running individual test case: ${effectiveTestId}::${testName} [${testType}] with filter: ${filterArgs.join(' ')}`);
+    } else {
+      logWithTimestamp(`Running individual test case: ${effectiveTestId}::${testName} [${testType}] - no filter support, running entire target`);
+    }
   }
 
   if (/^\/\/[^:]*$/.test(effectiveTestId)) {
-    effectiveTestId = `${effectiveTestId}//...`;
+    effectiveTestId = `${effectiveTestId}/...`;
   }
 
   const additionalArgs: string[] = [...config.testArgs];
@@ -260,7 +301,7 @@ export const callRunBazelCommandForTest = async (options: {
   
   let effectiveTestId = testId;
   if (/^\/\/[^:]*$/.test(testId)) {
-    effectiveTestId = `${testId}//...`;
+    effectiveTestId = `${testId}/...`;
   }
 
   const args = ['test', effectiveTestId, ...DEFAULT_BAZEL_TEST_FLAGS, ...additionalArgs];

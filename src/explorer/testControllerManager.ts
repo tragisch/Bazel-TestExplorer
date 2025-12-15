@@ -139,7 +139,12 @@ export class TestControllerManager {
 
         const promises: Promise<void>[] = [];
 
-        for (const testItem of request.include ?? []) {
+        // If no tests are explicitly included, run all tests from controller
+        const testsToRun = request.include && request.include.length > 0
+          ? request.include
+          : Array.from(this.controller.items).map(([_, item]) => item);
+
+        for (const testItem of testsToRun) {
           const allTests = collectAllTests(testItem);
           for (const t of allTests) {
             run.started(t);

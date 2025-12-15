@@ -19,6 +19,9 @@ export const queryBazelTestTargets = async (
 ): Promise<BazelTestTarget[]> => {
   logWithTimestamp(`Workspace path: ${workspacePath}`);
 
+  // Clear testMap before querying to remove deleted/renamed targets
+  testMap.clear();
+
   const testTypes: string[] = config.testTypes;
   const queryPaths: string[] = config.queryPaths;
   const sanitizedPaths = sanitizeQueryPaths(queryPaths);
@@ -62,7 +65,7 @@ async function executeSingleBazelQuery(query: string, workspacePath: string, con
   const duration = ((Date.now() - queryStart) / 1000).toFixed(2);
   logWithTimestamp(`Query completed in ${duration}s`);
   if (code !== 0) {
-    logWithTimestamp(`Bazel query failed with exit code ${code}.`, "warn");
+    logWithTimestamp(`Bazel query failed with exit code ${code}. Please try running the query manually for more details.`, "warn");
 
   }
 }
