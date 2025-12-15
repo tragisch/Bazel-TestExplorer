@@ -276,7 +276,8 @@ function getExtensionsByType(testType: string): string[] {
  */
 export const resolveTestCaseChildren = async (
   testItem: vscode.TestItem,
-  controller: vscode.TestController
+  controller: vscode.TestController,
+  bazelClient: BazelClient
 ): Promise<void> => {
   try {
     // Respect user setting: if discovery is disabled, do not attempt to resolve children
@@ -315,6 +316,10 @@ export const resolveTestCaseChildren = async (
 
     try {
       const result = await discoverIndividualTestCases(testItem.id, workspacePath, testType);
+      const targetMetadata = bazelClient.getTargetMetadata(testItem.id);
+      const fallbackLocation = targetMetadata
+        ? resolveSourceFromMetadata(testItem.id, workspacePath, targetMetadata)
+        : undefined;
       
       for (const testCase of result.testCases) {
         const testCaseId = `${testItem.id}::${testCase.name}`;
@@ -322,19 +327,23 @@ export const resolveTestCaseChildren = async (
 
         if (!existing) {
           const statusIcon = '🧪';
-          const uri = testCase.file
-            ? vscode.Uri.file(path.join(workspacePath, testCase.file))
+          const resolvedFile = selectFilePath(testCase.file, fallbackLocation?.file);
+          const uri = resolvedFile
+            ? vscode.Uri.file(toAbsolutePath(resolvedFile, workspacePath))
             : undefined;
+          const resolvedLine = testCase.line && testCase.line > 0
+            ? testCase.line
+            : fallbackLocation?.line;
 
           const testCaseItem = controller.createTestItem(testCaseId, `${statusIcon} ${testCase.name}`, uri);
 
-          if (testCase.line && testCase.line > 0) {
-            const lineZeroBased = Math.max(0, testCase.line - 1);
+          if (resolvedLine && resolvedLine > 0) {
+            const lineZeroBased = Math.max(0, resolvedLine - 1);
             testCaseItem.range = new vscode.Range(
               new vscode.Position(lineZeroBased, 0),
               new vscode.Position(lineZeroBased, 0)
             );
-            testCaseItem.description = `Line ${testCase.line}`;
+            testCaseItem.description = `Line ${resolvedLine}`;
           }
 
           testCaseItem.canResolveChildren = false;
@@ -352,3 +361,94 @@ export const resolveTestCaseChildren = async (
     testItem.busy = false;
   }
 };
+
+function selectFilePath(primary?: string, fallback?: string): string | undefined {
+  return primary && primary.trim().length > 0
+    ? primary
+    : fallback;
+}
+
+function toAbsolutePath(filePath: string, workspacePath: string): string {
+  if (path.isAbsolute(filePath)) {
+    return filePath;
+  }
+  return path.join(workspacePath, filePath);
+}
+
+function resolveSourceFromMetadata(
+  targetId: string,
+  workspacePath: string,
+  metadata: BazelTestTarget
+): { file: string; line?: number } | undefined {
+  const [packageLabel] = parseTargetLabel(targetId);
+  const packagePath = packageLabel.replace(/^\/\//, '');
+  const candidates: { file: string; line?: number }[] = [];
+
+  if (metadata.srcs && metadata.srcs.length > 0) {
+    for (const src of metadata.srcs) {
+      const normalized = normalizeSrcEntry(src, packagePath);
+      if (normalized) {
+        candidates.push({ file: normalized });
+      }
+    }
+  }
+
+  if (metadata.location) {
+    const parsedLocation = parseLocation(metadata.location);
+    if (parsedLocation) {
+      candidates.push(parsedLocation);
+    }
+  }
+
+  for (const candidate of candidates) {
+    const absolute = toAbsolutePath(candidate.file, workspacePath);
+    if (fs.existsSync(absolute)) {
+      return candidate;
+    }
+  }
+
+  return undefined;
+}
+
+function normalizeSrcEntry(src: string, packagePath: string): string | undefined {
+  if (!src) {
+    return undefined;
+  }
+
+  if (src.startsWith('//')) {
+    const withoutPrefix = src.slice(2);
+    const [pkg, file] = withoutPrefix.split(':');
+    if (pkg && file) {
+      return path.posix.join(pkg, file);
+    }
+    return pkg;
+  }
+
+  if (src.startsWith(':')) {
+    const file = src.slice(1);
+    return path.posix.join(packagePath, file);
+  }
+
+  if (src.includes(':')) {
+    const [pkg, file] = src.split(':');
+    if (file) {
+      return path.posix.join(pkg.replace(/^\/\//, ''), file);
+    }
+  }
+
+  return path.posix.join(packagePath, src);
+}
+
+function parseLocation(location: string): { file: string; line?: number } | undefined {
+  const match = location.match(/^(.*?):(\d+)(?::\d+)?$/);
+  if (!match) {
+    return undefined;
+  }
+
+  const file = match[1];
+  const line = parseInt(match[2], 10);
+  return {
+    file,
+    line: Number.isFinite(line) ? line : undefined
+  };
+}

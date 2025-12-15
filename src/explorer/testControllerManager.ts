@@ -56,7 +56,7 @@ export class TestControllerManager {
       }
 
       // Individual test case discovery for a specific test item
-      await resolveTestCaseChildren(item, this.controller);
+      await resolveTestCaseChildren(item, this.controller, this.bazelClient);
     };
   }
 
