@@ -8,7 +8,7 @@
 
 import * as vscode from 'vscode';
 import { BazelTestTarget } from '../bazel/types';
-import { getTestTargetById } from '../bazel/queries';
+import { BazelClient } from '../bazel/client';
 
 let panel: vscode.WebviewPanel | undefined;
 
@@ -29,8 +29,8 @@ export function showTestMetadataPanel(target: BazelTestTarget) {
   panel.webview.html = renderHtml(target);
 }
 
-export function showTestMetadataById(testId: string) {
-  const target = getTestTargetById(testId);
+export function showTestMetadataById(testId: string, bazelClient: BazelClient) {
+  const target = bazelClient.getTargetMetadata(testId);
   if (target) {
     showTestMetadataPanel(target);
   } else {

@@ -9,19 +9,35 @@
 import * as vscode from 'vscode';
 import { initializeLogger, logWithTimestamp, formatError, measure } from './logging';
 import { findBazelWorkspace } from './bazel/workspace';
-import { queryBazelTestTargets } from './bazel/queries';
-import { executeBazelTest } from './bazel/runner';
+import { BazelClient } from './bazel/client';
 import { discoverAndDisplayTests } from './explorer/testTree';
 import { showTestMetadataById } from './explorer/testInfoPanel';
 
 let bazelTestController: vscode.TestController;
 let metadataListenerRegistered = false;
+let bazelClient: BazelClient;
 
-export function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext) {
 	initializeLogger();
 
 	const extensionVersion = vscode.extensions.getExtension("tragisch.bazel-testexplorer")?.packageJSON.version;
 	logWithTimestamp(`Bazel Test Explorer v${extensionVersion} aktiviert.`);
+	logWithTimestamp(`Bazel Test Explorer -- simplify architcture ---.`);
+
+	const workspaceRoot = await findBazelWorkspace();
+	if (!workspaceRoot) {
+		vscode.window.showErrorMessage('No Bazel workspace found in the current directory');
+		return;
+	}
+
+	bazelClient = new BazelClient(workspaceRoot);
+
+	const validation = await bazelClient.validate();
+	if (!validation.valid) {
+		vscode.window.showErrorMessage(`Bazel not available: ${validation.error}`);
+		return;
+	}
+	logWithTimestamp(`Bazel validated: ${validation.version || 'OK'}`);
 
 	bazelTestController = vscode.tests.createTestController('bazelUnityTestController', 'Bazel Unity Tests');
 	context.subscriptions.push(bazelTestController);
@@ -38,7 +54,7 @@ export function activate(context: vscode.ExtensionContext) {
 					},
 					async (progress) => {
 						progress.report({ message: "Querying Bazel tests..." });
-						await discoverAndDisplayTests(bazelTestController);
+						await discoverAndDisplayTests(bazelTestController, bazelClient);
 					}
 				);
 			} catch (error) {
@@ -56,7 +72,7 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		vscode.commands.registerCommand('bazelTestExplorer.showTestMetadata', (testItem: vscode.TestItem) => {
 			vscode.window.showInformationMessage(`Clicked on test: ${testItem?.id}`);
-			showTestMetadataById(testItem?.id);
+			showTestMetadataById(testItem?.id, bazelClient);
 		})
 	);
 
@@ -71,12 +87,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 	bazelTestController.createRunProfile('Run Tests', vscode.TestRunProfileKind.Run, async (request, token) => {
 		const run = bazelTestController.createTestRun(request);
-		const workspacePath = await findBazelWorkspace();
-		if (!workspacePath) {
-			vscode.window.showErrorMessage("No Bazel workspace detected.");
-			logWithTimestamp("No Bazel workspace detected.");
-			return;
-		}
+		const workspacePath = bazelClient.workspace;
 
 		const config = vscode.workspace.getConfiguration("bazelTestRunner");
 		const sequentialTypes: string[] = config.get("sequentialTestTypes", []);
@@ -103,7 +114,7 @@ export function activate(context: vscode.ExtensionContext) {
 				const testTypeMatch = t.label.match(/^\[(.+?)\]/);
 				const testType = testTypeMatch?.[1];
 				const isSequential = sequentialTypes.includes(testType ?? "");
-				const promise = executeBazelTest(t, workspacePath, run);
+				const promise = bazelClient.runTest(t, workspacePath, run);
 				if (isSequential) {
 					await promise;
 				} else {
@@ -126,7 +137,7 @@ export function activate(context: vscode.ExtensionContext) {
 			},
 			async (progress) => {
 				progress.report({ message: "Querying Bazel tests..." });
-				await discoverAndDisplayTests(bazelTestController);
+				await discoverAndDisplayTests(bazelTestController, bazelClient);
 			}
 		);
 	});
@@ -142,7 +153,7 @@ export function activate(context: vscode.ExtensionContext) {
 				},
 				async (progress) => {
 					progress.report({ message: "Querying Bazel tests..." });
-					await discoverAndDisplayTests(bazelTestController);
+					await discoverAndDisplayTests(bazelTestController, bazelClient);
 				}
 			);
 		}

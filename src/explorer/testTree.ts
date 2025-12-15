@@ -9,15 +9,15 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { queryBazelTestTargets } from '../bazel/queries';
-import { getWorkspaceOrShowError } from '../bazel/workspace';
+import { BazelClient } from '../bazel/client';
 import { logWithTimestamp, measure, formatError } from '../logging';
 import { showTestMetadataById } from './testInfoPanel';
 
 let isDiscoveringTests = false;
 
 export const discoverAndDisplayTests = async (
-  controller: vscode.TestController
+  controller: vscode.TestController,
+  bazelClient: BazelClient
 ): Promise<void> => {
   if (isDiscoveringTests) {
     logWithTimestamp("Already discovering tests. Skipping.");
@@ -26,11 +26,10 @@ export const discoverAndDisplayTests = async (
   isDiscoveringTests = true;
   try {
     const packageItemCache = new Map<string, vscode.TestItem>();
-    const workspacePath = await getWorkspaceOrShowError();
-    if (!workspacePath) return;
+    const workspacePath = bazelClient.workspace;
 
     const testEntries = await measure("Query Bazel test targets", () =>
-      queryBazelTestTargets(workspacePath)
+      bazelClient.queryTests(workspacePath)
     );
 
     const currentTestIds = new Set(testEntries.map(entry => entry.target));
