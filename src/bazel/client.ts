@@ -6,6 +6,10 @@
  * See the LICENSE file in the root directory for details.
  */
 
+/**
+ * Bazel client facade - unified interface for Bazel operations with caching and error handling
+ */
+
 import { TestRun, CancellationToken } from 'vscode';
 import { BazelTestTarget } from './types';
 import { queryBazelTestTargets, getTestTargetById } from './queries';
@@ -37,19 +41,19 @@ export class BazelClient {
    */
   async queryTests(): Promise<BazelTestTarget[]> {
     try {
-      // Cache-Key erstellen basierend auf Config
+      // Create cache key based on config
       const cacheKey = QueryCache.createKey(
         this.config.queryPaths,
         this.config.testTypes
       );
 
-      // Aus Cache holen, falls vorhanden
+      // Get from cache if available
       const cached = this.cache.get(cacheKey);
       if (cached) {
         return cached;
       }
 
-      // Query ausführen
+      // Execute query
       const targets = await queryBazelTestTargets(this.workspaceRoot, this.config);
       
       // Im Cache speichern

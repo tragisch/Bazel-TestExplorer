@@ -6,15 +6,19 @@
  * See the LICENSE file in the root directory for details.
  */
 
+/**
+ * Error handler - categorizes and handles errors with retry logic and user-friendly messages
+ */
+
 import { logWithTimestamp } from '../logging';
 
 /**
- * Kategorien für verschiedene Fehlertypen
+ * Error categories
  */
 export type ErrorCategory = 'bazel' | 'workspace' | 'validation' | 'cache' | 'unknown';
 
 /**
- * Fehlerbehandlungs-Ergebnis
+ * Error handling result
  */
 export interface ErrorResult {
   category: ErrorCategory;
@@ -25,11 +29,11 @@ export interface ErrorResult {
 }
 
 /**
- * Zentrale Fehlerbehandlungs-Klasse für strukturierte Error-Verwaltung
+ * Central error handler for structured error management
  */
 export class ErrorHandler {
   /**
-   * Verarbeitet einen Fehler basierend auf Kontext
+   * Process error based on context
    */
   handle(
     error: unknown,
@@ -37,12 +41,12 @@ export class ErrorHandler {
   ): ErrorResult {
     const originalError = error instanceof Error ? error : new Error(String(error));
 
-    // Validation-Fehler ZUERST prüfen (bevor Bazel-Check!)
+    // Check validation errors first (before Bazel check!)
     if (this.isValidationError(error)) {
       return this.handleValidationError(originalError, context);
     }
 
-    // Bazel-spezifische Fehler
+    // Bazel-specific errors
     if (this.isBazelError(error)) {
       return this.handleBazelError(originalError, context);
     }
@@ -57,7 +61,7 @@ export class ErrorHandler {
   }
 
   /**
-   * Prüft, ob es ein Bazel-Fehler ist
+   * Check if Bazel error
    */
   private isBazelError(error: unknown): boolean {
     const message = String(error).toLowerCase();
@@ -70,7 +74,7 @@ export class ErrorHandler {
   }
 
   /**
-   * Prüft, ob es ein Workspace-Fehler ist
+   * Check if workspace error
    */
   private isWorkspaceError(error: unknown): boolean {
     const message = String(error).toLowerCase();
@@ -82,7 +86,7 @@ export class ErrorHandler {
   }
 
   /**
-   * Prüft, ob es ein Validation-Fehler ist
+   * Check if validation error
    */
   private isValidationError(error: unknown): boolean {
     const message = String(error).toLowerCase();
@@ -94,7 +98,7 @@ export class ErrorHandler {
   }
 
   /**
-   * Behandelt Bazel-Fehler
+   * Handle Bazel errors
    */
   private handleBazelError(error: Error, context: string): ErrorResult {
     const shouldRetry = this.isTransientError(error);
@@ -109,10 +113,10 @@ export class ErrorHandler {
   }
 
   /**
-   * Behandelt Workspace-Fehler
+   * Handle workspace errors
    */
   private handleWorkspaceError(error: Error, context: string): ErrorResult {
-    // Workspace-Fehler sind normalerweise NICHT retryable (Datei fehlt, nicht vor\u00fcbergehend)
+    // Workspace errors usually NOT retryable (missing files, not transient)
     const shouldRetry = this.isTransientError(error);
     
     return {
@@ -125,7 +129,7 @@ export class ErrorHandler {
   }
 
   /**
-   * Behandelt Validation-Fehler
+   * Handle validation errors
    */
   private handleValidationError(error: Error, context: string): ErrorResult {
     return {
@@ -138,7 +142,7 @@ export class ErrorHandler {
   }
 
   /**
-   * Behandelt unbekannte Fehler
+   * Handle unknown errors
    */
   private handleUnknownError(error: Error, context: string): ErrorResult {
     return {
@@ -151,19 +155,19 @@ export class ErrorHandler {
   }
 
   /**
-   * Prüft, ob ein Fehler transient ist (Retry sinnvoll)
+   * Check if error is transient (retry makes sense)
    */
   private isTransientError(error: Error): boolean {
     const message = error.message.toLowerCase();
     const errorCode = (error as any).code;
 
-    // Prüfe error.code Property für Node.js Fehler
+    // Check error.code property for Node.js errors
     if (errorCode) {
       const transientCodes = ['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'ENETUNREACH'];
       if (transientCodes.includes(errorCode)) {
         return true;
       }
-      // ENOENT und andere File-System-Fehler sind NICHT transient
+      // ENOENT and other file system errors are NOT transient
       if (errorCode === 'ENOENT' || errorCode === 'EACCES') {
         return false;
       }

@@ -4,7 +4,7 @@
  */
 
 /**
- * Framework-spezifische Strategien für Test-Filterung
+ * Test filter strategies - framework-specific test filtering using native Bazel/framework features
  * 
  * Bazel-First-Prinzip:
  * - Nutze native Bazel/Framework Features wo vorhanden

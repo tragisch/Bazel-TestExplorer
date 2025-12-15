@@ -3,6 +3,10 @@
  * SPDX-License-Identifier: MIT
  */
 
+/**
+ * Test case discovery - identifies individual test cases within Bazel test targets
+ */
+
 import { createHash } from 'crypto';
 import { callRunBazelCommandForTest } from './runner';
 import { logWithTimestamp, formatError } from '../logging';

@@ -6,6 +6,10 @@
  * See the LICENSE file in the root directory for details.
  */
 
+/**
+ * Test tree builder - constructs hierarchical test tree structure from Bazel targets
+ */
+
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -29,7 +33,7 @@ function getDiscoveryEnabled(): boolean {
 let isDiscoveringTests = false;
 
 /**
- * Haupt-Entry-Point für Test-Discovery
+ * Main entry point for test discovery
  */
 export const discoverAndDisplayTests = async (
   controller: vscode.TestController,
@@ -56,7 +60,7 @@ export const discoverAndDisplayTests = async (
 };
 
 /**
- * Aktualisiert den Test-Tree mit neuen Entries
+ * Update test tree with new entries
  */
 function updateTestTree(
   controller: vscode.TestController,
@@ -73,7 +77,7 @@ function updateTestTree(
 }
 
 /**
- * Entfernt veraltete Test-Items aus dem Controller
+ * Remove stale test items from controller
  */
 function removeStaleItems(
   controller: vscode.TestController,
@@ -93,7 +97,7 @@ function removeStaleItems(
 }
 
 /**
- * Sortiert Test-Entries (test_suite zuerst, dann alphabetisch)
+ * Sort test entries (test_suite first, then alphabetically)
  */
 function sortTestEntries(entries: BazelTestTarget[]): BazelTestTarget[] {
   return entries.sort((a, b) => {
@@ -104,7 +108,7 @@ function sortTestEntries(entries: BazelTestTarget[]): BazelTestTarget[] {
 }
 
 /**
- * Loggt das Ergebnis der Discovery
+ * Log discovery results
  */
 function logDiscoveryResult(
   controller: vscode.TestController,
@@ -127,7 +131,7 @@ function logDiscoveryResult(
 }
 
 /**
- * Zentrale Fehlerbehandlung für Discovery
+ * Central error handling for discovery
  */
 function handleDiscoveryError(error: unknown): void {
   const message = formatError(error);
@@ -136,7 +140,7 @@ function handleDiscoveryError(error: unknown): void {
 }
 
 /**
- * Fügt ein Test-Item zum Controller hinzu
+ * Add test item to controller
  */
 export const addTestItemToController = (
   controller: vscode.TestController,
@@ -153,7 +157,7 @@ export const addTestItemToController = (
 };
 
 /**
- * Parst ein Bazel Target-Label in Package und Test-Name
+ * Parse Bazel target label into package and test name
  */
 function parseTargetLabel(target: string): [string, string] {
   return target.includes(":")
@@ -162,7 +166,7 @@ function parseTargetLabel(target: string): [string, string] {
 }
 
 /**
- * Holt oder erstellt ein Package-Item
+ * Get or create package item
  */
 function getOrCreatePackageItem(
   controller: vscode.TestController,
@@ -181,7 +185,7 @@ function getOrCreatePackageItem(
 }
 
 /**
- * Erstellt ein Test-Item
+ * Create test item
  */
 function createTestItem(
   controller: vscode.TestController,
@@ -221,7 +225,7 @@ function createTestItem(
 // ───────────────────────────────────────────────────────────────
 
 /**
- * Formatiert ein Package-Label für die Anzeige
+ * Format package label for display
  */
 function formatPackageLabel(bazelPath: string): { label: string; tooltip: string } {
   const withoutSlashes = bazelPath.replace(/^\/\//, "");
@@ -233,8 +237,7 @@ function formatPackageLabel(bazelPath: string): { label: string; tooltip: string
 }
 
 /**
- * Löst die Source-URI für einen Test auf - nutzt Metadaten-Srcs falls verfügbar,
- * andernfalls Guessing-Strategie
+ * Resolve source URI for test - uses metadata srcs if available, otherwise guesses
  */
 function resolveSourceUri(
   testTarget: BazelTestTarget,
@@ -256,8 +259,8 @@ function resolveSourceUri(
 }
 
 /**
- * Wählt die bevorzugte Source-Datei aus einer Liste von Srcs.
- * Für ThrowTheSwitch: Bevorzugt die Datei OHNE _Runner suffix.
+ * Select preferred source file from srcs list.
+ * For ThrowTheSwitch: prefer file WITHOUT _Runner suffix.
  */
 function selectPreferredSourceFile(srcs: string[]): string {
   if (srcs.length === 1) {
@@ -282,7 +285,7 @@ function selectPreferredSourceFile(srcs: string[]): string {
 }
 
 /**
- * Konvertiert ein Bazel-Label (//package:file.cc) zu einer VS Code URI
+ * Convert Bazel label (//package:file.cc) to VS Code URI
  */
 function bazelLabelToUri(label: string): vscode.Uri | undefined {
   const workspace = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
@@ -319,7 +322,7 @@ function bazelLabelToUri(label: string): vscode.Uri | undefined {
 }
 
 /**
- * Versucht die Source-URI für einen Test zu erraten
+ * Guess source URI for test
  */
 function guessSourceUri(
   packageName: string,
@@ -370,7 +373,7 @@ function guessSourceUri(
 }
 
 /**
- * Gibt mögliche Datei-Endungen für einen Test-Typ zurück
+ * Return possible file extensions for test type
  */
 function getExtensionsByType(testType: string): string[] {
   const typeMap: Record<string, string[]> = {

@@ -3,6 +3,10 @@
  * SPDX-License-Identifier: MIT
  */
 
+/**
+ * Failure parser - extracts file locations and error details from test failure output
+ */
+
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';

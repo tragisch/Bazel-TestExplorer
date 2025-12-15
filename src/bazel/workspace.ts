@@ -6,6 +6,10 @@
  * See the LICENSE file in the root directory for details.
  */
 
+/**
+ * Workspace detection - locates Bazel workspace root by finding WORKSPACE/MODULE.bazel files
+ */
+
 import * as vscode from 'vscode';
 import { glob } from 'glob';
 import * as path from 'path';

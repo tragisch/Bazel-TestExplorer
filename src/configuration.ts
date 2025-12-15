@@ -6,12 +6,15 @@
  * See the LICENSE file in the root directory for details.
  */
 
+/**
+ * Configuration service - centralizes Bazel test runner settings with type-safe access
+ */
+
 import * as vscode from 'vscode';
 
 /**
- * ConfigurationService bündelt alle Bazel-Test-Einstellungen und bietet
- * typsichere Getter mit sinnvollen Defaults. Dadurch vermeiden wir
- * verstreute `workspace.getConfiguration` Aufrufe.
+ * Centralizes Bazel test settings with type-safe getters and sensible defaults.
+ * Avoids scattered workspace.getConfiguration calls.
  */
 export class ConfigurationService {
   private readonly section = 'bazelTestRunner';
@@ -41,7 +44,7 @@ export class ConfigurationService {
   }
 
   /**
-   * Hilfsfunktion um auf Änderungen der relevanten Config zu reagieren.
+   * Listen to configuration changes
    */
   onDidChangeConfiguration(listener: () => void): vscode.Disposable {
     return vscode.workspace.onDidChangeConfiguration((e) => {

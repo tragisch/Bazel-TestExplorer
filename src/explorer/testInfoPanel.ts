@@ -6,6 +6,10 @@
  * See the LICENSE file in the root directory for details.
  */
 
+/**
+ * Test info panel - displays test metadata (tags, size, timeout, deps) in webview panel
+ */
+
 import * as vscode from 'vscode';
 import { BazelTestTarget } from '../bazel/types';
 import { BazelClient } from '../bazel/client';

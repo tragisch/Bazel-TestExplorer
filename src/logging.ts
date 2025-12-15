@@ -6,6 +6,10 @@
  * See the LICENSE file in the root directory for details.
  */
 
+/**
+ * Logging utilities - provides timestamped output channel logging and performance measurement
+ */
+
 import * as vscode from 'vscode';
 
 let logger: vscode.OutputChannel;

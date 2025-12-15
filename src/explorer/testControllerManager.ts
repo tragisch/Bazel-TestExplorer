@@ -6,6 +6,10 @@
  * See the LICENSE file in the root directory for details.
  */
 
+/**
+ * Test controller manager - orchestrates VS Code test discovery, execution, and UI integration
+ */
+
 import * as vscode from 'vscode';
 import { BazelClient } from '../bazel/client';
 import { ConfigurationService } from '../configuration';
@@ -14,8 +18,8 @@ import { showTestMetadataById } from './testInfoPanel';
 import { logWithTimestamp, formatError } from '../logging';
 
 /**
- * Verwaltet den VS Code TestController und orchestriert Test-Discovery,
- * Run-Profile, Commands und Auto-Reload.
+ * Manages VS Code TestController and orchestrates test discovery,
+ * run profiles, commands, and auto-reload.
  */
 export class TestControllerManager {
   private controller: vscode.TestController;
@@ -34,7 +38,7 @@ export class TestControllerManager {
   }
 
   /**
-   * Initialisiert Commands, RunProfile und FileWatcher
+   * Initialize commands, run profiles, and file watchers
    */
   initialize(): void {
     this.registerResolveHandler();
@@ -45,7 +49,7 @@ export class TestControllerManager {
   }
 
   /**
-   * Registriert den Resolve-Handler für Lazy-Loading von Test-Cases
+   * Register resolve handler for lazy-loading test cases
    */
   private registerResolveHandler(): void {
     this.controller.resolveHandler = async (item) => {
@@ -61,7 +65,7 @@ export class TestControllerManager {
   }
 
   /**
-   * Test-Discovery mit optionalem Progress-Dialog
+   * Discover tests with optional progress dialog
    */
   async discover(progress?: vscode.Progress<{ message?: string; increment?: number }>): Promise<void> {
     try {
@@ -76,7 +80,7 @@ export class TestControllerManager {
   }
 
   /**
-   * Commands registrieren (reload, showMetadata)
+   * Register commands (reload, showMetadata)
    */
   private registerCommands(): void {
     this.context.subscriptions.push(
@@ -114,7 +118,7 @@ export class TestControllerManager {
   }
 
   /**
-   * Run-Profile für Test-Execution
+   * Register run profiles for test execution
    */
   private registerRunProfile(): void {
     const runProfile = this.controller.createRunProfile(
@@ -170,7 +174,7 @@ export class TestControllerManager {
   }
 
   /**
-   * FileSystemWatcher für BUILD-Dateien (ersetzt Window-Focus-Reload)
+   * Watch BUILD files (replaces window-focus reload)
    */
   private registerFileWatcher(): void {
     const watcher = vscode.workspace.createFileSystemWatcher(
@@ -182,7 +186,7 @@ export class TestControllerManager {
         clearTimeout(this.debounceTimer);
       }
       this.debounceTimer = setTimeout(() => {
-        // Cache invalidieren bei BUILD-Änderungen
+        // Invalidate cache on BUILD changes
         this.bazelClient.clearCache();
         logWithTimestamp('BUILD files changed, cache invalidated. Reloading tests...');
         vscode.commands.executeCommand('extension.reloadBazelTests');
@@ -197,7 +201,7 @@ export class TestControllerManager {
   }
 
   /**
-   * Reagiert auf Config-Änderungen
+   * React to configuration changes
    */
   private registerConfigListener(): void {
     this.context.subscriptions.push(

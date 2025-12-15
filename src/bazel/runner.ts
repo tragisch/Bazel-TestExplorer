@@ -6,6 +6,10 @@
  * See the LICENSE file in the root directory for details.
  */
 
+/**
+ * Test runner - executes Bazel tests and processes results for VS Code test controller
+ */
+
 import * as vscode from 'vscode';
 import { runBazelCommand } from './process';
 import { logWithTimestamp, measure, formatError } from '../logging';

@@ -6,6 +6,10 @@
  * See the LICENSE file in the root directory for details.
  */
 
+/**
+ * Extension entry point - initializes and activates the Bazel test explorer
+ */
+
 import * as vscode from 'vscode';
 import { initializeLogger, logWithTimestamp, measure } from './logging';
 import { findBazelWorkspace } from './bazel/workspace';
@@ -35,7 +39,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	}
 	logWithTimestamp(`Bazel validated: ${validation.version || 'OK'}`);
 
-	// TestControllerManager orchestriert alle Test-bezogenen Operationen
+	// TestControllerManager orchestrates all test-related operations
 	const testManager = new TestControllerManager(bazelClient, configurationService, context);
 	testManager.initialize();
 

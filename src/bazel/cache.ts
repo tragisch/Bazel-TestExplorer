@@ -6,6 +6,10 @@
  * See the LICENSE file in the root directory for details.
  */
 
+/**
+ * Query cache - TTL-based caching for Bazel query results to reduce repeated queries
+ */
+
 import { BazelTestTarget } from './types';
 import { logWithTimestamp } from '../logging';
 import * as crypto from 'crypto';

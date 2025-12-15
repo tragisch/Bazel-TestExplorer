@@ -6,6 +6,10 @@
  * See the LICENSE file in the root directory for details.
  */
 
+/**
+ * Process execution - spawns and manages Bazel command processes with streaming output
+ */
+
 import * as cp from 'child_process';
 import * as readline from 'readline';
 import * as fs from 'fs';

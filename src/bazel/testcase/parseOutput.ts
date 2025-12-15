@@ -3,6 +3,10 @@
  * SPDX-License-Identifier: MIT
  */
 
+/**
+ * Test case output parser - extracts individual test cases and their results from test output
+ */
+
 import { logWithTimestamp } from '../../logging';
 import { IndividualTestCase, TestCaseParseResult } from '../types';
 import { getAllTestPatterns, normalizeStatus, TestCasePattern } from '../testPatterns';

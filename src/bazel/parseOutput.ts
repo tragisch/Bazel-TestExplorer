@@ -3,6 +3,10 @@
  * SPDX-License-Identifier: MIT
  */
 
+/**
+ * Output parser - extracts test cases from Bazel test output using configurable patterns
+ */
+
 import { logWithTimestamp } from '../logging';
 import { IndividualTestCase, TestCaseParseResult } from './types';
 import { getAllTestPatterns, normalizeStatus, TestCasePattern } from './testPatterns';

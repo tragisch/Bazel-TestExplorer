@@ -6,6 +6,10 @@
  * See the LICENSE file in the root directory for details.
  */
 
+/**
+ * Bazel queries - constructs and executes Bazel query commands to discover test targets
+ */
+
 import { BazelTestTarget } from './types';
 import { logWithTimestamp, measure } from '../logging';
 import { runBazelCommand } from './process';

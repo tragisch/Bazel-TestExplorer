@@ -6,6 +6,10 @@
  * See the LICENSE file in the root directory for details.
  */
 
+/**
+ * Test patterns - regex patterns for parsing test output from various frameworks (gtest, pytest, etc.)
+ */
+
 export interface TestCasePattern {
     id: string;
     framework: string;

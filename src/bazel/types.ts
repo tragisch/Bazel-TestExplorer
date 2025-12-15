@@ -6,6 +6,10 @@
  * See the LICENSE file in the root directory for details.
  */
 
+/**
+ * Type definitions - interfaces for Bazel targets, test cases, and parsing results
+ */
+
 export interface BazelTestTarget {
     target: string;
     type: string;
