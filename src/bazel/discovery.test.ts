@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import 'mocha';
+import * as assert from 'assert';
 import {
   discoverIndividualTestCases,
   clearDiscoveryCache,
@@ -48,24 +49,24 @@ describe('discovery', () => {
 
     const result = await discoverIndividualTestCases('test', '/workspace');
     
-    expect(result.testCases).toEqual([]);
-    expect(result.summary.total).toBe(0);
+    assert.strictEqual(result.testCases.length, 0);
+    assert.strictEqual(result.summary.total, 0);
   });
 
   it('should use custom TTL from mock config', () => {
     const mockConfig = new MockConfigService(30000, true);
     setConfigService(mockConfig);
 
-    expect(mockConfig.getDiscoveryTtlMs()).toBe(30000);
+    assert.strictEqual(mockConfig.getDiscoveryTtlMs(), 30000);
   });
 
   it('should hash correctly with mock hash service', () => {
     const mockHash = new MockHashService();
-    expect(mockHash.sha1('test')).toBe('hash_4');
+    assert.strictEqual(mockHash.sha1('test'), 'hash_4');
   });
 
   it('should clear cache', () => {
     clearDiscoveryCache();
-    expect(getDiscoveryCacheStats().size).toBe(0);
+    assert.strictEqual(getDiscoveryCacheStats().size, 0);
   });
 });

@@ -407,8 +407,9 @@ export const resolveTestCaseChildren = async (
         logWithTimestamp(`Skipping resolution for ${testItem.id} because discovery is disabled by configuration.`);
         return;
       }
-    } catch {
-      // ignore and proceed when vscode not available (e.g. tests)
+    } catch (error) {
+      // Proceed when vscode not available (e.g. tests)
+      logWithTimestamp(`Could not read enableTestCaseDiscovery config: ${formatError(error)}`, 'info');
     }
     // Skip if already resolved
     if (testItem.children.size > 0) {

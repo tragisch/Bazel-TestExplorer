@@ -2,6 +2,14 @@
 
 All notable changes to the "bazel-unity-test" extension will be documented here.
 
+## [Unreleased]
+
+### Added
+- **Test Case Discovery**: Performance Optimisation
+- **Multi-Framework Support**: Extended test pattern recognition new frameworks
+- **Enhanced Failure Analysis**: Improved error parsing and location detection
+
+
 ## [0.1.14]
 - Implement extension bundling with esbuild
 - Reduce VSIX size by 50% (1.64 MB → 812 KB)
