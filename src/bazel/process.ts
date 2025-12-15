@@ -16,11 +16,12 @@ export function runBazelCommand(
     args: string[],
     cwd: string,
     onLine?: (line: string) => void,
-    onErrorLine?: (line: string) => void
+    onErrorLine?: (line: string) => void,
+    bazelPath: string = 'bazel'
 ): Promise<{ code: number; stdout: string; stderr: string }> {
     return new Promise((resolve, reject) => {
-        logWithTimestamp(`Running Bazel: bazel ${args.join(" ")}`);
-        const proc = cp.spawn('bazel', args, { cwd, shell: true });
+        logWithTimestamp(`Running Bazel: ${bazelPath} ${args.join(" ")}`);
+        const proc = cp.spawn(bazelPath, args, { cwd, shell: true });
 
         let stdout = '';
         let stderr = '';

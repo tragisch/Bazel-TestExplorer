@@ -12,10 +12,12 @@ import { findBazelWorkspace } from './bazel/workspace';
 import { BazelClient } from './bazel/client';
 import { discoverAndDisplayTests } from './explorer/testTree';
 import { showTestMetadataById } from './explorer/testInfoPanel';
+import { ConfigurationService } from './configuration';
 
 let bazelTestController: vscode.TestController;
 let metadataListenerRegistered = false;
 let bazelClient: BazelClient;
+let configurationService: ConfigurationService;
 
 export async function activate(context: vscode.ExtensionContext) {
 	initializeLogger();
@@ -30,7 +32,8 @@ export async function activate(context: vscode.ExtensionContext) {
 		return;
 	}
 
-	bazelClient = new BazelClient(workspaceRoot);
+	configurationService = new ConfigurationService();
+	bazelClient = new BazelClient(workspaceRoot, configurationService);
 
 	const validation = await bazelClient.validate();
 	if (!validation.valid) {
@@ -87,10 +90,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	bazelTestController.createRunProfile('Run Tests', vscode.TestRunProfileKind.Run, async (request, token) => {
 		const run = bazelTestController.createTestRun(request);
-		const workspacePath = bazelClient.workspace;
-
-		const config = vscode.workspace.getConfiguration("bazelTestRunner");
-		const sequentialTypes: string[] = config.get("sequentialTestTypes", []);
+		const sequentialTypes: string[] = configurationService.sequentialTestTypes;
 
 		const collectAllTests = (item: vscode.TestItem): vscode.TestItem[] => {
 			const collected: vscode.TestItem[] = [];
@@ -114,7 +114,7 @@ export async function activate(context: vscode.ExtensionContext) {
 				const testTypeMatch = t.label.match(/^\[(.+?)\]/);
 				const testType = testTypeMatch?.[1];
 				const isSequential = sequentialTypes.includes(testType ?? "");
-				const promise = bazelClient.runTest(t, workspacePath, run);
+				const promise = bazelClient.runTest(t, run, token);
 				if (isSequential) {
 					await promise;
 				} else {

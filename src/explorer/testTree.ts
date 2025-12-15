@@ -26,10 +26,9 @@ export const discoverAndDisplayTests = async (
   isDiscoveringTests = true;
   try {
     const packageItemCache = new Map<string, vscode.TestItem>();
-    const workspacePath = bazelClient.workspace;
 
     const testEntries = await measure("Query Bazel test targets", () =>
-      bazelClient.queryTests(workspacePath)
+      bazelClient.queryTests()
     );
 
     const currentTestIds = new Set(testEntries.map(entry => entry.target));

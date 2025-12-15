@@ -13,6 +13,7 @@ import * as fs from 'fs';
 import { runBazelCommand } from './process';
 import { logWithTimestamp, measure, formatError } from '../logging';
 import { log } from 'console';
+import { ConfigurationService } from '../configuration';
 
 // ───────────────────────────────────────────────────────────────
 // Bazel Test Configuration
@@ -34,7 +35,8 @@ const DEFAULT_BAZEL_TEST_FLAGS = [
 export const executeBazelTest = async (
   testItem: vscode.TestItem,
   workspacePath: string,
-  run: vscode.TestRun
+  run: vscode.TestRun,
+  config: ConfigurationService
 ) => {
   try {
     const typeMatch = testItem.label.match(/\[(.*?)\]/);
@@ -42,7 +44,7 @@ export const executeBazelTest = async (
     const isSuite = testType === "test_suite";
 
     const { code, stdout, stderr } = await measure(`Execute test: ${testItem.id}`, () =>
-      initiateBazelTest(testItem.id, workspacePath, run, testItem)
+      initiateBazelTest(testItem.id, workspacePath, run, testItem, config)
     );
 
     if (isSuite) {
@@ -144,7 +146,8 @@ export const initiateBazelTest = async (
   testId: string,
   cwd: string,
   run: vscode.TestRun,
-  testItem: vscode.TestItem
+  testItem: vscode.TestItem,
+  config: ConfigurationService
 ): Promise<{ code: number; stdout: string; stderr: string }> => {
   let effectiveTestId = testId;
 
@@ -152,13 +155,15 @@ export const initiateBazelTest = async (
     effectiveTestId = `${testId}//...`;
   }
 
-  const config = vscode.workspace.getConfiguration("bazelTestRunner");
-  const additionalArgs: string[] = config.get("testArgs", []);
+  const additionalArgs: string[] = config.testArgs;
   const args = ['test', effectiveTestId, ...DEFAULT_BAZEL_TEST_FLAGS, ...additionalArgs];
 
   return runBazelCommand(
     args,
     cwd,
+    undefined,
+    undefined,
+    config.bazelPath
   );
 };
 

@@ -11,6 +11,7 @@ import { BazelTestTarget } from './types';
 import { queryBazelTestTargets, getTestTargetById } from './queries';
 import { executeBazelTest } from './runner';
 import { runBazelCommand } from './process';
+import { ConfigurationService } from '../configuration';
 
 /**
  * Zentrale Fassade für alle Bazel-Operationen.
@@ -19,15 +20,15 @@ import { runBazelCommand } from './process';
 export class BazelClient {
   constructor(
     private readonly workspaceRoot: string,
-    private readonly bazelPath: string = 'bazel'
+    private readonly config: ConfigurationService
   ) {}
 
   /**
    * Query alle Test-Targets mit Pattern
    * @param workspacePath Bazel workspace path
    */
-  async queryTests(workspacePath: string): Promise<BazelTestTarget[]> {
-    return queryBazelTestTargets(workspacePath);
+  async queryTests(): Promise<BazelTestTarget[]> {
+    return queryBazelTestTargets(this.workspaceRoot, this.config);
   }
 
   /**
@@ -38,10 +39,10 @@ export class BazelClient {
    */
   async runTest(
     testItem: any,
-    workspacePath: string,
-    run: TestRun
+    run: TestRun,
+    token?: CancellationToken
   ): Promise<void> {
-    return executeBazelTest(testItem, workspacePath, run);
+    return executeBazelTest(testItem, this.workspaceRoot, run, this.config);
   }
 
   /**
@@ -66,7 +67,9 @@ export class BazelClient {
           if (line.startsWith('Build label:')) {
             version = line;
           }
-        }
+        },
+        undefined,
+        this.config.bazelPath
       );
       
       if (code === 0) {
@@ -93,6 +96,6 @@ export class BazelClient {
    * Getter für Bazel-Pfad
    */
   get bazel(): string {
-    return this.bazelPath;
+    return this.config.bazelPath;
   }
 }
