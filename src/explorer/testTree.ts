@@ -68,7 +68,7 @@ function updateTestTree(
 
   const sortedEntries = sortTestEntries(testEntries);
   for (const entry of sortedEntries) {
-    addTestItemToController(controller, entry.target, entry.type, entry.tags ?? [], packageCache);
+    addTestItemToController(controller, entry, packageCache);
   }
 }
 
@@ -140,15 +140,14 @@ function handleDiscoveryError(error: unknown): void {
  */
 export const addTestItemToController = (
   controller: vscode.TestController,
-  target: string,
-  testType: string,
-  tags: string[],
+  testTarget: BazelTestTarget,
   packageCache: Map<string, vscode.TestItem>
 ): void => {
+  const target = testTarget.target;
   const [packageName, testName] = parseTargetLabel(target);
 
   const packageItem = getOrCreatePackageItem(controller, packageName, packageCache);
-  const testItem = createTestItem(controller, target, testName, testType, tags, packageName);
+  const testItem = createTestItem(controller, testTarget, testName, packageName);
 
   packageItem.children.add(testItem);
 };
@@ -186,13 +185,17 @@ function getOrCreatePackageItem(
  */
 function createTestItem(
   controller: vscode.TestController,
-  target: string,
+  testTarget: BazelTestTarget,
   testName: string,
-  testType: string,
-  tags: string[],
   packageName: string
 ): vscode.TestItem {
-  const uri = guessSourceUri(packageName, testName, testType);
+  const target = testTarget.target;
+  const testType = testTarget.type;
+  const tags = testTarget.tags ?? [];
+  
+  // Prefer source file from metadata over guessing
+  const uri = resolveSourceUri(testTarget, packageName, testName);
+  
   const icon = testType === "test_suite" ? "🧰 " : "";
   const discoveryEnabled = getDiscoveryEnabled();
   const label = `${icon}[${testType}] ${testName}`;
@@ -227,6 +230,92 @@ function formatPackageLabel(bazelPath: string): { label: string; tooltip: string
   const tail = parts.slice(-2).join('/');
   const tooltip = `//${withoutSlashes}`;
   return { label: `${root}: ${tail}`, tooltip };
+}
+
+/**
+ * Löst die Source-URI für einen Test auf - nutzt Metadaten-Srcs falls verfügbar,
+ * andernfalls Guessing-Strategie
+ */
+function resolveSourceUri(
+  testTarget: BazelTestTarget,
+  packageName: string,
+  testName: string
+): vscode.Uri | undefined {
+  // Try to use source files from metadata first
+  if (testTarget.srcs && testTarget.srcs.length > 0) {
+    // Special handling for ThrowTheSwitch: prefer non-Runner file
+    const preferredSrc = selectPreferredSourceFile(testTarget.srcs);
+    const srcUri = bazelLabelToUri(preferredSrc);
+    if (srcUri) {
+      return srcUri;
+    }
+  }
+  
+  // Fallback to guessing strategy
+  return guessSourceUri(packageName, testName, testTarget.type);
+}
+
+/**
+ * Wählt die bevorzugte Source-Datei aus einer Liste von Srcs.
+ * Für ThrowTheSwitch: Bevorzugt die Datei OHNE _Runner suffix.
+ */
+function selectPreferredSourceFile(srcs: string[]): string {
+  if (srcs.length === 1) {
+    return srcs[0];
+  }
+  
+  // Check if this is a ThrowTheSwitch test (has _Runner.c file)
+  const runnerFile = srcs.find(src => src.includes('_Runner.c') || src.includes('_Runner.cc'));
+  
+  if (runnerFile) {
+    // Find the non-Runner file
+    const nonRunnerFile = srcs.find(src => 
+      !src.includes('_Runner.c') && !src.includes('_Runner.cc')
+    );
+    if (nonRunnerFile) {
+      return nonRunnerFile;
+    }
+  }
+  
+  // Default: return first source file
+  return srcs[0];
+}
+
+/**
+ * Konvertiert ein Bazel-Label (//package:file.cc) zu einer VS Code URI
+ */
+function bazelLabelToUri(label: string): vscode.Uri | undefined {
+  const workspace = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
+  if (!workspace) return undefined;
+
+  // Parse label format: //package/path:filename or //package/path:subdir/filename
+  let packagePath: string;
+  let fileName: string;
+
+  if (label.includes(':')) {
+    const [pkg, file] = label.split(':');
+    packagePath = pkg.replace(/^\/\//, '');
+    fileName = file;
+  } else {
+    // Handle labels without colon (file in same package)
+    packagePath = label.replace(/^\/\//, '');
+    const parts = packagePath.split('/');
+    fileName = parts.pop() || '';
+    packagePath = parts.join('/');
+  }
+
+  const fullPath = path.join(workspace, packagePath, fileName);
+  
+  // Verify file exists
+  try {
+    if (fs.existsSync(fullPath)) {
+      return vscode.Uri.file(fullPath);
+    }
+  } catch (e) {
+    // Ignore errors
+  }
+  
+  return undefined;
 }
 
 /**
