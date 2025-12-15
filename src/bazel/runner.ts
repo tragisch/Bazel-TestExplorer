@@ -7,13 +7,11 @@
  */
 
 import * as vscode from 'vscode';
-import * as cp from 'child_process';
-import * as path from 'path';
-import * as fs from 'fs';
 import { runBazelCommand } from './process';
 import { logWithTimestamp, measure, formatError } from '../logging';
-import { log } from 'console';
 import { ConfigurationService } from '../configuration';
+import { analyzeTestFailures } from './parseFailures';
+import { extractTestCasesFromOutput } from './testcase/parseOutput';
 
 // ───────────────────────────────────────────────────────────────
 // Bazel Test Configuration
@@ -150,13 +148,27 @@ export const initiateBazelTest = async (
   config: ConfigurationService
 ): Promise<{ code: number; stdout: string; stderr: string }> => {
   let effectiveTestId = testId;
+  let filterArgs: string[] = [];
 
-  if (/^\/\/[^:]*$/.test(testId)) {
-    effectiveTestId = `${testId}//...`;
+  // Check if this is an individual test case (contains ::)
+  if (testId.includes('::')) {
+    const parts = testId.split('::');
+    effectiveTestId = parts[0]; // The actual Bazel target
+    const testName = parts.slice(1).join('::'); // The test case name
+    
+    // Try to apply test filter based on test type if supported
+    const typeMatch = testItem.label.match(/\[(.*?)\]/);
+    const testType = typeMatch?.[1] ?? "";
+    
+    logWithTimestamp(`Running individual test case: ${effectiveTestId}::${testName} [${testType}]`);
   }
 
-  const additionalArgs: string[] = config.testArgs;
-  const args = ['test', effectiveTestId, ...DEFAULT_BAZEL_TEST_FLAGS, ...additionalArgs];
+  if (/^\/\/[^:]*$/.test(effectiveTestId)) {
+    effectiveTestId = `${effectiveTestId}//...`;
+  }
+
+  const additionalArgs: string[] = [...config.testArgs];
+  const args = ['test', effectiveTestId, ...DEFAULT_BAZEL_TEST_FLAGS, ...additionalArgs, ...filterArgs];
 
   return runBazelCommand(
     args,
@@ -166,8 +178,6 @@ export const initiateBazelTest = async (
     config.bazelPath
   );
 };
-
-
 
 export const parseBazelOutput = (stdout: string): { input: string[] } => {
   const input: string[] = [];
@@ -220,75 +230,8 @@ function handleTestResult(
   }
 }
 
-function analyzeTestFailures(testLog: string[], workspacePath: string, testItem: vscode.TestItem): vscode.TestMessage[] {
-  const config = vscode.workspace.getConfiguration("bazelTestRunner");
-  const customPatterns = config.get<string[]>("failLinePatterns", []);
-  const failPatterns: { pattern: RegExp; source: string }[] = [
-    ...customPatterns.map(p => {
-      try {
-        return { pattern: new RegExp(p), source: "Custom Setting" };
-      } catch (e) {
-        logWithTimestamp(`Invalid regex pattern in settings: "${p}"`, "warn");
-        return null;
-      }
-    }).filter((p): p is { pattern: RegExp; source: string } => p !== null),
-    { pattern: /^(.+?):(\d+): Failure/, source: "Built-in" },
-    { pattern: /^(.+?):(\d+): FAILED/, source: "Built-in" },
-    { pattern: /^(.+?):(\d+):\d+: error/, source: "Built-in" },
-    { pattern: /^(.+?)\((\d+)\): error/, source: "Built-in" },
-    { pattern: /^(.+?):(\d+): error/, source: "Built-in" },
-    { pattern: /^FAIL .*?\((.+?):(\d+)\)$/, source: "Built-in" },
-    { pattern: /^(.+?):(\d+):.+?:FAIL:/, source: "Built-in" },
-    { pattern: /^Error: (.+?):(\d+): /, source: "Built-in" },
-    { pattern: /^\s*File "(.*?)", line (\d+), in .+$/, source: "Python Traceback" },
-    { pattern: /^(.+?):(\d+): AssertionError$/, source: "Python AssertionError" },
-    { pattern: /^\[----\] (.+?):(\d+): Assertion Failed$/, source: "Built-in" },
-    { pattern: /^.*panicked at .*?([^\s:]+):(\d+):\d+:$/, source: "Rust panic" },
-    { pattern: /^(.*):(\d+):\s+ERROR:\s+(REQUIRE|CHECK|CHECK_EQ)\(\s*(.*?)\s*\)\s+is\s+NOT\s+correct!/, source: "Built-in" },
-    { pattern: /^Assertion failed: .*?, function .*?, file (.+?), line (\d+)\./, source: "Built-in" },
-  ];
-
-  const messages: vscode.TestMessage[] = [];
-  const matchingLines = testLog.filter(line => failPatterns.some(({ pattern }) => pattern.test(line)));
-
-  for (const line of matchingLines) {
-    let bestMatch: {
-      match: RegExpMatchArray;
-      pattern: RegExp;
-      source: string;
-    } | null = null;
-    for (const { pattern, source } of failPatterns) {
-      const match = line.match(pattern);
-      if (match) {
-        if (!bestMatch || match[0].length > bestMatch.match[0].length) {
-          bestMatch = { match, pattern, source };
-        }
-      }
-    }
-    if (bestMatch) {
-      const [, file, lineStr] = bestMatch.match;
-      const normalizedPath = path.normalize(file);
-      const trimmedPath = normalizedPath.includes(`${path.sep}_main${path.sep}`)
-        ? normalizedPath.substring(normalizedPath.indexOf(`${path.sep}_main${path.sep}`) + "_main".length + 1)
-        : normalizedPath;
-      const fullPath = path.join(workspacePath, trimmedPath);
-      logWithTimestamp(`Pattern matched: [${bestMatch.source}] ${bestMatch.pattern}`);
-      logWithTimestamp(`✔ Found & used: ${file}:${lineStr}`);
-      if (fs.existsSync(fullPath)) {
-        const uri = vscode.Uri.file(fullPath);
-        const location = new vscode.Location(uri, new vscode.Position(Number(lineStr) - 1, 0));
-        const fullText = [line, '', ...testLog].join("\n");
-        const message = new vscode.TestMessage(fullText);
-        message.location = location;
-        messages.push(message);
-      } else {
-        logWithTimestamp(`File not found: ${fullPath}`);
-      }
-    }
-  }
-
-  return messages;
-}
+// analyzeTestFailures is now imported from parseFailures.ts
+// It provides multi-framework support with configurable patterns
 
 // ───────────────────────────────────────────────────────────────
 // Formatting functions
@@ -302,4 +245,26 @@ const getStatusHeader = (code: number, testId: string): string => {
   })[code] ?? `🧨 **Build or Config Error (code ${code})**`;
 
   return `${status}: ${testId}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+};
+
+// ───────────────────────────────────────────────────────────────
+// Discovery helper - used for individual test case discovery
+// ───────────────────────────────────────────────────────────────
+
+export const callRunBazelCommandForTest = async (options: {
+  testId: string;
+  cwd: string;
+  additionalArgs?: string[];
+}): Promise<{ stdout: string; stderr: string }> => {
+  const { testId, cwd, additionalArgs = [] } = options;
+  
+  let effectiveTestId = testId;
+  if (/^\/\/[^:]*$/.test(testId)) {
+    effectiveTestId = `${testId}//...`;
+  }
+
+  const args = ['test', effectiveTestId, ...DEFAULT_BAZEL_TEST_FLAGS, ...additionalArgs];
+  const { stdout, stderr } = await runBazelCommand(args, cwd);
+  
+  return { stdout, stderr };
 };

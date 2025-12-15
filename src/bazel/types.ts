@@ -20,3 +20,31 @@ export interface BazelTestTarget {
     tests?: string[];
     visibility?: string[];
 }
+
+/**
+ * Represents an individual test case discovered from test output
+ */
+export interface IndividualTestCase {
+    name: string;
+    file: string;
+    line: number;
+    parentTarget: string;
+    status: 'PASS' | 'FAIL' | 'TIMEOUT' | 'SKIP';
+    errorMessage?: string;
+    suite?: string;
+    className?: string;
+    frameworkId?: string;
+}
+
+/**
+ * Result of parsing test output to extract individual test cases
+ */
+export interface TestCaseParseResult {
+    testCases: IndividualTestCase[];
+    summary: {
+        total: number;
+        passed: number;
+        failed: number;
+        ignored: number;
+    };
+}

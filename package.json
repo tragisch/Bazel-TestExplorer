@@ -96,6 +96,17 @@
           "items": {
             "type": "string"
           }
+        },
+        "bazelTestRunner.enableTestCaseDiscovery": {
+          "type": "boolean",
+          "description": "Experimental: Enable discovering individual test cases by running tests (currently: only for some test types, and slow).",
+          "default": false
+        },
+        "bazelTestRunner.discoveryCacheMs": {
+          "type": "number",
+          "description": "Time-to-live in milliseconds for cached test case discovery results. Lower values cause more frequent re-discovery but ensure fresher results.",
+          "default": 15000,
+          "minimum": 1000
         }
       }
     }

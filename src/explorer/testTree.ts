@@ -12,6 +12,19 @@ import * as path from 'path';
 import { BazelClient } from '../bazel/client';
 import { BazelTestTarget } from '../bazel/types';
 import { logWithTimestamp, measure, formatError } from '../logging';
+import { discoverIndividualTestCases } from '../bazel/discovery';
+import { findBazelWorkspace } from '../bazel/workspace';
+
+function getDiscoveryEnabled(): boolean {
+  try {
+    const vscode = require('vscode');
+    const cfg = vscode.workspace.getConfiguration('bazelTestRunner');
+    return (cfg.get('enableTestCaseDiscovery', false) as boolean);
+  } catch {
+    // When running outside of VS Code (unit tests), default to true
+    return true;
+  }
+}
 
 let isDiscoveringTests = false;
 
@@ -55,7 +68,7 @@ function updateTestTree(
 
   const sortedEntries = sortTestEntries(testEntries);
   for (const entry of sortedEntries) {
-    addTestItemToController(controller, entry.target, entry.type, entry.tags ?? [], packageCache);
+    addTestItemToController(controller, entry, packageCache);
   }
 }
 
@@ -127,15 +140,14 @@ function handleDiscoveryError(error: unknown): void {
  */
 export const addTestItemToController = (
   controller: vscode.TestController,
-  target: string,
-  testType: string,
-  tags: string[],
+  testTarget: BazelTestTarget,
   packageCache: Map<string, vscode.TestItem>
 ): void => {
+  const target = testTarget.target;
   const [packageName, testName] = parseTargetLabel(target);
 
   const packageItem = getOrCreatePackageItem(controller, packageName, packageCache);
-  const testItem = createTestItem(controller, target, testName, testType, tags, packageName);
+  const testItem = createTestItem(controller, testTarget, testName, packageName);
 
   packageItem.children.add(testItem);
 };
@@ -173,21 +185,33 @@ function getOrCreatePackageItem(
  */
 function createTestItem(
   controller: vscode.TestController,
-  target: string,
+  testTarget: BazelTestTarget,
   testName: string,
-  testType: string,
-  tags: string[],
   packageName: string
 ): vscode.TestItem {
-  const uri = guessSourceUri(packageName, testName, testType);
-  const icon = testType === "test_suite" ? "🧪 " : "";
+  const target = testTarget.target;
+  const testType = testTarget.type;
+  const tags = testTarget.tags ?? [];
+  
+  // Prefer source file from metadata over guessing
+  const uri = resolveSourceUri(testTarget, packageName, testName);
+  
+  const icon = testType === "test_suite" ? "🧰 " : "";
+  const discoveryEnabled = getDiscoveryEnabled();
   const label = `${icon}[${testType}] ${testName}`;
 
   const testItem = controller.createTestItem(target, label, uri);
   testItem.tags = ["bazel", ...tags].map(t => new vscode.TestTag(t));
   testItem.description = `Target: ${target}`;
   testItem.busy = false;
-  testItem.canResolveChildren = false;
+  
+  // Enable children resolution for individual test case discovery
+  const isSuite = testType === "test_suite";
+  testItem.canResolveChildren = !isSuite && discoveryEnabled;
+  if (!discoveryEnabled) {
+    testItem.description = `${testItem.description} (individual test discovery disabled)`;
+
+  }
 
   return testItem;
 }
@@ -209,6 +233,92 @@ function formatPackageLabel(bazelPath: string): { label: string; tooltip: string
 }
 
 /**
+ * Löst die Source-URI für einen Test auf - nutzt Metadaten-Srcs falls verfügbar,
+ * andernfalls Guessing-Strategie
+ */
+function resolveSourceUri(
+  testTarget: BazelTestTarget,
+  packageName: string,
+  testName: string
+): vscode.Uri | undefined {
+  // Try to use source files from metadata first
+  if (testTarget.srcs && testTarget.srcs.length > 0) {
+    // Special handling for ThrowTheSwitch: prefer non-Runner file
+    const preferredSrc = selectPreferredSourceFile(testTarget.srcs);
+    const srcUri = bazelLabelToUri(preferredSrc);
+    if (srcUri) {
+      return srcUri;
+    }
+  }
+  
+  // Fallback to guessing strategy
+  return guessSourceUri(packageName, testName, testTarget.type);
+}
+
+/**
+ * Wählt die bevorzugte Source-Datei aus einer Liste von Srcs.
+ * Für ThrowTheSwitch: Bevorzugt die Datei OHNE _Runner suffix.
+ */
+function selectPreferredSourceFile(srcs: string[]): string {
+  if (srcs.length === 1) {
+    return srcs[0];
+  }
+  
+  // Check if this is a ThrowTheSwitch test (has _Runner.c file)
+  const runnerFile = srcs.find(src => src.includes('_Runner.c') || src.includes('_Runner.cc'));
+  
+  if (runnerFile) {
+    // Find the non-Runner file
+    const nonRunnerFile = srcs.find(src => 
+      !src.includes('_Runner.c') && !src.includes('_Runner.cc')
+    );
+    if (nonRunnerFile) {
+      return nonRunnerFile;
+    }
+  }
+  
+  // Default: return first source file
+  return srcs[0];
+}
+
+/**
+ * Konvertiert ein Bazel-Label (//package:file.cc) zu einer VS Code URI
+ */
+function bazelLabelToUri(label: string): vscode.Uri | undefined {
+  const workspace = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
+  if (!workspace) return undefined;
+
+  // Parse label format: //package/path:filename or //package/path:subdir/filename
+  let packagePath: string;
+  let fileName: string;
+
+  if (label.includes(':')) {
+    const [pkg, file] = label.split(':');
+    packagePath = pkg.replace(/^\/\//, '');
+    fileName = file;
+  } else {
+    // Handle labels without colon (file in same package)
+    packagePath = label.replace(/^\/\//, '');
+    const parts = packagePath.split('/');
+    fileName = parts.pop() || '';
+    packagePath = parts.join('/');
+  }
+
+  const fullPath = path.join(workspace, packagePath, fileName);
+  
+  // Verify file exists
+  try {
+    if (fs.existsSync(fullPath)) {
+      return vscode.Uri.file(fullPath);
+    }
+  } catch (e) {
+    // Ignore errors
+  }
+  
+  return undefined;
+}
+
+/**
  * Versucht die Source-URI für einen Test zu erraten
  */
 function guessSourceUri(
@@ -220,10 +330,39 @@ function guessSourceUri(
   const packagePath = packageName.replace(/^\/\//, '');
   const extensions = getExtensionsByType(testType);
 
+  // Package-level cache to avoid repeated fs.existsSync calls for the same package.
+  // Cache entry contains whether the directory exists and the set of file names.
+  type PackageCacheEntry = { dirExists: boolean; files?: Set<string> };
+  const packageCacheKey = packagePath;
+
+  // Initialize module-scoped cache map lazily
+  if (!(global as any).__bazel_testexplorer_packageFileCache) {
+    (global as any).__bazel_testexplorer_packageFileCache = new Map<string, PackageCacheEntry>();
+  }
+  const packageFileCache: Map<string, PackageCacheEntry> = (global as any).__bazel_testexplorer_packageFileCache;
+
+  // Ensure cache populated for this package
+  if (!packageFileCache.has(packageCacheKey)) {
+    const dirFull = path.join(workspace, packagePath);
+    try {
+      if (fs.existsSync(dirFull) && fs.statSync(dirFull).isDirectory()) {
+        const names = new Set<string>(fs.readdirSync(dirFull));
+        packageFileCache.set(packageCacheKey, { dirExists: true, files: names });
+      } else {
+        packageFileCache.set(packageCacheKey, { dirExists: false });
+      }
+    } catch (e) {
+      packageFileCache.set(packageCacheKey, { dirExists: false });
+    }
+  }
+
+  const cacheEntry = packageFileCache.get(packageCacheKey)!;
+  if (!cacheEntry.dirExists) return undefined;
+
   for (const ext of extensions) {
-    const filePath = path.join(workspace, packagePath, testName + ext);
-    if (fs.existsSync(filePath)) {
-      return vscode.Uri.file(filePath);
+    const candidate = testName + ext;
+    if (cacheEntry.files && cacheEntry.files.has(candidate)) {
+      return vscode.Uri.file(path.join(workspace, packagePath, candidate));
     }
   }
 
@@ -244,4 +383,191 @@ function getExtensionsByType(testType: string): string[] {
     'rust_test': ['.rs']
   };
   return typeMap[testType] || ['.c'];
+}
+// ───────────────────────────────────────────────────────────────
+// Individual Test Case Discovery and Resolution
+// ───────────────────────────────────────────────────────────────
+
+/**
+ * Resolves individual test cases for a given test target
+ * Used by the TestController resolve handler for lazy-loading children
+ */
+export const resolveTestCaseChildren = async (
+  testItem: vscode.TestItem,
+  controller: vscode.TestController,
+  bazelClient: BazelClient
+): Promise<void> => {
+  try {
+    // Respect user setting: if discovery is disabled, do not attempt to resolve children
+    try {
+      const vscode = require('vscode');
+      const cfg = vscode.workspace.getConfiguration('bazelTestRunner');
+      const enabled = (cfg.get('enableTestCaseDiscovery', false) as boolean);
+      if (!enabled) {
+        logWithTimestamp(`Skipping resolution for ${testItem.id} because discovery is disabled by configuration.`);
+        return;
+      }
+    } catch (error) {
+      // Proceed when vscode not available (e.g. tests)
+      logWithTimestamp(`Could not read enableTestCaseDiscovery config: ${formatError(error)}`, 'info');
+    }
+    // Skip if already resolved
+    if (testItem.children.size > 0) {
+      logWithTimestamp(`Children already present for ${testItem.id}; skipping discovery.`);
+      return;
+    }
+
+    // Skip for test suites
+    const typeMatch = testItem.label.match(/\[(.*?)\]/);
+    const testType = typeMatch?.[1];
+    if (testType === "test_suite") {
+      return;
+    }
+
+    const workspacePath = await findBazelWorkspace();
+    if (!workspacePath) {
+      logWithTimestamp(`No Bazel workspace found for resolving ${testItem.id}`);
+      return;
+    }
+
+    logWithTimestamp(`Discovering individual test cases for ${testItem.id}...`);
+    testItem.busy = true;
+
+    try {
+      const result = await discoverIndividualTestCases(testItem.id, workspacePath, testType);
+      const targetMetadata = bazelClient.getTargetMetadata(testItem.id);
+      const fallbackLocation = targetMetadata
+        ? resolveSourceFromMetadata(testItem.id, workspacePath, targetMetadata)
+        : undefined;
+      
+      for (const testCase of result.testCases) {
+        const testCaseId = `${testItem.id}::${testCase.name}`;
+        const existing = testItem.children.get(testCaseId);
+
+        if (!existing) {
+          const statusIcon = '🧪';
+          const resolvedFile = selectFilePath(testCase.file, fallbackLocation?.file);
+          const uri = resolvedFile
+            ? vscode.Uri.file(toAbsolutePath(resolvedFile, workspacePath))
+            : undefined;
+          const resolvedLine = testCase.line && testCase.line > 0
+            ? testCase.line
+            : fallbackLocation?.line;
+
+          const testCaseItem = controller.createTestItem(testCaseId, `${statusIcon} ${testCase.name}`, uri);
+
+          if (resolvedLine && resolvedLine > 0) {
+            const lineZeroBased = Math.max(0, resolvedLine - 1);
+            testCaseItem.range = new vscode.Range(
+              new vscode.Position(lineZeroBased, 0),
+              new vscode.Position(lineZeroBased, 0)
+            );
+            testCaseItem.description = `Line ${resolvedLine}`;
+          }
+
+          testCaseItem.canResolveChildren = false;
+          testItem.children.add(testCaseItem);
+        }
+      }
+
+      logWithTimestamp(`Resolved ${result.testCases.length} test cases for ${testItem.id}`);
+    } finally {
+      testItem.busy = false;
+    }
+  } catch (error) {
+    const message = formatError(error);
+    logWithTimestamp(`Failed to resolve test cases for ${testItem.id}: ${message}`, "error");
+    testItem.busy = false;
+  }
+};
+
+function selectFilePath(primary?: string, fallback?: string): string | undefined {
+  return primary && primary.trim().length > 0
+    ? primary
+    : fallback;
+}
+
+function toAbsolutePath(filePath: string, workspacePath: string): string {
+  if (path.isAbsolute(filePath)) {
+    return filePath;
+  }
+  return path.join(workspacePath, filePath);
+}
+
+function resolveSourceFromMetadata(
+  targetId: string,
+  workspacePath: string,
+  metadata: BazelTestTarget
+): { file: string; line?: number } | undefined {
+  const [packageLabel] = parseTargetLabel(targetId);
+  const packagePath = packageLabel.replace(/^\/\//, '');
+  const candidates: { file: string; line?: number }[] = [];
+
+  if (metadata.srcs && metadata.srcs.length > 0) {
+    for (const src of metadata.srcs) {
+      const normalized = normalizeSrcEntry(src, packagePath);
+      if (normalized) {
+        candidates.push({ file: normalized });
+      }
+    }
+  }
+
+  if (metadata.location) {
+    const parsedLocation = parseLocation(metadata.location);
+    if (parsedLocation) {
+      candidates.push(parsedLocation);
+    }
+  }
+
+  for (const candidate of candidates) {
+    const absolute = toAbsolutePath(candidate.file, workspacePath);
+    if (fs.existsSync(absolute)) {
+      return candidate;
+    }
+  }
+
+  return undefined;
+}
+
+function normalizeSrcEntry(src: string, packagePath: string): string | undefined {
+  if (!src) {
+    return undefined;
+  }
+
+  if (src.startsWith('//')) {
+    const withoutPrefix = src.slice(2);
+    const [pkg, file] = withoutPrefix.split(':');
+    if (pkg && file) {
+      return path.posix.join(pkg, file);
+    }
+    return pkg;
+  }
+
+  if (src.startsWith(':')) {
+    const file = src.slice(1);
+    return path.posix.join(packagePath, file);
+  }
+
+  if (src.includes(':')) {
+    const [pkg, file] = src.split(':');
+    if (file) {
+      return path.posix.join(pkg.replace(/^\/\//, ''), file);
+    }
+  }
+
+  return path.posix.join(packagePath, src);
+}
+
+function parseLocation(location: string): { file: string; line?: number } | undefined {
+  const match = location.match(/^(.*?):(\d+)(?::\d+)?$/);
+  if (!match) {
+    return undefined;
+  }
+
+  const file = match[1];
+  const line = parseInt(match[2], 10);
+  return {
+    file,
+    line: Number.isFinite(line) ? line : undefined
+  };
 }
