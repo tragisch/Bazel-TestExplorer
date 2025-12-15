@@ -12,6 +12,8 @@ import * as path from 'path';
 import { BazelClient } from '../bazel/client';
 import { BazelTestTarget } from '../bazel/types';
 import { logWithTimestamp, measure, formatError } from '../logging';
+import { discoverIndividualTestCases } from '../bazel/discovery';
+import { findBazelWorkspace } from '../bazel/workspace';
 
 let isDiscoveringTests = false;
 
@@ -187,7 +189,10 @@ function createTestItem(
   testItem.tags = ["bazel", ...tags].map(t => new vscode.TestTag(t));
   testItem.description = `Target: ${target}`;
   testItem.busy = false;
-  testItem.canResolveChildren = false;
+  
+  // Enable children resolution for individual test case discovery
+  const isSuite = testType === "test_suite";
+  testItem.canResolveChildren = !isSuite;
 
   return testItem;
 }
@@ -245,3 +250,77 @@ function getExtensionsByType(testType: string): string[] {
   };
   return typeMap[testType] || ['.c'];
 }
+// ───────────────────────────────────────────────────────────────
+// Individual Test Case Discovery and Resolution
+// ───────────────────────────────────────────────────────────────
+
+/**
+ * Resolves individual test cases for a given test target
+ * Used by the TestController resolve handler for lazy-loading children
+ */
+export const resolveTestCaseChildren = async (
+  testItem: vscode.TestItem,
+  controller: vscode.TestController
+): Promise<void> => {
+  try {
+    // Skip if already resolved
+    if (testItem.children.size > 0) {
+      logWithTimestamp(`Children already present for ${testItem.id}; skipping discovery.`);
+      return;
+    }
+
+    // Skip for test suites
+    const typeMatch = testItem.label.match(/\[(.*?)\]/);
+    const testType = typeMatch?.[1];
+    if (testType === "test_suite") {
+      return;
+    }
+
+    const workspacePath = await findBazelWorkspace();
+    if (!workspacePath) {
+      logWithTimestamp(`No Bazel workspace found for resolving ${testItem.id}`);
+      return;
+    }
+
+    logWithTimestamp(`Discovering individual test cases for ${testItem.id}...`);
+    testItem.busy = true;
+
+    try {
+      const result = await discoverIndividualTestCases(testItem.id, workspacePath, testType);
+      
+      for (const testCase of result.testCases) {
+        const testCaseId = `${testItem.id}::${testCase.name}`;
+        const existing = testItem.children.get(testCaseId);
+
+        if (!existing) {
+          const statusIcon = '🧪';
+          const uri = testCase.file
+            ? vscode.Uri.file(path.join(workspacePath, testCase.file))
+            : undefined;
+
+          const testCaseItem = controller.createTestItem(testCaseId, `${statusIcon} ${testCase.name}`, uri);
+
+          if (testCase.line && testCase.line > 0) {
+            const lineZeroBased = Math.max(0, testCase.line - 1);
+            testCaseItem.range = new vscode.Range(
+              new vscode.Position(lineZeroBased, 0),
+              new vscode.Position(lineZeroBased, 0)
+            );
+            testCaseItem.description = `Line ${testCase.line}`;
+          }
+
+          testCaseItem.canResolveChildren = false;
+          testItem.children.add(testCaseItem);
+        }
+      }
+
+      logWithTimestamp(`Resolved ${result.testCases.length} test cases for ${testItem.id}`);
+    } finally {
+      testItem.busy = false;
+    }
+  } catch (error) {
+    const message = formatError(error);
+    logWithTimestamp(`Failed to resolve test cases for ${testItem.id}: ${message}`, "error");
+    testItem.busy = false;
+  }
+};

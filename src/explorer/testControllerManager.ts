@@ -9,7 +9,7 @@
 import * as vscode from 'vscode';
 import { BazelClient } from '../bazel/client';
 import { ConfigurationService } from '../configuration';
-import { discoverAndDisplayTests } from './testTree';
+import { discoverAndDisplayTests, resolveTestCaseChildren } from './testTree';
 import { showTestMetadataById } from './testInfoPanel';
 import { logWithTimestamp, formatError } from '../logging';
 
@@ -37,10 +37,27 @@ export class TestControllerManager {
    * Initialisiert Commands, RunProfile und FileWatcher
    */
   initialize(): void {
+    this.registerResolveHandler();
     this.registerCommands();
     this.registerRunProfile();
     this.registerFileWatcher();
     this.registerConfigListener();
+  }
+
+  /**
+   * Registriert den Resolve-Handler für Lazy-Loading von Test-Cases
+   */
+  private registerResolveHandler(): void {
+    this.controller.resolveHandler = async (item) => {
+      if (!item) {
+        // Root discovery - discover all test targets
+        await this.discover();
+        return;
+      }
+
+      // Individual test case discovery for a specific test item
+      await resolveTestCaseChildren(item, this.controller);
+    };
   }
 
   /**
