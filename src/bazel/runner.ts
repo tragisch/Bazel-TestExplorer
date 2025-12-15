@@ -7,16 +7,11 @@
  */
 
 import * as vscode from 'vscode';
-import * as cp from 'child_process';
-import * as path from 'path';
-import * as fs from 'fs';
 import { runBazelCommand } from './process';
 import { logWithTimestamp, measure, formatError } from '../logging';
-import { log } from 'console';
 import { ConfigurationService } from '../configuration';
 import { analyzeTestFailures } from './parseFailures';
 import { extractTestCasesFromOutput } from './parseOutput';
-import { discoverIndividualTestCases } from './discovery';
 
 // ───────────────────────────────────────────────────────────────
 // Bazel Test Configuration
@@ -153,14 +148,19 @@ export const initiateBazelTest = async (
   config: ConfigurationService
 ): Promise<{ code: number; stdout: string; stderr: string }> => {
   let effectiveTestId = testId;
-  let testFilter: string | undefined;
+  let filterArgs: string[] = [];
 
   // Check if this is an individual test case (contains ::)
   if (testId.includes('::')) {
     const parts = testId.split('::');
     effectiveTestId = parts[0]; // The actual Bazel target
-    testFilter = parts.slice(1).join('::'); // The test case name
-    logWithTimestamp(`Running individual test case: ${effectiveTestId} with filter: ${testFilter}`);
+    const testName = parts.slice(1).join('::'); // The test case name
+    
+    // Try to apply test filter based on test type if supported
+    const typeMatch = testItem.label.match(/\[(.*?)\]/);
+    const testType = typeMatch?.[1] ?? "";
+    
+    logWithTimestamp(`Running individual test case: ${effectiveTestId}::${testName} [${testType}]`);
   }
 
   if (/^\/\/[^:]*$/.test(effectiveTestId)) {
@@ -168,13 +168,7 @@ export const initiateBazelTest = async (
   }
 
   const additionalArgs: string[] = [...config.testArgs];
-  
-  // Add test filter if this is an individual test case
-  if (testFilter) {
-    additionalArgs.push(`--test_filter=${testFilter}`);
-  }
-  
-  const args = ['test', effectiveTestId, ...DEFAULT_BAZEL_TEST_FLAGS, ...additionalArgs];
+  const args = ['test', effectiveTestId, ...DEFAULT_BAZEL_TEST_FLAGS, ...additionalArgs, ...filterArgs];
 
   return runBazelCommand(
     args,
@@ -184,8 +178,6 @@ export const initiateBazelTest = async (
     config.bazelPath
   );
 };
-
-
 
 export const parseBazelOutput = (stdout: string): { input: string[] } => {
   const input: string[] = [];

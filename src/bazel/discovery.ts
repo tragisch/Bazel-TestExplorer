@@ -69,3 +69,15 @@ export const discoverIndividualTestCases = async (
     };
   }
 };
+
+export function clearDiscoveryCache(): void {
+  discoveryCache.clear();
+  logWithTimestamp('Cleared test discovery cache');
+}
+
+export function getDiscoveryCacheStats(): { size: number; entries: string[] } {
+  return {
+    size: discoveryCache.size,
+    entries: Array.from(discoveryCache.keys())
+  };
+}
