@@ -37,6 +37,11 @@ export class ErrorHandler {
   ): ErrorResult {
     const originalError = error instanceof Error ? error : new Error(String(error));
 
+    // Validation-Fehler ZUERST prüfen (bevor Bazel-Check!)
+    if (this.isValidationError(error)) {
+      return this.handleValidationError(originalError, context);
+    }
+
     // Bazel-spezifische Fehler
     if (this.isBazelError(error)) {
       return this.handleBazelError(originalError, context);
@@ -45,11 +50,6 @@ export class ErrorHandler {
     // Workspace-Fehler
     if (this.isWorkspaceError(error)) {
       return this.handleWorkspaceError(originalError, context);
-    }
-
-    // Validation-Fehler
-    if (this.isValidationError(error)) {
-      return this.handleValidationError(originalError, context);
     }
 
     // Unbekannte Fehler
@@ -87,8 +87,8 @@ export class ErrorHandler {
   private isValidationError(error: unknown): boolean {
     const message = String(error).toLowerCase();
     return (
+      message.includes('invalid configuration') ||
       message.includes('not available') ||
-      message.includes('not found') ||
       message.includes('version')
     );
   }
@@ -112,10 +112,13 @@ export class ErrorHandler {
    * Behandelt Workspace-Fehler
    */
   private handleWorkspaceError(error: Error, context: string): ErrorResult {
+    // Workspace-Fehler sind normalerweise NICHT retryable (Datei fehlt, nicht vor\u00fcbergehend)
+    const shouldRetry = this.isTransientError(error);
+    
     return {
       category: 'workspace',
       userMessage: 'Bazel workspace not accessible. Check workspace configuration.',
-      shouldRetry: true,
+      shouldRetry,
       logMessage: `Workspace error in ${context}: ${error.message}`,
       originalError: error
     };
@@ -152,6 +155,20 @@ export class ErrorHandler {
    */
   private isTransientError(error: Error): boolean {
     const message = error.message.toLowerCase();
+    const errorCode = (error as any).code;
+
+    // Prüfe error.code Property für Node.js Fehler
+    if (errorCode) {
+      const transientCodes = ['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'ENETUNREACH'];
+      if (transientCodes.includes(errorCode)) {
+        return true;
+      }
+      // ENOENT und andere File-System-Fehler sind NICHT transient
+      if (errorCode === 'ENOENT' || errorCode === 'EACCES') {
+        return false;
+      }
+    }
+
     return (
       message.includes('timeout') ||
       message.includes('econnrefused') ||

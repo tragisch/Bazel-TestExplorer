@@ -16,6 +16,9 @@ export const initializeLogger = (): vscode.OutputChannel => {
 };
 
 export const logWithTimestamp = (message: string, level: "info" | "warn" | "error" = "info") => {
+    if (!logger) {
+        return; // Skip logging if logger not initialized (e.g., in tests)
+    }
     const now = new Date().toISOString().replace("T", " ").replace("Z", "");
     const timestamp = `${now} `;
     let tag = `[Info] `;
