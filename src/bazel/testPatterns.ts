@@ -159,15 +159,138 @@ export const BUILTIN_TEST_PATTERNS: TestCasePattern[] = [
         example: "matrix_test.c(45): test_create: PASS",
         supportsIndividual: true,
         filterTemplate: '${name}'
+    },
+    {
+        id: "catch2_cpp",
+        framework: "Catch2 (C++)",
+        pattern: /^(.+?):(\d+):\s*FAILED:\s*(.+?)$/,
+        groups: {
+            file: 1,
+            line: 2,
+            testName: 3,
+            status: 0,  // Always FAILED for this pattern
+            message: 0
+        },
+        description: "Catch2 C++ test framework failure output",
+        example: "tests/test_math.cpp:42: FAILED: test_addition",
+        supportsIndividual: true,
+        filterTemplate: '${name}'
+    },
+    {
+        id: "catch2_passed",
+        framework: "Catch2 (C++)",
+        pattern: /^(.+?):(\d+):\s*PASSED:\s*(.+?)$/,
+        groups: {
+            file: 1,
+            line: 2,
+            testName: 3,
+            status: 0,  // Always PASSED
+            message: 0
+        },
+        description: "Catch2 C++ test framework success output",
+        example: "tests/test_math.cpp:42: PASSED: test_addition",
+        supportsIndividual: true,
+        filterTemplate: '${name}'
+    },
+    {
+        id: "catch2_summary",
+        framework: "Catch2 (C++)",
+        pattern: /^test case '(.+?)' (passed|failed)$/i,
+        groups: {
+            file: 0,
+            line: 0,
+            testName: 1,
+            status: 2,
+            message: 0
+        },
+        description: "Catch2 C++ test case summary line",
+        example: "test case 'test_addition' passed",
+        supportsIndividual: true,
+        filterTemplate: '${name}'
+    },
+    {
+        id: "doctest_cpp",
+        framework: "doctest (C++)",
+        pattern: /^(.+?)\((\d+)\):\s*(FAILED|PASSED|ERROR):\s*TEST_CASE\(\s*(.+?)\s*\)$/,
+        groups: {
+            file: 1,
+            line: 2,
+            testName: 4,
+            status: 3,
+            message: 0
+        },
+        description: "doctest C++ framework output",
+        example: "tests/math_test.cpp(15): PASSED: TEST_CASE( test_multiplication )",
+        supportsIndividual: true,
+        filterTemplate: '${name}'
+    },
+    {
+        id: "doctest_subcase",
+        framework: "doctest (C++)",
+        pattern: /^(.+?)\((\d+)\):\s*(FAILED|PASSED):\s*SUBCASE\(\s*(.+?)\s*\)$/,
+        groups: {
+            file: 1,
+            line: 2,
+            testName: 4,
+            status: 3,
+            message: 0
+        },
+        description: "doctest C++ subcase output",
+        example: "tests/math_test.cpp(20): FAILED: SUBCASE( negative numbers )",
+        supportsIndividual: false
+    },
+    {
+        id: "ctest_output",
+        framework: "CTest (CMake/Bazel)",
+        pattern: /^\s*(\d+)\/(\d+)\s+Test\s+#\d+:\s+(.+?)\s+\.+\s*(Passed|Failed|\*\*\*Failed|\*\*\*Timeout)/,
+        groups: {
+            file: 0,
+            line: 0,
+            testName: 3,
+            status: 4,
+            message: 0
+        },
+        description: "CTest test runner output format",
+        example: "  1/10 Test  #5: test_matrix_multiply ....   Passed",
+        supportsIndividual: true,
+        filterTemplate: '${name}'
+    },
+    {
+        id: "ctest_verbose",
+        framework: "CTest (CMake/Bazel)",
+        pattern: /^test\s+(\d+)\s+Start\s+\d+:\s+(.+?)$/,
+        groups: {
+            file: 0,
+            line: 0,
+            testName: 2,
+            status: 0,  // Status from separate line
+            message: 0
+        },
+        description: "CTest verbose mode test start",
+        example: "test 1      Start  5: test_matrix_multiply",
+        supportsIndividual: true,
+        filterTemplate: '${name}'
     }
-];
+]
 
 // Mapping from Bazel rule/test type to allowed pattern IDs
 // Note: Many C/C++ tests (cc_test) can use different frameworks (Unity, gtest, catch2, etc.).
 // Therefore we include Unity patterns for cc_test as well.
 export const PATTERN_IDS_BY_TEST_TYPE: Record<string, string[]> = {
     unity_test: ["unity_c_standard", "unity_c_with_message"],
-    cc_test: ["unity_c_standard", "unity_c_with_message", "gtest_cpp", "parentheses_format"],
+    cc_test: [
+        "unity_c_standard", 
+        "unity_c_with_message", 
+        "gtest_cpp", 
+        "catch2_cpp", 
+        "catch2_passed", 
+        "catch2_summary",
+        "doctest_cpp",
+        "doctest_subcase",
+        "ctest_output",
+        "ctest_verbose",
+        "parentheses_format"
+    ],
     py_test: ["pytest_python"],
     rust_test: ["rust_test"],
     go_test: ["go_test"],
@@ -185,7 +308,13 @@ export const STATUS_MAPPING: Record<string, 'PASS' | 'FAIL' | 'TIMEOUT' | 'SKIP'
     'ERROR': 'FAIL',
     'RUN': 'SKIP',
     'ok': 'PASS',
-    'ignored': 'SKIP'
+    'ignored': 'SKIP',
+    'passed': 'PASS',
+    'failed': 'FAIL',
+    '***Failed': 'FAIL',
+    '***Timeout': 'TIMEOUT',
+    'Passed': 'PASS',
+    'Failed': 'FAIL'
 };
 
 export function getAllTestPatterns(): TestCasePattern[] {

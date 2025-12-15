@@ -241,10 +241,39 @@ function guessSourceUri(
   const packagePath = packageName.replace(/^\/\//, '');
   const extensions = getExtensionsByType(testType);
 
+  // Package-level cache to avoid repeated fs.existsSync calls for the same package.
+  // Cache entry contains whether the directory exists and the set of file names.
+  type PackageCacheEntry = { dirExists: boolean; files?: Set<string> };
+  const packageCacheKey = packagePath;
+
+  // Initialize module-scoped cache map lazily
+  if (!(global as any).__bazel_testexplorer_packageFileCache) {
+    (global as any).__bazel_testexplorer_packageFileCache = new Map<string, PackageCacheEntry>();
+  }
+  const packageFileCache: Map<string, PackageCacheEntry> = (global as any).__bazel_testexplorer_packageFileCache;
+
+  // Ensure cache populated for this package
+  if (!packageFileCache.has(packageCacheKey)) {
+    const dirFull = path.join(workspace, packagePath);
+    try {
+      if (fs.existsSync(dirFull) && fs.statSync(dirFull).isDirectory()) {
+        const names = new Set<string>(fs.readdirSync(dirFull));
+        packageFileCache.set(packageCacheKey, { dirExists: true, files: names });
+      } else {
+        packageFileCache.set(packageCacheKey, { dirExists: false });
+      }
+    } catch (e) {
+      packageFileCache.set(packageCacheKey, { dirExists: false });
+    }
+  }
+
+  const cacheEntry = packageFileCache.get(packageCacheKey)!;
+  if (!cacheEntry.dirExists) return undefined;
+
   for (const ext of extensions) {
-    const filePath = path.join(workspace, packagePath, testName + ext);
-    if (fs.existsSync(filePath)) {
-      return vscode.Uri.file(filePath);
+    const candidate = testName + ext;
+    if (cacheEntry.files && cacheEntry.files.has(candidate)) {
+      return vscode.Uri.file(path.join(workspace, packagePath, candidate));
     }
   }
 

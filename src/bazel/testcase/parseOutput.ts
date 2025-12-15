@@ -7,19 +7,6 @@ import { logWithTimestamp } from '../../logging';
 import { IndividualTestCase, TestCaseParseResult } from '../types';
 import { getAllTestPatterns, normalizeStatus, TestCasePattern } from '../testPatterns';
 
-// Read setting to determine if test-case extraction is enabled in the extension.
-// Default to `true` when VS Code APIs are not available (unit tests / CI).
-function getDiscoveryEnabled(): boolean {
-  try {
-    // Lazy require to avoid hard dependency during unit tests
-    const vscode = require('vscode');
-    const cfg = vscode.workspace.getConfiguration('bazelTestRunner');
-    return (cfg.get('enableTestCaseDiscovery', false) as boolean);
-  } catch {
-    return true;
-  }
-}
-
 export const splitOutputLines = (stdout: string): string[] => stdout.split(/\r?\n/);
 
 /**
@@ -30,13 +17,6 @@ export const extractTestCasesFromOutput = (
   parentTarget: string,
   allowedPatternIds?: string[]
 ): TestCaseParseResult => {
-  if (!getDiscoveryEnabled()) {
-    logWithTimestamp(`Test case extraction disabled by configuration for ${parentTarget}`);
-    return {
-      testCases: [],
-      summary: { total: 0, passed: 0, failed: 0, ignored: 0 }
-    };
-  }
   const lines = stdout.split(/\r?\n/);
   const testCases: IndividualTestCase[] = [];
 
@@ -75,8 +55,20 @@ export const extractTestCasesFromOutput = (
       // Extract information based on pattern configuration
       const file = groups.file > 0 ? match[groups.file] : '';
       const lineStr = groups.line > 0 ? match[groups.line] : '0';
-      const testName = match[groups.testName] || '';
-      const rawStatus = match[groups.status] || 'FAIL';
+      const testName = match[groups.testName] || '';  // <- Breakpoint hier
+      
+      // Handle status extraction: either from capture group or inferred from pattern ID
+      let rawStatus: string;
+      if (groups.status > 0) {
+        rawStatus = match[groups.status] || 'FAIL';
+      } else {
+        // Breakpoint hier - zeigt welches Pattern den Status bestimmt
+        // Infer status from pattern ID for patterns with fixed status
+        if (pattern.id === 'catch2_cpp') rawStatus = 'FAILED';
+        else if (pattern.id === 'catch2_passed') rawStatus = 'PASSED';
+        else rawStatus = 'FAIL';
+      }
+      
       const errorMessage = groups.message && groups.message > 0 ? match[groups.message] : undefined;
       const suite = groups.suite && groups.suite > 0 ? match[groups.suite] : undefined;
       const className = groups.class && groups.class > 0 ? match[groups.class] : undefined;
