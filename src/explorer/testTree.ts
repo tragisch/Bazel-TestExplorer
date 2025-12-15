@@ -15,6 +15,17 @@ import { logWithTimestamp, measure, formatError } from '../logging';
 import { discoverIndividualTestCases } from '../bazel/discovery';
 import { findBazelWorkspace } from '../bazel/workspace';
 
+function getDiscoveryEnabled(): boolean {
+  try {
+    const vscode = require('vscode');
+    const cfg = vscode.workspace.getConfiguration('bazelTestRunner');
+    return (cfg.get('enableTestCaseDiscovery', false) as boolean);
+  } catch {
+    // When running outside of VS Code (unit tests), default to true
+    return true;
+  }
+}
+
 let isDiscoveringTests = false;
 
 /**
@@ -182,7 +193,8 @@ function createTestItem(
   packageName: string
 ): vscode.TestItem {
   const uri = guessSourceUri(packageName, testName, testType);
-  const icon = testType === "test_suite" ? "🧪 " : "";
+  const icon = testType === "test_suite" ? "🧰 " : "";
+  const discoveryEnabled = getDiscoveryEnabled();
   const label = `${icon}[${testType}] ${testName}`;
 
   const testItem = controller.createTestItem(target, label, uri);
@@ -192,7 +204,11 @@ function createTestItem(
   
   // Enable children resolution for individual test case discovery
   const isSuite = testType === "test_suite";
-  testItem.canResolveChildren = !isSuite;
+  testItem.canResolveChildren = !isSuite && discoveryEnabled;
+  if (!discoveryEnabled) {
+    testItem.description = `${testItem.description} (individual test discovery disabled)`;
+
+  }
 
   return testItem;
 }
@@ -263,6 +279,18 @@ export const resolveTestCaseChildren = async (
   controller: vscode.TestController
 ): Promise<void> => {
   try {
+    // Respect user setting: if discovery is disabled, do not attempt to resolve children
+    try {
+      const vscode = require('vscode');
+      const cfg = vscode.workspace.getConfiguration('bazelTestRunner');
+      const enabled = (cfg.get('enableTestCaseDiscovery', false) as boolean);
+      if (!enabled) {
+        logWithTimestamp(`Skipping resolution for ${testItem.id} because discovery is disabled by configuration.`);
+        return;
+      }
+    } catch {
+      // ignore and proceed when vscode not available (e.g. tests)
+    }
     // Skip if already resolved
     if (testItem.children.size > 0) {
       logWithTimestamp(`Children already present for ${testItem.id}; skipping discovery.`);

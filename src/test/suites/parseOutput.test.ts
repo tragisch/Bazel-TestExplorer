@@ -8,7 +8,7 @@
 
 import 'mocha';
 import * as assert from 'assert';
-import { extractTestCasesFromOutput, splitOutputLines } from '../../bazel/parseOutput';
+import { extractTestCasesFromOutput, splitOutputLines } from '../../bazel/testcase/parseOutput';
 
 suite('Parse Output', () => {
   test('splitOutputLines should split by both unix and windows line endings', () => {

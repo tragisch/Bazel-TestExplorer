@@ -6,7 +6,7 @@
 import { callRunBazelCommandForTest } from './runner';
 import { logWithTimestamp, formatError } from '../logging';
 import { TestCaseParseResult } from './types';
-import { extractTestCasesFromOutput } from './parseOutput';
+import { extractTestCasesFromOutput } from './testcase/parseOutput';
 import { PATTERN_IDS_BY_TEST_TYPE } from './testPatterns';
 
 interface CacheEntry { result: TestCaseParseResult; stdoutHash: string; timestamp: number; }
@@ -22,6 +22,18 @@ function getDiscoveryTtlMs(): number {
   } catch { return DISCOVERY_CACHE_MS_DEFAULT; }
 }
 
+// Check whether test case discovery is enabled in configuration.
+// Note: When running outside VS Code (e.g. unit tests) we default to `true`
+// so tests using this function continue to behave as before. The
+// extension's package.json provides a default of `false` for users.
+function getDiscoveryEnabled(): boolean {
+  try {
+    const vscode = require('vscode');
+    const cfg = vscode.workspace.getConfiguration('bazelTestRunner');
+    return (cfg.get('enableTestCaseDiscovery', true) as boolean);
+  } catch { return true; }
+}
+
 function sha1(input: string): string {
   const crypto = require('crypto');
   return crypto.createHash('sha1').update(input).digest('hex');
@@ -33,6 +45,13 @@ export const discoverIndividualTestCases = async (
   testType?: string
 ): Promise<TestCaseParseResult> => {
   try {
+    if (!getDiscoveryEnabled()) {
+      logWithTimestamp(`Test case discovery disabled by configuration for ${testTarget}`);
+      return {
+        testCases: [],
+        summary: { total: 0, passed: 0, failed: 0, ignored: 0 }
+      };
+    }
     const ttl = getDiscoveryTtlMs();
     const cache = discoveryCache.get(testTarget);
     if (cache && (Date.now() - cache.timestamp) < ttl) {

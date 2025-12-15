@@ -96,6 +96,11 @@
           "items": {
             "type": "string"
           }
+        },
+        "bazelTestRunner.enableTestCaseDiscovery": {
+          "type": "boolean",
+          "description": "Experimental: Enable discovering individual test cases by running tests (currently: only for some test types, and slow).",
+          "default": false
         }
       }
     }
