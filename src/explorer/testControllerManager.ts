@@ -160,7 +160,9 @@ export class TestControllerManager {
         clearTimeout(this.debounceTimer);
       }
       this.debounceTimer = setTimeout(() => {
-        logWithTimestamp('BUILD files changed, reloading tests...');
+        // Cache invalidieren bei BUILD-Änderungen
+        this.bazelClient.clearCache();
+        logWithTimestamp('BUILD files changed, cache invalidated. Reloading tests...');
         vscode.commands.executeCommand('extension.reloadBazelTests');
       }, 2000);
     };

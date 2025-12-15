@@ -12,37 +12,72 @@ import { queryBazelTestTargets, getTestTargetById } from './queries';
 import { executeBazelTest } from './runner';
 import { runBazelCommand } from './process';
 import { ConfigurationService } from '../configuration';
+import { QueryCache } from './cache';
+import { ErrorHandler } from '../errors/errorHandler';
+import { logWithTimestamp } from '../logging';
 
 /**
  * Zentrale Fassade für alle Bazel-Operationen.
- * Kapselt queries.ts, runner.ts und process.ts.
+ * Kapselt queries.ts, runner.ts und process.ts mit Caching und Error-Handling.
  */
 export class BazelClient {
+  private cache: QueryCache;
+  private errorHandler: ErrorHandler;
+
   constructor(
     private readonly workspaceRoot: string,
     private readonly config: ConfigurationService
-  ) {}
-
-  /**
-   * Query alle Test-Targets mit Pattern
-   * @param workspacePath Bazel workspace path
-   */
-  async queryTests(): Promise<BazelTestTarget[]> {
-    return queryBazelTestTargets(this.workspaceRoot, this.config);
+  ) {
+    this.cache = new QueryCache();
+    this.errorHandler = new ErrorHandler();
   }
 
   /**
-   * Führt einen einzelnen Test aus
-   * @param testItem VS Code TestItem
-   * @param workspacePath Bazel workspace path
-   * @param run VS Code TestRun für Status-Updates
+   * Query alle Test-Targets mit Pattern (Cache-aware)
+   */
+  async queryTests(): Promise<BazelTestTarget[]> {
+    try {
+      // Cache-Key erstellen basierend auf Config
+      const cacheKey = QueryCache.createKey(
+        this.config.queryPaths,
+        this.config.testTypes
+      );
+
+      // Aus Cache holen, falls vorhanden
+      const cached = this.cache.get(cacheKey);
+      if (cached) {
+        return cached;
+      }
+
+      // Query ausführen
+      const targets = await queryBazelTestTargets(this.workspaceRoot, this.config);
+      
+      // Im Cache speichern
+      this.cache.set(cacheKey, targets);
+      
+      return targets;
+    } catch (error) {
+      const result = this.errorHandler.handle(error, 'query');
+      this.errorHandler.logError(result, 'QueryTests');
+      throw new Error(result.userMessage);
+    }
+  }
+
+  /**
+   * Führt einen einzelnen Test aus mit Error-Handling
    */
   async runTest(
     testItem: any,
     run: TestRun,
     token?: CancellationToken
   ): Promise<void> {
-    return executeBazelTest(testItem, this.workspaceRoot, run, this.config);
+    try {
+      return await executeBazelTest(testItem, this.workspaceRoot, run, this.config);
+    } catch (error) {
+      const result = this.errorHandler.handle(error, 'run');
+      this.errorHandler.logError(result, 'RunTest');
+      throw new Error(result.userMessage);
+    }
   }
 
   /**
@@ -54,7 +89,7 @@ export class BazelClient {
   }
 
   /**
-   * Validiert Bazel-Installation
+   * Validiert Bazel-Installation mit Error-Handling
    */
   async validate(): Promise<{ valid: boolean; version?: string; error?: string }> {
     try {
@@ -78,11 +113,28 @@ export class BazelClient {
         return { valid: false, error: `Bazel exited with code ${code}` };
       }
     } catch (error) {
+      const result = this.errorHandler.handle(error, 'validation');
+      this.errorHandler.logError(result, 'Validate');
       return { 
         valid: false, 
-        error: error instanceof Error ? error.message : String(error) 
+        error: result.userMessage
       };
     }
+  }
+
+  /**
+   * Löscht den Query-Cache (z.B. bei BUILD-Datei-Änderungen)
+   */
+  clearCache(pattern?: string): void {
+    this.cache.clear(pattern);
+    logWithTimestamp(`BazelClient cache cleared ${pattern ? `for pattern: ${pattern}` : ''}`);
+  }
+
+  /**
+   * Gibt Cache-Statistiken zurück
+   */
+  getCacheStats(): { size: number; keys: string[] } {
+    return this.cache.getStats();
   }
 
   /**
