@@ -37,6 +37,18 @@
       {
         "command": "bazelTestExplorer.showSelectedTestMetadata",
         "title": "Bazel-TestExplorer: Show Selected Test Metadata"
+      },
+      {
+        "command": "bazelTestExplorer.showTestHistory",
+        "title": "Bazel-TestExplorer: Show Test History"
+      },
+      {
+        "command": "bazelTestExplorer.openHistoryItem",
+        "title": "Bazel-TestExplorer: Open Test History Item"
+      },
+      {
+        "command": "bazelTestExplorer.rerunTestFromHistory",
+        "title": "Bazel-TestExplorer: Rerun Test From History"
       }
     ],
     "menus": {
@@ -110,6 +122,14 @@
         }
       }
     }
+  },
+  "views": {
+    "explorer": [
+      {
+        "id": "bazelTestExplorer.history",
+        "name": "Bazel Test History"
+      }
+    ]
   },
   "scripts": {
     "compile": "npm run check-types && tsc -p tsconfig.json && node esbuild.js",

@@ -16,6 +16,9 @@ import { findBazelWorkspace } from './bazel/workspace';
 import { BazelClient } from './bazel/client';
 import { ConfigurationService } from './configuration';
 import { TestControllerManager } from './explorer/testControllerManager';
+import { TestObserver } from './explorer/testObserver';
+import TestHistoryProvider from './explorer/testHistoryProvider';
+import { onDidTestEvent } from './explorer/testEventBus';
 
 export async function activate(context: vscode.ExtensionContext) {
 	initializeLogger();
@@ -42,6 +45,54 @@ export async function activate(context: vscode.ExtensionContext) {
 	// TestControllerManager orchestrates all test-related operations
 	const testManager = new TestControllerManager(bazelClient, configurationService, context);
 	testManager.initialize();
+
+	// Observer for collecting runtimes and small in-memory history
+	const testObserver = new TestObserver(context);
+	context.subscriptions.push(testObserver);
+
+	// Tree view for history
+	const historyProvider = new TestHistoryProvider(testObserver);
+	const tree = vscode.window.createTreeView('bazelTestExplorer.history', { treeDataProvider: historyProvider });
+	context.subscriptions.push(tree);
+
+	// Status bar: show count of recent failures and total entries
+	const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+	statusBar.command = 'bazelTestExplorer.showTestHistory';
+	context.subscriptions.push(statusBar);
+
+	const updateStatus = () => {
+ 		const history = testObserver.getHistory();
+ 		const failed = history.filter(h => h.type === 'failed').length;
+ 		statusBar.text = `Bazel Tests: ${failed} failed — ${history.length} recent`;
+ 		statusBar.show();
+	};
+
+	// refresh on events
+	onDidTestEvent(() => { historyProvider.refresh(); updateStatus(); });
+
+	// Commands for history items
+	context.subscriptions.push(
+		vscode.commands.registerCommand('bazelTestExplorer.openHistoryItem', async (entry: any) => {
+			if (!entry) return;
+			const detail = `Test: ${entry.testId}\nStatus: ${entry.type}\nDuration: ${entry.durationMs ?? '-'} ms\n\n${typeof entry.message === 'string' ? entry.message : (entry.message?.value ?? '')}`;
+			const pick = await vscode.window.showInformationMessage(detail, 'Rerun');
+			if (pick === 'Rerun') {
+				void vscode.commands.executeCommand('bazelTestExplorer.rerunTestFromHistory', entry.testId);
+			}
+		}),
+
+		vscode.commands.registerCommand('bazelTestExplorer.rerunTestFromHistory', async (testId: string) => {
+			if (!testId) return;
+			try {
+				await testManager.runTestsByIds([testId]);
+			} catch (err) {
+				void vscode.window.showErrorMessage('Failed to rerun test from history');
+			}
+		})
+	);
+
+	// initial update
+	updateStatus();
 
 	// Initiales Test-Discovery
 	await measure("Discover and display tests", async () => {

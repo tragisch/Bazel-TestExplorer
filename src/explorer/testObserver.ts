@@ -1,0 +1,93 @@
+/*
+ * TestObserver
+ * - subscribes to test lifecycle events published on the event bus
+ * - collects a small in-memory history of recent runs
+ */
+
+import * as vscode from 'vscode';
+import { onDidTestEvent, TestEvent } from './testEventBus';
+import { logWithTimestamp } from '../logging';
+
+export interface TestHistoryEntry {
+  testId: string;
+  type: string; // passed/failed/skipped
+  durationMs?: number;
+  message?: string | vscode.MarkdownString;
+  timestamp: number;
+}
+
+export class TestObserver implements vscode.Disposable {
+  private readonly disposables: vscode.Disposable[] = [];
+  private readonly history: TestHistoryEntry[] = [];
+  private readonly maxEntries = 200;
+
+  constructor(private readonly context: vscode.ExtensionContext) {
+    const d = onDidTestEvent((e: TestEvent) => this.handleEvent(e));
+    this.disposables.push(d);
+    this.context.subscriptions.push(this);
+    logWithTimestamp('TestObserver initialized');
+    // register quickpick command to show recent history
+    const cmd = vscode.commands.registerCommand('bazelTestExplorer.showTestHistory', () => this.showHistory());
+    this.disposables.push(cmd);
+    this.context.subscriptions.push(cmd);
+  }
+
+  private handleEvent(e: TestEvent) {
+    switch (e.type) {
+      case 'started':
+        logWithTimestamp(`Test started: ${e.testId}`);
+        break;
+      case 'passed':
+      case 'failed':
+      case 'skipped':
+        this.pushHistory({ testId: e.testId, type: e.type, durationMs: e.durationMs, message: e.message, timestamp: e.timestamp });
+        logWithTimestamp(`Test ${e.type}: ${e.testId} (${e.durationMs ?? 0}ms)`);
+        break;
+      case 'output':
+        // small log for outputs
+        logWithTimestamp(`Test output (${e.testId}): ${e.message}`);
+        break;
+    }
+  }
+
+  private pushHistory(entry: TestHistoryEntry) {
+    this.history.unshift(entry);
+    if (this.history.length > this.maxEntries) this.history.length = this.maxEntries;
+  }
+
+  getHistory(): ReadonlyArray<TestHistoryEntry> {
+    return this.history;
+  }
+
+  private toMessageString(msg?: string | vscode.MarkdownString): string {
+    if (!msg) return '';
+    return typeof msg === 'string' ? msg : msg.value ?? String(msg);
+  }
+
+  async showHistory() {
+    if (this.history.length === 0) {
+      void vscode.window.showInformationMessage('No recent test history available.');
+      return;
+    }
+
+    const items: vscode.QuickPickItem[] = this.history.slice(0, 50).map(h => ({
+      label: `${h.type.toUpperCase()}: ${h.testId}`,
+      description: h.durationMs ? `${h.durationMs} ms` : undefined,
+      detail: this.toMessageString(h.message)
+    }));
+
+    const pick = await vscode.window.showQuickPick(items, { placeHolder: 'Recent test history (select to view details)', matchOnDetail: true });
+    if (!pick) return;
+
+    const idx = items.indexOf(pick);
+    const entry = this.history[idx];
+    const detail = `Test: ${entry.testId}\nStatus: ${entry.type}\nDuration: ${entry.durationMs ?? '-'} ms\n\n${this.toMessageString(entry.message)}`;
+    void vscode.window.showInformationMessage(detail, { modal: true });
+  }
+
+  dispose() {
+    for (const d of this.disposables) d.dispose();
+  }
+}
+
+export default TestObserver;

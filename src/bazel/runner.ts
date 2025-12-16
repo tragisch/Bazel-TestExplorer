@@ -11,6 +11,7 @@
  */
 
 import * as vscode from 'vscode';
+import { finishTest, publishOutput } from '../explorer/testEventBus';
 import { runBazelCommand } from './process';
 import { logWithTimestamp, measure, formatError } from '../logging';
 import { ConfigurationService } from '../configuration';
@@ -128,10 +129,14 @@ export const executeBazelTest = async (
       const statusMessage = new vscode.TestMessage(`🧪 Suite Result:\n\n${resultBlock}`);
       if (code === 0) {
         run.passed(testItem);
+        try { finishTest(testItem.id, 'passed'); } catch {}
       } else {
         run.failed(testItem, statusMessage);
+        try { finishTest(testItem.id, 'failed', statusMessage.message); } catch {}
       }
-      run.appendOutput(resultBlock.replace(/\r?\n/g, '\r\n') + '\r\n', undefined, testItem);
+      const suiteOutput = resultBlock.replace(/\r?\n/g, '\r\n') + '\r\n';
+      run.appendOutput(suiteOutput, undefined, testItem);
+      try { publishOutput(testItem.id, suiteOutput); } catch {}
       return;
     }
 
@@ -141,7 +146,7 @@ export const executeBazelTest = async (
     const { input: testLog } = parseBazelOutput(stdout);
     const { input: bazelLog } = parseBazelOutput(stderr);
 
-    if (code === 0) {
+      if (code === 0) {
       if (testLog.length > 0) {
         const outputBlock = [
           getStatusHeader(code, testItem.id),
@@ -150,30 +155,38 @@ export const executeBazelTest = async (
           '------ END OUTPUT ------'
         ].join("\n");
 
-        run.appendOutput(outputBlock.replace(/\r?\n/g, '\r\n') + '\r\n', undefined, testItem);
+        const out = outputBlock.replace(/\r?\n/g, '\r\n') + '\r\n';
+        run.appendOutput(out, undefined, testItem);
+        try { publishOutput(testItem.id, out); } catch {}
       }
       run.passed(testItem);
+      try { finishTest(testItem.id, 'passed'); } catch {}
     } else if (code === 3) {
       handleTestResult(run, testItem, code, bazelLog, testLog, workspacePath);
     } else if (code === 4) {
       run.skipped(testItem);
       vscode.window.showWarningMessage(`⚠️ Flaky tests: ${testItem.id}`);
+      try { finishTest(testItem.id, 'skipped'); } catch {}
     } else {
       const cleaned = bazelLog.filter(line => line.trim() !== "").join("\n");
       const cleaned_with_Header = getStatusHeader(code, testItem.id) + cleaned;
       run.failed(testItem, new vscode.TestMessage(`🧨 Errors during tests (Code ${code}):\n\n${cleaned_with_Header}`));
+      try { finishTest(testItem.id, 'failed', cleaned_with_Header); } catch {}
       const outputBlock = [
         getStatusHeader(code, testItem.id),
         '----- BEGIN OUTPUT -----',
         ...bazelLog,
         '------ END OUTPUT ------'
       ].join("\n");
-      run.appendOutput(outputBlock.replace(/\r?\n/g, '\r\n') + '\r\n', undefined, testItem);
+      const out = outputBlock.replace(/\r?\n/g, '\r\n') + '\r\n';
+      run.appendOutput(out, undefined, testItem);
+      try { publishOutput(testItem.id, out); } catch {}
     }
   } catch (error) {
     const message = formatError(error);
     logWithTimestamp(`Error executing test ${testItem.id}: ${message}`, "error");
-    run.failed(testItem, new vscode.TestMessage(message));
+      run.failed(testItem, new vscode.TestMessage(message));
+      try { finishTest(testItem.id, 'failed', message); } catch {}
   }
 };
 

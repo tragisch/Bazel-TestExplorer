@@ -16,6 +16,7 @@ import { ConfigurationService } from '../configuration';
 import { discoverAndDisplayTests, resolveTestCaseChildren } from './testTree';
 import { showTestMetadataById } from './testInfoPanel';
 import { logWithTimestamp, formatError } from '../logging';
+import { startTest, finishTest } from './testEventBus';
 
 /**
  * Manages VS Code TestController and orchestrates test discovery,
@@ -154,11 +155,13 @@ export class TestControllerManager {
             // Check if cancellation was requested
             if (token.isCancellationRequested) {
               run.skipped(t);
+              try { finishTest(t.id, 'skipped'); } catch {}
               logWithTimestamp(`Test skipped due to cancellation request: ${t.id}`, 'info');
               continue;
             }
 
             run.started(t);
+            try { startTest(t.id, t.label); } catch {}
             const testTypeMatch = t.label.match(/^\[(.+?)\]/);
             const testType = testTypeMatch?.[1];
             const isSequential = sequentialTypes.includes(testType ?? '');
@@ -238,5 +241,53 @@ export class TestControllerManager {
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
     }
+  }
+
+  /**
+   * Run a set of tests identified by their TestItem ids.
+   * Used by UI commands to re-run a test from history.
+   */
+  async runTestsByIds(ids: string[]): Promise<void> {
+    const items = ids.map(id => this.controller.items.get(id)).filter(Boolean) as vscode.TestItem[];
+    if (items.length === 0) {
+      void vscode.window.showWarningMessage('No matching tests found to rerun.');
+      return;
+    }
+
+    const run = this.controller.createTestRun({ include: items } as any);
+    const sequentialTypes = this.config.sequentialTestTypes;
+
+    const collectAllTests = (item: vscode.TestItem): vscode.TestItem[] => {
+      const collected: vscode.TestItem[] = [];
+      const visit = (node: vscode.TestItem) => {
+        if (node.children.size === 0) collected.push(node);
+        else node.children.forEach(visit);
+      };
+      visit(item);
+      return collected;
+    };
+
+    const promises: Promise<void>[] = [];
+    const token = new vscode.CancellationTokenSource().token;
+
+    for (const testItem of items) {
+      const allTests = collectAllTests(testItem);
+      for (const t of allTests) {
+        run.started(t);
+        try { startTest(t.id, t.label); } catch {}
+        const testTypeMatch = t.label.match(/^\[(.+?)\]/);
+        const testType = testTypeMatch?.[1];
+        const isSequential = sequentialTypes.includes(testType ?? '');
+        const promise = this.bazelClient.runTest(t, run, token);
+        if (isSequential) {
+          await promise;
+        } else {
+          promises.push(promise);
+        }
+      }
+    }
+
+    await Promise.all(promises);
+    run.end();
   }
 }
