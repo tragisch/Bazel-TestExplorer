@@ -122,7 +122,7 @@ export const executeBazelTest = async (
         return `${target}  : ${symbol} (${isCached ? "cached, " : ""}${testTime})`;
       });
 
-      const summaryHeader = `🧪 Test-Suite: ${testItem.id} : ${passed} Passed / ${failed} Failed`;
+      const summaryHeader = `🧰 Test-Suite: ${testItem.id} : ${passed} Passed / ${failed} Failed`;
       const resultBlock = [summaryHeader, "────────────────────────────────────────────", ...rows].join("\n");
 
       const statusMessage = new vscode.TestMessage(`🧪 Suite Result:\n\n${resultBlock}`);
