@@ -6,7 +6,7 @@
  * See the LICENSE file in the root directory for details.
  */
 
-import 'mocha';
+/// <reference types="mocha" />
 import * as assert from 'assert';
 import { BUILTIN_TEST_PATTERNS, PATTERN_IDS_BY_TEST_TYPE, normalizeStatus, getAllTestPatterns } from '../../bazel/testPatterns';
 

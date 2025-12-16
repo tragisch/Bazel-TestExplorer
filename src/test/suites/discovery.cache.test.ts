@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-import 'mocha';
+/// <reference types="mocha" />
 import * as assert from 'assert';
 import {
   discoverIndividualTestCases,

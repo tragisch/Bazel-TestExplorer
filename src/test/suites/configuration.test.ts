@@ -6,7 +6,7 @@
  * See the LICENSE file in the root directory for details.
  */
 
-import 'mocha';
+/// <reference types="mocha" />
 import * as assert from 'assert';
 import * as vscode from 'vscode';
 import { ConfigurationService } from '../../configuration';

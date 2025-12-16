@@ -6,7 +6,7 @@
  * See the LICENSE file in the root directory for details.
  */
 
-import 'mocha';
+/// <reference types="mocha" />
 import * as assert from 'assert';
 import { QueryCache } from '../../bazel/cache';
 import { BazelTestTarget } from '../../bazel/types';
