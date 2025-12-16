@@ -14,6 +14,7 @@ import * as cp from 'child_process';
 import * as readline from 'readline';
 import * as fs from 'fs';
 import * as path from 'path';
+import { CancellationToken } from 'vscode';
 import { logWithTimestamp } from '../logging';
 
 export function runBazelCommand(
@@ -21,14 +22,23 @@ export function runBazelCommand(
     cwd: string,
     onLine?: (line: string) => void,
     onErrorLine?: (line: string) => void,
-    bazelPath: string = 'bazel'
+    bazelPath: string = 'bazel',
+    cancellationToken?: CancellationToken
 ): Promise<{ code: number; stdout: string; stderr: string }> {
     return new Promise((resolve, reject) => {
         logWithTimestamp(`Running Bazel: ${bazelPath} ${args.join(" ")}`);
         const proc = cp.spawn(bazelPath, args, { cwd, shell: true });
+        let isCancelled = false;
 
         let stdout = '';
         let stderr = '';
+
+        // Listen for cancellation requests
+        const cancellationDisposable = cancellationToken?.onCancellationRequested(() => {
+            isCancelled = true;
+            logWithTimestamp(`Cancellation requested for Bazel process: ${bazelPath} ${args.join(" ")}`);
+            proc.kill();
+        });
 
         const rl = readline.createInterface({ input: proc.stdout });
         rl.on('line', line => {
@@ -45,9 +55,17 @@ export function runBazelCommand(
         });
 
         proc.on('close', code => {
-            resolve({ code: code ?? 1, stdout, stderr });
+            cancellationDisposable?.dispose();
+            if (isCancelled) {
+                reject(new Error('Bazel test execution was cancelled'));
+            } else {
+                resolve({ code: code ?? 1, stdout, stderr });
+            }
         });
 
-        proc.on('error', reject);
+        proc.on('error', (err) => {
+            cancellationDisposable?.dispose();
+            reject(err);
+        });
     });
 }

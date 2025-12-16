@@ -151,6 +151,13 @@ export class TestControllerManager {
         for (const testItem of testsToRun) {
           const allTests = collectAllTests(testItem);
           for (const t of allTests) {
+            // Check if cancellation was requested
+            if (token.isCancellationRequested) {
+              run.skipped(t);
+              logWithTimestamp(`Test skipped due to cancellation request: ${t.id}`, 'info');
+              continue;
+            }
+
             run.started(t);
             const testTypeMatch = t.label.match(/^\[(.+?)\]/);
             const testType = testTypeMatch?.[1];

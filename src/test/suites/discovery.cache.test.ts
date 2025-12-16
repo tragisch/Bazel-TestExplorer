@@ -13,7 +13,7 @@ import {
   setHashService,
   IConfigService,
   IHashService
-} from './discovery';
+} from '../../bazel/discovery';
 
 class MockConfigService implements IConfigService {
   constructor(
@@ -36,7 +36,7 @@ class MockHashService implements IHashService {
   }
 }
 
-describe('discovery', () => {
+describe('discovery (cache + DI)', () => {
   beforeEach(() => {
     clearDiscoveryCache();
     setConfigService(new MockConfigService());

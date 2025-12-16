@@ -81,7 +81,7 @@
         },
         "bazelTestRunner.testArgs": {
           "type": "array",
-          "description": "Additional command line arguments to pass to 'bazel test'. Example: ['--config=ci', '--build_tests_only']",
+          "description": "Additional command line arguments to pass to 'bazel test'. Example: ['--config=ci', '--build_tests_only', '--runs_per_test=2', etc.]",
           "default": [],
           "items": {
             "type": "string"

@@ -70,7 +70,8 @@ export const executeBazelTest = async (
   testItem: vscode.TestItem,
   workspacePath: string,
   run: vscode.TestRun,
-  config: ConfigurationService
+  config: ConfigurationService,
+  cancellationToken?: vscode.CancellationToken
 ) => {
   try {
     const typeMatch = testItem.label.match(/\[(.*?)\]/);
@@ -78,7 +79,7 @@ export const executeBazelTest = async (
     const isSuite = testType === "test_suite";
 
     const { code, stdout, stderr } = await measure(`Execute test: ${testItem.id}`, () =>
-      initiateBazelTest(testItem.id, workspacePath, run, testItem, config)
+      initiateBazelTest(testItem.id, workspacePath, run, testItem, config, cancellationToken)
     );
 
     if (isSuite) {
@@ -181,7 +182,8 @@ export const initiateBazelTest = async (
   cwd: string,
   run: vscode.TestRun,
   testItem: vscode.TestItem,
-  config: ConfigurationService
+  config: ConfigurationService,
+  cancellationToken?: vscode.CancellationToken
 ): Promise<{ code: number; stdout: string; stderr: string }> => {
   let effectiveTestId = testId;
   let filterArgs: string[] = [];
@@ -220,7 +222,8 @@ export const initiateBazelTest = async (
     cwd,
     undefined,
     undefined,
-    config.bazelPath
+    config.bazelPath,
+    cancellationToken
   );
 };
 
@@ -300,8 +303,9 @@ export const callRunBazelCommandForTest = async (options: {
   testId: string;
   cwd: string;
   additionalArgs?: string[];
+  cancellationToken?: vscode.CancellationToken;
 }): Promise<{ stdout: string; stderr: string }> => {
-  const { testId, cwd, additionalArgs = [] } = options;
+  const { testId, cwd, additionalArgs = [], cancellationToken } = options;
   
   let effectiveTestId = testId;
   if (/^\/\/[^:]*$/.test(testId)) {
@@ -309,7 +313,7 @@ export const callRunBazelCommandForTest = async (options: {
   }
 
   const args = ['test', effectiveTestId, ...DEFAULT_BAZEL_TEST_FLAGS, ...additionalArgs];
-  const { stdout, stderr } = await runBazelCommand(args, cwd);
+  const { stdout, stderr } = await runBazelCommand(args, cwd, undefined, undefined, undefined, cancellationToken);
   
   return { stdout, stderr };
 };

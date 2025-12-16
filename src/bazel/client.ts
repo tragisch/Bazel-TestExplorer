@@ -68,7 +68,7 @@ export class BazelClient {
   }
 
   /**
-   * Führt einen einzelnen Test aus mit Error-Handling
+   * Execute a single test with error handling and cancellation support
    */
   async runTest(
     testItem: any,
@@ -76,7 +76,7 @@ export class BazelClient {
     token?: CancellationToken
   ): Promise<void> {
     try {
-      return await executeBazelTest(testItem, this.workspaceRoot, run, this.config);
+      return await executeBazelTest(testItem, this.workspaceRoot, run, this.config, token);
     } catch (error) {
       const result = this.errorHandler.handle(error, 'run');
       this.errorHandler.logError(result, 'RunTest');
