@@ -8,13 +8,34 @@
 
 /// <reference types="mocha" />
 import * as assert from 'assert';
-import { discoverIndividualTestCases, setConfigService, getConfigService } from '../../bazel/discovery';
+import {
+  discoverIndividualTestCases,
+  setConfigService,
+  getConfigService,
+  IConfigService
+} from '../../bazel/discovery';
 import { extractTestCasesFromOutput } from '../../bazel/testcase/parseOutput';
 import * as runner from '../../bazel/runner';
+
+class TestConfigService implements IConfigService {
+  constructor(
+    private readonly enabled: boolean = true,
+    private readonly ttlMs: number = 15000
+  ) {}
+
+  getDiscoveryTtlMs(): number {
+    return this.ttlMs;
+  }
+
+  isDiscoveryEnabled(): boolean {
+    return this.enabled;
+  }
+}
 
 suite('Discovery', () => {
   const mockWorkspacePath = '/mock/workspace';
   let originalCall: typeof runner.callRunBazelCommandForTest | undefined;
+  let originalConfigService: IConfigService | undefined;
   let callCount = 0;
 
   setup(() => {
@@ -28,6 +49,10 @@ suite('Discovery', () => {
       const pytestOutput = `tests/test_example.py::test_one PASSED\ntests/test_example.py::test_two FAILED\n2 Tests 1 Failures 0 Ignored`;
       const gtestOutput = `[  PASSED  ] MatrixTest.test_create (5 ms)\n[  FAILED  ] MatrixTest.test_fail (3 ms)`;
 
+      if (testId.includes('invalid/target') || testId.includes('definitely/invalid')) {
+        throw new Error(`Simulated Bazel failure for ${testId}`);
+      }
+
       if (testId.includes('cached_target')) {
         return { stdout: pytestOutput, stderr: '' };
       }
@@ -38,6 +63,10 @@ suite('Discovery', () => {
 
       return { stdout: pytestOutput, stderr: '' };
     };
+
+    // Force discovery to be enabled for the default test runs
+    originalConfigService = getConfigService();
+    setConfigService(new TestConfigService(true));
   });
 
   teardown(() => {
@@ -45,6 +74,9 @@ suite('Discovery', () => {
     try {
       if (originalCall) {
         (runner as any).callRunBazelCommandForTest = originalCall;
+      }
+      if (originalConfigService) {
+        setConfigService(originalConfigService);
       }
     } catch (e) {
       // swallow
@@ -139,28 +171,22 @@ suite('Discovery', () => {
   test('should implement caching mechanism', async () => {
     // This is a functional test - we call discovery twice for the same target
     // The second call should use cache (no actual Bazel execution)
-    try {
-      const target = '//test:cached_target';
-      
-      // First call
-      callCount = 0;
-      const result1 = await discoverIndividualTestCases(target, mockWorkspacePath);
-      
-      // Immediate second call should use cache
-      const result2 = await discoverIndividualTestCases(target, mockWorkspacePath);
+    const target = '//test:cached_target';
+    
+    // First call
+    callCount = 0;
+    const result1 = await discoverIndividualTestCases(target, mockWorkspacePath);
+    
+    // Immediate second call should use cache
+    const result2 = await discoverIndividualTestCases(target, mockWorkspacePath);
 
-      assert.ok(result1);
-      assert.ok(result2);
-      // Both should return valid results
-      assert.ok(Array.isArray(result1.testCases));
-      assert.ok(Array.isArray(result2.testCases));
-      // callRunBazelCommandForTest should have been invoked only once for the cached target
-      assert.strictEqual(callCount, 1);
-    } catch (error) {
-      // Errors are expected since we're using invalid targets
-      // But the function should not throw - it should handle gracefully
-      assert.ok(true);
-    }
+    assert.ok(result1);
+    assert.ok(result2);
+    // Both should return valid results
+    assert.ok(Array.isArray(result1.testCases));
+    assert.ok(Array.isArray(result2.testCases));
+    // callRunBazelCommandForTest should have been invoked only once for the cached target
+    assert.strictEqual(callCount, 1);
   });
 
   test('should return empty test cases on error', async () => {
@@ -213,10 +239,7 @@ suite('Discovery', () => {
   test('should return empty when discovery disabled via config', async () => {
     const origConfig = getConfigService();
     try {
-      setConfigService({
-        getDiscoveryTtlMs: () => 1000,
-        isDiscoveryEnabled: () => false
-      } as any);
+      setConfigService(new TestConfigService(false, 1000));
 
       const res = await discoverIndividualTestCases('//test:whatever', mockWorkspacePath);
       assert.ok(res);
