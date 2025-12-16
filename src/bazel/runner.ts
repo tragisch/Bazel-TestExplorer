@@ -277,6 +277,8 @@ function handleTestResult(
       ].join("\n");
 
       run.appendOutput(outputBlock.replace(/\r?\n/g, '\r\n') + '\r\n', undefined, testItem);
+      try { publishOutput(testItem.id, outputBlock.replace(/\r?\n/g, '\r\n') + '\r\n'); } catch {}
+      try { finishTest(testItem.id, 'failed', outputBlock); } catch {}
     } else {
       const fallbackOutput = [
         getStatusHeader(code, testItem.id),
@@ -287,6 +289,8 @@ function handleTestResult(
 
       run.failed(testItem, new vscode.TestMessage(fallbackOutput));
       run.appendOutput(fallbackOutput.replace(/\r?\n/g, '\r\n') + '\r\n', undefined, testItem);
+      try { publishOutput(testItem.id, fallbackOutput.replace(/\r?\n/g, '\r\n') + '\r\n'); } catch {}
+      try { finishTest(testItem.id, 'failed', fallbackOutput); } catch {}
     }
   }
 }

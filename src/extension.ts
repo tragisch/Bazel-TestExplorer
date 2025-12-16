@@ -67,8 +67,13 @@ export async function activate(context: vscode.ExtensionContext) {
  		statusBar.show();
 	};
 
-	// refresh on events
-	onDidTestEvent(() => { historyProvider.refresh(); updateStatus(); });
+	// refresh on events (but ignore high-volume 'output' events)
+	const testEventDisposable = onDidTestEvent((e) => {
+		if (e?.type === 'output') return; // skip per-line output events to avoid UI churn
+		historyProvider.refresh();
+		updateStatus();
+	});
+	context.subscriptions.push(testEventDisposable);
 
 	// Commands for history items
 	context.subscriptions.push(

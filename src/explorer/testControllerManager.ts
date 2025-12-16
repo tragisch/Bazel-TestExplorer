@@ -248,7 +248,7 @@ export class TestControllerManager {
    * Used by UI commands to re-run a test from history.
    */
   async runTestsByIds(ids: string[]): Promise<void> {
-    const items = ids.map(id => this.controller.items.get(id)).filter(Boolean) as vscode.TestItem[];
+    const items = ids.map(id => this.findTestItemById(id)).filter(Boolean) as vscode.TestItem[];
     if (items.length === 0) {
       void vscode.window.showWarningMessage('No matching tests found to rerun.');
       return;
@@ -289,5 +289,25 @@ export class TestControllerManager {
 
     await Promise.all(promises);
     run.end();
+  }
+
+  /**
+   * Find a TestItem by id recursively through the controller tree.
+   */
+  private findTestItemById(id: string): vscode.TestItem | undefined {
+    for (const [, root] of this.controller.items) {
+      const found = this.searchTestItem(root, id);
+      if (found) return found;
+    }
+    return undefined;
+  }
+
+  private searchTestItem(node: vscode.TestItem, id: string): vscode.TestItem | undefined {
+    if (node.id === id) return node;
+    for (const child of node.children.values()) {
+      const found = this.searchTestItem(child, id);
+      if (found) return found;
+    }
+    return undefined;
   }
 }

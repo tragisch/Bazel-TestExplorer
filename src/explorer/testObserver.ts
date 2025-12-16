@@ -70,17 +70,18 @@ export class TestObserver implements vscode.Disposable {
       return;
     }
 
-    const items: vscode.QuickPickItem[] = this.history.slice(0, 50).map(h => ({
+    const items = this.history.slice(0, 50).map(h => ({
       label: `${h.type.toUpperCase()}: ${h.testId}`,
       description: h.durationMs ? `${h.durationMs} ms` : undefined,
-      detail: this.toMessageString(h.message)
-    }));
+      detail: this.toMessageString(h.message),
+      // attach the actual history entry so selection is stable even if history mutates
+      entry: h
+    } as vscode.QuickPickItem & { entry: TestHistoryEntry }));
 
-    const pick = await vscode.window.showQuickPick(items, { placeHolder: 'Recent test history (select to view details)', matchOnDetail: true });
+    const pick = await vscode.window.showQuickPick(items, { placeHolder: 'Recent test history (select to view details)', matchOnDetail: true }) as (vscode.QuickPickItem & { entry: TestHistoryEntry }) | undefined;
     if (!pick) return;
 
-    const idx = items.indexOf(pick);
-    const entry = this.history[idx];
+    const entry = pick.entry;
     const detail = `Test: ${entry.testId}\nStatus: ${entry.type}\nDuration: ${entry.durationMs ?? '-'} ms\n\n${this.toMessageString(entry.message)}`;
     void vscode.window.showInformationMessage(detail, { modal: true });
   }
