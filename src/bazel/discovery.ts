@@ -73,6 +73,15 @@ export function setHashService(service: IHashService): void {
   hashService = service;
 }
 
+// Export getters for tests to capture/restore current services
+export function getConfigService(): IConfigService {
+  return configService;
+}
+
+export function getHashService(): IHashService {
+  return hashService;
+}
+
 export const discoverIndividualTestCases = async (
   testTarget: string,
   workspacePath: string,

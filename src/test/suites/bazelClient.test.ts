@@ -10,6 +10,8 @@
 import * as assert from 'assert';
 import { BazelTestTarget } from '../../bazel/types';
 import { MockConfigurationService, MockBazelClient } from '../mocks';
+import { BazelClient } from '../../bazel/client';
+import * as processModule from '../../bazel/process';
 
 suite('BazelClient', () => {
   let mockClient: MockBazelClient;
@@ -175,5 +177,88 @@ suite('BazelClient', () => {
         assert.strictEqual(error.message, errorMsg);
       }
     }
+  });
+
+  suite('BazelClient (integration)', () => {
+    let originalRun: typeof processModule.runBazelCommand | undefined;
+    let config: MockConfigurationService;
+    let client: BazelClient;
+
+    setup(() => {
+      // stub runBazelCommand to avoid spawning Bazel
+      originalRun = processModule.runBazelCommand;
+      (processModule as any).runBazelCommand = async (
+        args: string[],
+        cwd: string,
+        onLine?: (line: string) => void,
+        onErrorLine?: (line: string) => void,
+        bazelPath?: string
+      ) => {
+        const cmd = args[0];
+        if (cmd === 'query') {
+          // emit two JSONproto RULE lines
+          const lines = [
+            JSON.stringify({ type: 'RULE', rule: { name: '//src/bin:test_one', ruleClass: 'cc_test', attribute: [] } }),
+            JSON.stringify({ type: 'RULE', rule: { name: '//src/bin:test_two', ruleClass: 'py_test', attribute: [] } })
+          ];
+          for (const l of lines) {
+            if (onLine) onLine(l);
+          }
+          return { code: 0, stdout: lines.join('\n'), stderr: '' };
+        }
+
+        if (args[0] === 'version') {
+          const line = 'Build label: bazel 6.0.0';
+          if (onLine) onLine(line);
+          return { code: 0, stdout: line + '\n', stderr: '' };
+        }
+
+        // default fallback for other commands
+        return { code: 0, stdout: '', stderr: '' };
+      };
+
+      config = new MockConfigurationService();
+      config.bazelPath = 'bazel';
+      config.queryPaths = ['//src:all'];
+      config.testTypes = ['cc_test', 'py_test'];
+
+      client = new BazelClient('/mock/workspace', (config as unknown) as any);
+    });
+
+    teardown(() => {
+      if (originalRun) {
+        (processModule as any).runBazelCommand = originalRun;
+      }
+    });
+
+    test('queryTests returns discovered targets and caches them', async () => {
+      const targets = await client.queryTests();
+      assert.ok(Array.isArray(targets));
+      assert.strictEqual(targets.length, 2);
+      const stats = client.getCacheStats();
+      assert.ok(stats.size >= 1);
+    });
+
+    test('getTargetMetadata returns a target by id', async () => {
+      await client.queryTests();
+      const meta = client.getTargetMetadata('//src/bin:test_one');
+      assert.ok(meta);
+      assert.strictEqual(meta?.target, '//src/bin:test_one');
+    });
+
+    test('validate returns valid true when bazel version present', async () => {
+      const res = await client.validate();
+      assert.strictEqual(res.valid, true);
+      assert.ok(typeof res.version === 'string');
+    });
+
+    test('clearCache clears internal cache', async () => {
+      await client.queryTests();
+      const before = client.getCacheStats();
+      assert.ok(before.size >= 1);
+      client.clearCache();
+      const after = client.getCacheStats();
+      assert.strictEqual(after.size, 0);
+    });
   });
 });

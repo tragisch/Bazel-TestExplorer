@@ -8,10 +8,48 @@
 
 /// <reference types="mocha" />
 import * as assert from 'assert';
-import { discoverIndividualTestCases } from '../../bazel/discovery';
+import { discoverIndividualTestCases, setConfigService, getConfigService } from '../../bazel/discovery';
+import { extractTestCasesFromOutput } from '../../bazel/testcase/parseOutput';
+import * as runner from '../../bazel/runner';
 
 suite('Discovery', () => {
   const mockWorkspacePath = '/mock/workspace';
+  let originalCall: typeof runner.callRunBazelCommandForTest | undefined;
+  let callCount = 0;
+
+  setup(() => {
+    // stub out Bazel command execution to provide deterministic output
+    callCount = 0;
+    originalCall = runner.callRunBazelCommandForTest;
+    (runner as any).callRunBazelCommandForTest = async (options: any) => {
+      callCount++;
+      const testId: string = options?.testId || '';
+      // simple pytest-style output for parsing
+      const pytestOutput = `tests/test_example.py::test_one PASSED\ntests/test_example.py::test_two FAILED\n2 Tests 1 Failures 0 Ignored`;
+      const gtestOutput = `[  PASSED  ] MatrixTest.test_create (5 ms)\n[  FAILED  ] MatrixTest.test_fail (3 ms)`;
+
+      if (testId.includes('cached_target')) {
+        return { stdout: pytestOutput, stderr: '' };
+      }
+
+      if (testId.includes('gtest_target')) {
+        return { stdout: gtestOutput, stderr: '' };
+      }
+
+      return { stdout: pytestOutput, stderr: '' };
+    };
+  });
+
+  teardown(() => {
+    // restore original function
+    try {
+      if (originalCall) {
+        (runner as any).callRunBazelCommandForTest = originalCall;
+      }
+    } catch (e) {
+      // swallow
+    }
+  });
 
   test('should handle discovery errors gracefully', async () => {
     // This test calls with invalid parameters to trigger error handling
@@ -105,6 +143,7 @@ suite('Discovery', () => {
       const target = '//test:cached_target';
       
       // First call
+      callCount = 0;
       const result1 = await discoverIndividualTestCases(target, mockWorkspacePath);
       
       // Immediate second call should use cache
@@ -115,6 +154,8 @@ suite('Discovery', () => {
       // Both should return valid results
       assert.ok(Array.isArray(result1.testCases));
       assert.ok(Array.isArray(result2.testCases));
+      // callRunBazelCommandForTest should have been invoked only once for the cached target
+      assert.strictEqual(callCount, 1);
     } catch (error) {
       // Errors are expected since we're using invalid targets
       // But the function should not throw - it should handle gracefully
@@ -158,5 +199,32 @@ suite('Discovery', () => {
     assert.ok(result.summary.passed >= 0);
     assert.ok(result.summary.failed >= 0);
     assert.ok(result.summary.ignored >= 0);
+  });
+
+  test('should parse gtest output via parser directly', () => {
+    const gtestOutput = `[  PASSED  ] MatrixTest.test_create (5 ms)\n[  FAILED  ] MatrixTest.test_fail (3 ms)`;
+    const res = extractTestCasesFromOutput(gtestOutput, '//tests:matrix');
+    assert.ok(res);
+    assert.ok(Array.isArray(res.testCases));
+    const found = res.testCases.find(tc => tc.name === 'test_create');
+    assert.ok(found, 'Should find gtest test_create via parser');
+  });
+
+  test('should return empty when discovery disabled via config', async () => {
+    const origConfig = getConfigService();
+    try {
+      setConfigService({
+        getDiscoveryTtlMs: () => 1000,
+        isDiscoveryEnabled: () => false
+      } as any);
+
+      const res = await discoverIndividualTestCases('//test:whatever', mockWorkspacePath);
+      assert.ok(res);
+      assert.strictEqual(res.testCases.length, 0);
+      assert.strictEqual(res.summary.total, 0);
+    } finally {
+      // restore original
+      setConfigService(origConfig as any);
+    }
   });
 });

@@ -79,7 +79,7 @@ function updateTestTree(
 /**
  * Remove stale test items from controller
  */
-function removeStaleItems(
+export function removeStaleItems(
   controller: vscode.TestController,
   testEntries: BazelTestTarget[]
 ): void {
@@ -99,7 +99,7 @@ function removeStaleItems(
 /**
  * Sort test entries (test_suite first, then alphabetically)
  */
-function sortTestEntries(entries: BazelTestTarget[]): BazelTestTarget[] {
+export function sortTestEntries(entries: BazelTestTarget[]): BazelTestTarget[] {
   return entries.sort((a, b) => {
     const aIsSuite = a.type === "test_suite" ? -1 : 0;
     const bIsSuite = b.type === "test_suite" ? -1 : 0;
@@ -159,7 +159,7 @@ export const addTestItemToController = (
 /**
  * Parse Bazel target label into package and test name
  */
-function parseTargetLabel(target: string): [string, string] {
+export function parseTargetLabel(target: string): [string, string] {
   return target.includes(":")
     ? target.split(":") as [string, string]
     : [target, target];
@@ -227,7 +227,7 @@ function createTestItem(
 /**
  * Format package label for display
  */
-function formatPackageLabel(bazelPath: string): { label: string; tooltip: string } {
+export function formatPackageLabel(bazelPath: string): { label: string; tooltip: string } {
   const withoutSlashes = bazelPath.replace(/^\/\//, "");
   const parts = withoutSlashes.split('/');
   const root = parts[0] || '';
@@ -324,7 +324,7 @@ function bazelLabelToUri(label: string): vscode.Uri | undefined {
 /**
  * Guess source URI for test
  */
-function guessSourceUri(
+export function guessSourceUri(
   packageName: string,
   testName: string,
   testType: string
@@ -375,7 +375,7 @@ function guessSourceUri(
 /**
  * Return possible file extensions for test type
  */
-function getExtensionsByType(testType: string): string[] {
+export function getExtensionsByType(testType: string): string[] {
   const typeMap: Record<string, string[]> = {
     'cc_test': ['.cc', '.cpp', '.c'],
     'unity_test': ['.c'],

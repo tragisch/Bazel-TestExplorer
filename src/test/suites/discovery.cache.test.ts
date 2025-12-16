@@ -11,6 +11,8 @@ import {
   getDiscoveryCacheStats,
   setConfigService,
   setHashService,
+  getConfigService,
+  getHashService,
   IConfigService,
   IHashService
 } from '../../bazel/discovery';
@@ -36,36 +38,58 @@ class MockHashService implements IHashService {
   }
 }
 
-describe('discovery (cache + DI)', () => {
-  beforeEach(() => {
+suite('discovery (cache + DI)', () => {
+  let originalConfigService: IConfigService | undefined;
+  let originalHashService: IHashService | undefined;
+
+  setup(() => {
+    // save originals
+    originalConfigService = getConfigService();
+    originalHashService = getHashService();
+
     clearDiscoveryCache();
     setConfigService(new MockConfigService());
     setHashService(new MockHashService());
   });
 
-  it('should use mock config service', async () => {
+  teardown(() => {
+    // restore originals to avoid cross-test contamination
+    try {
+      if (originalConfigService) {
+        setConfigService(originalConfigService);
+      }
+      if (originalHashService) {
+        setHashService(originalHashService);
+      }
+      clearDiscoveryCache();
+    } catch (e) {
+      // best-effort restore; tests should not throw from teardown
+    }
+  });
+
+  test('should use mock config service', async () => {
     const mockConfig = new MockConfigService(5000, false);
     setConfigService(mockConfig);
 
     const result = await discoverIndividualTestCases('test', '/workspace');
-    
+
     assert.strictEqual(result.testCases.length, 0);
     assert.strictEqual(result.summary.total, 0);
   });
 
-  it('should use custom TTL from mock config', () => {
+  test('should use custom TTL from mock config', () => {
     const mockConfig = new MockConfigService(30000, true);
     setConfigService(mockConfig);
 
     assert.strictEqual(mockConfig.getDiscoveryTtlMs(), 30000);
   });
 
-  it('should hash correctly with mock hash service', () => {
+  test('should hash correctly with mock hash service', () => {
     const mockHash = new MockHashService();
     assert.strictEqual(mockHash.sha1('test'), 'hash_4');
   });
 
-  it('should clear cache', () => {
+  test('should clear cache', () => {
     clearDiscoveryCache();
     assert.strictEqual(getDiscoveryCacheStats().size, 0);
   });
