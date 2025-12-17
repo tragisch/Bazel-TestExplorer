@@ -110,25 +110,30 @@ export async function activate(context: vscode.ExtensionContext) {
 	const testObserver = new TestObserver(context);
 	context.subscriptions.push(testObserver);
 
-	// Tree view for history
+	// Tree view for history (Testing + Explorer fallback)
 	const historyProvider = new TestHistoryProvider(testObserver);
-	let historyTree: vscode.TreeView<any> | undefined;
-	try {
-		historyTree = vscode.window.createTreeView('bazelTestExplorer.history', { treeDataProvider: historyProvider });
-		context.subscriptions.push(historyTree);
-		logWithTimestamp('Registered tree view: bazelTestExplorer.history');
-	} catch (err) {
-		logWithTimestamp(`Failed to create tree view 'bazelTestExplorer.history': ${formatError(err)}`, 'error');
-		vscode.window.showErrorMessage("Failed to initialize Bazel Test History view. See 'Bazel-Test-Logs' output for details.");
+	const historyViewIds = ['bazelTestExplorer.history', 'bazelTestExplorer.history.explorer'];
+	for (const viewId of historyViewIds) {
+		try {
+			const tree = vscode.window.createTreeView(viewId, { treeDataProvider: historyProvider });
+			context.subscriptions.push(tree);
+			logWithTimestamp(`Registered tree view: ${viewId}`);
+		} catch (err) {
+			logWithTimestamp(`Failed to create tree view '${viewId}': ${formatError(err)}`, 'error');
+			vscode.window.showErrorMessage("Failed to initialize Bazel Test History view. See 'Bazel-Test-Logs' output for details.");
+		}
 	}
 
-	// Settings view in the Testing sidebar (Webview)
-	try {
-		const settingsProvider = new TestSettingsView(configurationService, context);
-		context.subscriptions.push(vscode.window.registerWebviewViewProvider(TestSettingsView.viewType, settingsProvider));
-		logWithTimestamp(`Registered webview view: ${TestSettingsView.viewType}`);
-	} catch (err) {
-		logWithTimestamp(`Failed to register webview view '${TestSettingsView.viewType}': ${formatError(err)}`, 'error');
+	// Settings view in the Testing sidebar (Webview) + Explorer fallback
+	const settingsViewIds = [TestSettingsView.viewType, TestSettingsView.explorerViewType];
+	const settingsProvider = new TestSettingsView(configurationService, context);
+	for (const viewId of settingsViewIds) {
+		try {
+			context.subscriptions.push(vscode.window.registerWebviewViewProvider(viewId, settingsProvider));
+			logWithTimestamp(`Registered webview view: ${viewId}`);
+		} catch (err) {
+			logWithTimestamp(`Failed to register webview view '${viewId}': ${formatError(err)}`, 'error');
+		}
 	}
 
 	// Status bar: show count of recent failures and total entries

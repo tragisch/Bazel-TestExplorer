@@ -19,6 +19,18 @@
     "url": "https://github.com/tragisch/Bazel-TestExplorer/issues"
   },
   "main": "./dist/extension.js",
+  "activationEvents": [
+    "workspaceContains:**/MODULE.bazel",
+    "workspaceContains:**/WORKSPACE",
+    "onView:workbench.view.testing",
+    "onView:bazelTestExplorer.settingsView",
+    "onView:bazelTestExplorer.settingsView.explorer",
+    "onView:bazelTestExplorer.history",
+    "onView:bazelTestExplorer.history.explorer",
+    "onCommand:extension.reloadBazelTests",
+    "onCommand:bazelTestExplorer.openSettingsView",
+    "onCommand:bazelTestExplorer.showTestHistory"
+  ],
   "contributes": {
     "commands": [
       {
@@ -151,7 +163,7 @@
       }
     },
     "views": {
-      "testing": [
+      "test": [
         {
           "id": "bazelTestExplorer.settingsView",
           "name": "Bazel Test Settings",
@@ -169,6 +181,7 @@
         {
           "id": "bazelTestExplorer.settingsView.explorer",
           "name": "Bazel Test Settings",
+          "type": "webview",
           "icon": "images/icon_Bazel_TestExplorer.png"
         },
         {

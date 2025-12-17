@@ -3,6 +3,7 @@ import { ConfigurationService } from '../configuration';
 
 export class TestSettingsView implements vscode.WebviewViewProvider {
   public static readonly viewType = 'bazelTestExplorer.settingsView';
+  public static readonly explorerViewType = 'bazelTestExplorer.settingsView.explorer';
 
   constructor(private readonly config: ConfigurationService, private readonly context: vscode.ExtensionContext) {}
 
