@@ -2,7 +2,7 @@
   "name": "bazel-testexplorer",
   "displayName": "Bazel-TestExplorer",
   "description": "A VS Code extension to run and manage Bazel tests.",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "icon": "images/icon_Bazel_TestExplorer.png",
   "engines": {
     "vscode": "^1.99.0"
@@ -19,7 +19,8 @@
     "url": "https://github.com/tragisch/Bazel-TestExplorer/issues"
   },
   "activationEvents": [
-    "onView:workbench.view.testing",
+    "onView:bazelTestExplorer.settingsView",
+    "onView:bazelTestExplorer.history",
     "workspaceContains:**/MODULE.bazel",
     "workspaceContains:**/WORKSPACE"
   ],

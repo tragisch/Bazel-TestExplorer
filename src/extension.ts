@@ -31,6 +31,9 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	// Verbose activation diagnostics to help track view registration issues
 	try {
+		// Log host VS Code and UI kind to help debug when views/containers
+		logWithTimestamp(`Host VS Code version: ${vscode.version}, uiKind: ${vscode.env.uiKind}`);
+
 		const pkg = (context.extension && (context.extension.packageJSON as any)) ?? vscode.extensions.getExtension('tragisch.bazel-testexplorer')?.packageJSON as any | undefined;
 
 		// Log which extension path is actually used in the Extension Dev Host
