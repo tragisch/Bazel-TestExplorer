@@ -11,6 +11,8 @@
  */
 
 import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
 import { initializeLogger, logWithTimestamp, measure, formatError } from './logging';
 import { findBazelWorkspace } from './bazel/workspace';
 import { BazelClient } from './bazel/client';
@@ -26,6 +28,57 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	const extensionVersion = vscode.extensions.getExtension("tragisch.bazel-testexplorer")?.packageJSON.version;
 	logWithTimestamp(`Bazel Test Explorer v${extensionVersion} aktiviert.`);
+
+	// Verbose activation diagnostics to help track view registration issues
+	try {
+		const pkg = (context.extension && (context.extension.packageJSON as any)) ?? vscode.extensions.getExtension('tragisch.bazel-testexplorer')?.packageJSON as any | undefined;
+
+		// Log which extension path is actually used in the Extension Dev Host
+		try {
+			const extPath = context.extension?.extensionPath ?? vscode.extensions.getExtension('tragisch.bazel-testexplorer')?.extensionPath;
+			logWithTimestamp(`Extension path: ${extPath}`);
+			if (extPath) {
+				const packageJsonPath = path.join(extPath, 'package.json');
+				if (fs.existsSync(packageJsonPath)) {
+					const raw = fs.readFileSync(packageJsonPath, 'utf8');
+					try {
+						const parsed = JSON.parse(raw) as any;
+						logWithTimestamp(`On-disk package.json contributes.views: ${JSON.stringify(parsed.contributes?.views ?? {})}`);
+						logWithTimestamp(`On-disk package.json viewsContainers: ${JSON.stringify(parsed.contributes?.viewsContainers ?? {})}`);
+					} catch (e) {
+						logWithTimestamp(`Failed parsing on-disk package.json: ${String(e)}`, 'warn');
+					}
+				} else {
+					logWithTimestamp(`No package.json found at extension path: ${packageJsonPath}`, 'warn');
+				}
+			}
+		} catch (e) {
+			logWithTimestamp(`Failed to read extension package.json on-disk: ${String(e)}`, 'warn');
+		}
+		if (pkg?.contributes) {
+			logWithTimestamp(`Contributes.viewsContainers: ${JSON.stringify(pkg.contributes.viewsContainers ?? {})}`);
+			logWithTimestamp(`Contributes.views: ${JSON.stringify(pkg.contributes.views ?? {})}`);
+			logWithTimestamp(`Contributes.commands: ${JSON.stringify(Object.keys(pkg.contributes.commands ?? {}).length ? pkg.contributes.commands.map((c:any)=>c.command) : pkg.contributes.commands ?? {})}`);
+		} else {
+			logWithTimestamp('No contributes section found in package.json', 'warn');
+		}
+
+		// Check for availability of key workbench commands
+		vscode.commands.getCommands(true).then((cmds) => {
+			const interesting = [
+				'workbench.view.extension.bazelTestExplorer',
+				'workbench.views.openView',
+				'workbench.view.testing',
+				'workbench.view.explorer'
+			];
+			interesting.forEach(c => logWithTimestamp(`Command available: ${c} -> ${cmds.includes(c)}`));
+			// also log a short list of workbench.view.* commands present
+			const workbenchViewCommands = cmds.filter(x => x.startsWith('workbench.view.')).slice(0,50);
+			logWithTimestamp(`Found workbench.view.* commands (sample up to 50): ${JSON.stringify(workbenchViewCommands)}`);
+		});
+	} catch (err) {
+		logWithTimestamp(`Activation diagnostics failed: ${err}`, 'warn');
+	}
 
 	const workspaceRoot = await findBazelWorkspace();
 	if (!workspaceRoot) {
@@ -99,8 +152,8 @@ export async function activate(context: vscode.ExtensionContext) {
 	// Command to open a standalone settings WebviewPanel (works regardless of Test Explorer integration)
 	context.subscriptions.push(vscode.commands.registerCommand('bazelTestExplorer.openSettingsView', async () => {
 		try {
-			// open our activity-bar container
-			await vscode.commands.executeCommand('workbench.view.extension.bazelTestExplorer');
+			// open our activity-bar container (use kebab-case id)
+			await vscode.commands.executeCommand('workbench.view.extension.bazel-test-explorer');
 		} catch (e) {
 			// fallback: open Explorer
 			try { await vscode.commands.executeCommand('workbench.view.explorer'); } catch { /* ignore */ }

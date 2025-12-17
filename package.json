@@ -27,7 +27,7 @@
   "contributes": {
     "viewsContainers": {
       "activitybar": {
-        "bazelTestExplorer": {
+        "bazel-test-explorer": {
           "title": "Bazel Test Explorer",
           "icon": "images/icon_Bazel_TestExplorer.png"
         }
@@ -152,10 +152,9 @@
           }
         }
       }
-    }
-    ,
+    },
     "views": {
-      "bazelTestExplorer": [
+      "bazel-test-explorer": [
         {
           "id": "bazelTestExplorer.settingsView",
           "name": "Bazel Test Settings"
@@ -187,7 +186,6 @@
       ]
     }
   },
-  
   "scripts": {
     "compile": "npm run check-types && tsc -p tsconfig.json && node esbuild.js",
     "check-types": "tsc --noEmit",
