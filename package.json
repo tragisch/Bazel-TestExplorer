@@ -19,8 +19,6 @@
     "url": "https://github.com/tragisch/Bazel-TestExplorer/issues"
   },
   "activationEvents": [
-    "onView:bazelTestExplorer.settingsView",
-    "onView:bazelTestExplorer.history",
     "workspaceContains:**/MODULE.bazel",
     "workspaceContains:**/WORKSPACE"
   ],
