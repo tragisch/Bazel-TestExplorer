@@ -153,6 +153,10 @@
       {
         "id": "bazelTestExplorer.settingsView",
         "name": "Bazel Test Settings"
+      },
+      {
+        "id": "bazelTestExplorer.history",
+        "name": "Bazel Test History"
       }
     ]
   },
