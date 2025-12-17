@@ -120,6 +120,24 @@
           "default": 15000,
           "minimum": 1000
         }
+        ,
+        "bazelTestRunner.flaky": {
+          "type": "boolean",
+          "description": "Treat some tests as flaky and enable retry UI/logic.",
+          "default": false
+        },
+        "bazelTestRunner.retryCount": {
+          "type": "number",
+          "description": "Number of automatic retries for flaky tests.",
+          "default": 1,
+          "minimum": 0
+        },
+        "bazelTestRunner.bazelFlags": {
+          "type": "array",
+          "description": "Additional Bazel flags to append to Bazel invocations for tests (e.g. --test_output=errors).",
+          "default": [],
+          "items": { "type": "string" }
+        }
       }
     }
   },
@@ -128,6 +146,13 @@
       {
         "id": "bazelTestExplorer.history",
         "name": "Bazel Test History"
+      }
+    ]
+    ,
+    "testing": [
+      {
+        "id": "bazelTestExplorer.settingsView",
+        "name": "Bazel Test Settings"
       }
     ]
   },

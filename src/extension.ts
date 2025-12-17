@@ -19,6 +19,7 @@ import { TestControllerManager } from './explorer/testControllerManager';
 import { TestObserver } from './explorer/testObserver';
 import TestHistoryProvider from './explorer/testHistoryProvider';
 import { onDidTestEvent } from './explorer/testEventBus';
+import TestSettingsView from './explorer/testSettingsView';
 
 export async function activate(context: vscode.ExtensionContext) {
 	initializeLogger();
@@ -55,10 +56,16 @@ export async function activate(context: vscode.ExtensionContext) {
 	const tree = vscode.window.createTreeView('bazelTestExplorer.history', { treeDataProvider: historyProvider });
 	context.subscriptions.push(tree);
 
+	// Settings view in the Testing sidebar (Webview)
+	const settingsProvider = new TestSettingsView(configurationService, context);
+	context.subscriptions.push(vscode.window.registerWebviewViewProvider(TestSettingsView.viewType, settingsProvider));
+
 	// Status bar: show count of recent failures and total entries
 	const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
 	statusBar.command = 'bazelTestExplorer.showTestHistory';
 	context.subscriptions.push(statusBar);
+
+	// Note: logs are opened in a readonly text editor tab when requested
 
 	const updateStatus = () => {
  		const history = testObserver.getHistory();
@@ -79,8 +86,17 @@ export async function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		vscode.commands.registerCommand('bazelTestExplorer.openHistoryItem', async (entry: any) => {
 			if (!entry) return;
-			const detail = `Test: ${entry.testId}\nStatus: ${entry.type}\nDuration: ${entry.durationMs ?? '-'} ms\n\n${typeof entry.message === 'string' ? entry.message : (entry.message?.value ?? '')}`;
-			const pick = await vscode.window.showInformationMessage(detail, 'Rerun');
+			const body = typeof entry.message === 'string' ? entry.message : (entry.message?.value ?? '');
+			const contentLines: string[] = [];
+			contentLines.push(`--- Test: ${entry.testId} ---`);
+			contentLines.push(`Status: ${entry.type}`);
+			contentLines.push(`Duration: ${entry.durationMs ?? '-'} ms`);
+			contentLines.push('');
+			if (body) contentLines.push(body);
+			const content = contentLines.join('\n');
+			const doc = await vscode.workspace.openTextDocument({ content, language: 'text' });
+			await vscode.window.showTextDocument(doc, { preview: true, viewColumn: vscode.ViewColumn.Beside });
+			const pick = await vscode.window.showInformationMessage('Opened test log in editor', 'Rerun');
 			if (pick === 'Rerun') {
 				void vscode.commands.executeCommand('bazelTestExplorer.rerunTestFromHistory', entry.testId);
 			}

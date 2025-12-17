@@ -82,8 +82,13 @@ export class TestObserver implements vscode.Disposable {
     if (!pick) return;
 
     const entry = pick.entry;
-    const detail = `Test: ${entry.testId}\nStatus: ${entry.type}\nDuration: ${entry.durationMs ?? '-'} ms\n\n${this.toMessageString(entry.message)}`;
-    void vscode.window.showInformationMessage(detail, { modal: true });
+    const content = `--- Test: ${entry.testId} ---\nStatus: ${entry.type}\nDuration: ${entry.durationMs ?? '-'} ms\n\n${this.toMessageString(entry.message)}`;
+    const doc = await vscode.workspace.openTextDocument({ content, language: 'text' });
+    await vscode.window.showTextDocument(doc, { preview: true, viewColumn: vscode.ViewColumn.Beside });
+    const action = await vscode.window.showInformationMessage('Opened test log in editor', 'Rerun');
+    if (action === 'Rerun') {
+      void vscode.commands.executeCommand('bazelTestExplorer.rerunTestFromHistory', entry.testId);
+    }
   }
 
   dispose() {

@@ -43,6 +43,18 @@ export class ConfigurationService {
     return this.normalizeStringArray(this.config.get<string[]>('testArgs', []));
   }
 
+  get flaky(): boolean {
+    return this.config.get<boolean>('flaky', false);
+  }
+
+  get retryCount(): number {
+    return this.config.get<number>('retryCount', 1);
+  }
+
+  get bazelFlags(): string[] {
+    return this.normalizeStringArray(this.config.get<string[]>('bazelFlags', []));
+  }
+
   /**
    * Listen to configuration changes
    */
