@@ -50,6 +50,11 @@
         "command": "bazelTestExplorer.rerunTestFromHistory",
         "title": "Bazel-TestExplorer: Rerun Test From History"
       }
+      ,
+      {
+        "command": "bazelTestExplorer.openSettingsView",
+        "title": "Bazel-TestExplorer: Open Test Settings View"
+      }
     ],
     "menus": {
       "testing/item/context": [
@@ -142,6 +147,16 @@
     }
   },
   "views": {
+    "explorer": [
+      {
+        "id": "bazelTestExplorer.settingsView",
+        "name": "Bazel Test Settings"
+      },
+      {
+        "id": "bazelTestExplorer.history",
+        "name": "Bazel Test History"
+      }
+    ],
     "testing": [
       {
         "id": "bazelTestExplorer.settingsView",
