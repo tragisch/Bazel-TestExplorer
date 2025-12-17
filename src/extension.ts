@@ -53,9 +53,10 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	// Tree view for history
 	const historyProvider = new TestHistoryProvider(testObserver);
+	let historyTree: vscode.TreeView<any> | undefined;
 	try {
-		const tree = vscode.window.createTreeView('bazelTestExplorer.history', { treeDataProvider: historyProvider });
-		context.subscriptions.push(tree);
+		historyTree = vscode.window.createTreeView('bazelTestExplorer.history', { treeDataProvider: historyProvider });
+		context.subscriptions.push(historyTree);
 		logWithTimestamp('Registered tree view: bazelTestExplorer.history');
 	} catch (err) {
 		logWithTimestamp(`Failed to create tree view 'bazelTestExplorer.history': ${formatError(err)}`, 'error');
@@ -97,6 +98,15 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	// Command to open a standalone settings WebviewPanel (works regardless of Test Explorer integration)
 	context.subscriptions.push(vscode.commands.registerCommand('bazelTestExplorer.openSettingsView', async () => {
+		try {
+			// open our activity-bar container
+			await vscode.commands.executeCommand('workbench.view.extension.bazelTestExplorer');
+		} catch (e) {
+			// fallback: open Explorer
+			try { await vscode.commands.executeCommand('workbench.view.explorer'); } catch { /* ignore */ }
+		}
+
+		// also open a standalone panel as fallback to ensure settings are reachable
 		const panel = vscode.window.createWebviewPanel(
 			'bazelTestExplorer.settingsPanel',
 			'Bazel Test Settings',

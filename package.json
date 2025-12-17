@@ -25,6 +25,15 @@
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "bazelTestExplorer",
+          "title": "Bazel Test Explorer",
+          "icon": "images/icon_Bazel_TestExplorer.png"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "extension.reloadBazelTests",
