@@ -20,32 +20,46 @@ export class TestObserver implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [];
   private readonly history: TestHistoryEntry[] = [];
   private readonly maxEntries = 200;
+  private verboseLogging = false;
 
   constructor(private readonly context: vscode.ExtensionContext) {
+    this.verboseLogging = vscode.workspace.getConfiguration('bazelTestRunner').get('verboseLogging') === true;
+
     const d = onDidTestEvent((e: TestEvent) => this.handleEvent(e));
     this.disposables.push(d);
     this.context.subscriptions.push(this);
     logWithTimestamp('TestObserver initialized');
+
     // register quickpick command to show recent history
     const cmd = vscode.commands.registerCommand('bazelTestExplorer.showTestHistory', () => this.showHistory());
     this.disposables.push(cmd);
     this.context.subscriptions.push(cmd);
+
+    // watch configuration changes for verbose logging toggle
+    const cfg = vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration && e.affectsConfiguration('bazelTestRunner.verboseLogging')) {
+        this.verboseLogging = vscode.workspace.getConfiguration('bazelTestRunner').get('verboseLogging') === true;
+      }
+    });
+    this.disposables.push(cfg);
   }
 
   private handleEvent(e: TestEvent) {
     switch (e.type) {
       case 'started':
-        logWithTimestamp(`Test started: ${e.testId}`);
+        if (this.verboseLogging) logWithTimestamp(`Test started: ${e.testId}`);
         break;
       case 'passed':
       case 'failed':
       case 'skipped':
         this.pushHistory({ testId: e.testId, type: e.type, durationMs: e.durationMs, message: e.message, timestamp: e.timestamp });
-        logWithTimestamp(`Test ${e.type}: ${e.testId} (${e.durationMs ?? 0}ms)`);
+        if (this.verboseLogging) logWithTimestamp(`Test ${e.type}: ${e.testId} (${e.durationMs ?? 0}ms)`);
         break;
       case 'output':
-        // small log for outputs
-        logWithTimestamp(`Test output (${e.testId}): ${e.message}`);
+        // Throttle or silence per-line output unless verbose logging enabled
+        if (this.verboseLogging) {
+          logWithTimestamp(`Test output (${e.testId}): ${this.toMessageString(e.message as any)}`);
+        }
         break;
     }
   }

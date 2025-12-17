@@ -29,8 +29,10 @@ export async function activate(context: vscode.ExtensionContext) {
 	const extensionVersion = vscode.extensions.getExtension("tragisch.bazel-testexplorer")?.packageJSON.version;
 	logWithTimestamp(`Bazel Test Explorer v${extensionVersion} aktiviert.`);
 
-	// Verbose activation diagnostics to help track view registration issues
-	try {
+	// Verbose activation diagnostics to help track view registration issues (opt-in)
+	const enableActivationDiagnostics = vscode.workspace.getConfiguration('bazelTestExplorer').get('debugViewRegistration') === true || process.env['VSCODE_DEV'] === 'true';
+	if (enableActivationDiagnostics) {
+		try {
 		// Log host VS Code and UI kind to help debug when views/containers
 		logWithTimestamp(`Host VS Code version: ${vscode.version}, uiKind: ${vscode.env.uiKind}`);
 
@@ -79,8 +81,9 @@ export async function activate(context: vscode.ExtensionContext) {
 			const workbenchViewCommands = cmds.filter(x => x.startsWith('workbench.view.')).slice(0,50);
 			logWithTimestamp(`Found workbench.view.* commands (sample up to 50): ${JSON.stringify(workbenchViewCommands)}`);
 		});
-	} catch (err) {
-		logWithTimestamp(`Activation diagnostics failed: ${err}`, 'warn');
+		} catch (err) {
+			logWithTimestamp(`Activation diagnostics failed: ${err}`, 'warn');
+		}
 	}
 
 	const workspaceRoot = await findBazelWorkspace();
@@ -154,12 +157,18 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	// Command to open a standalone settings WebviewPanel (works regardless of Test Explorer integration)
 	context.subscriptions.push(vscode.commands.registerCommand('bazelTestExplorer.openSettingsView', async () => {
+		// Try to show an appropriate container if available; avoid calling removed commands
 		try {
-			// open our activity-bar container (use kebab-case id)
-			await vscode.commands.executeCommand('workbench.view.extension.bazel-test-explorer');
+			const cmds = await vscode.commands.getCommands(true);
+			if (cmds.includes('workbench.view.extension.bazel-test-explorer')) {
+				await vscode.commands.executeCommand('workbench.view.extension.bazel-test-explorer');
+			} else if (cmds.includes('workbench.view.testing')) {
+				await vscode.commands.executeCommand('workbench.view.testing');
+			} else if (cmds.includes('workbench.view.explorer')) {
+				await vscode.commands.executeCommand('workbench.view.explorer');
+			}
 		} catch (e) {
-			// fallback: open Explorer
-			try { await vscode.commands.executeCommand('workbench.view.explorer'); } catch { /* ignore */ }
+			// ignore failures — this is a best-effort UI hint
 		}
 
 		// also open a standalone panel as fallback to ensure settings are reachable

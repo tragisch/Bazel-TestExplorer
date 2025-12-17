@@ -137,18 +137,42 @@
           "items": {
             "type": "string"
           }
+        },
+        "bazelTestExplorer.debugViewRegistration": {
+          "type": "boolean",
+          "description": "Developer: enable verbose activation diagnostics for view/container registration. Keep disabled for production to avoid slow activation.",
+          "default": false
+        },
+        "bazelTestRunner.verboseLogging": {
+          "type": "boolean",
+          "description": "Enable verbose test event logging (developer use). Defaults to false to avoid flooding logs.",
+          "default": false
         }
       }
     },
     "views": {
-      "explorer": [
+      "testing": [
         {
           "id": "bazelTestExplorer.settingsView",
           "name": "Bazel Test Settings",
+          "type": "webview",
+          "contextualTitle": "Bazel Test Settings",
           "icon": "images/icon_Bazel_TestExplorer.png"
         },
         {
           "id": "bazelTestExplorer.history",
+          "name": "Bazel Test History",
+          "icon": "images/icon_Bazel_TestExplorer.png"
+        }
+      ],
+      "explorer": [
+        {
+          "id": "bazelTestExplorer.settingsView.explorer",
+          "name": "Bazel Test Settings",
+          "icon": "images/icon_Bazel_TestExplorer.png"
+        },
+        {
+          "id": "bazelTestExplorer.history.explorer",
           "name": "Bazel Test History",
           "icon": "images/icon_Bazel_TestExplorer.png"
         }

@@ -14,7 +14,7 @@ export class TestSettingsView implements vscode.WebviewViewProvider {
     webviewView.webview.html = this.getHtmlForWebview(webviewView.webview);
 
     // handle messages from the webview
-    webviewView.webview.onDidReceiveMessage(async (msg) => {
+    const messageDisposable = webviewView.webview.onDidReceiveMessage(async (msg) => {
       const workspaceConfig = vscode.workspace.getConfiguration('bazelTestRunner');
       switch (msg.command) {
         case 'getSettings': {
@@ -43,17 +43,27 @@ export class TestSettingsView implements vscode.WebviewViewProvider {
     });
 
     // react to external configuration changes
-    const disposable = this.config.onDidChangeConfiguration(() => {
-      webviewView.webview.postMessage({
-        command: 'settings',
-        payload: {
-          flaky: this.config.flaky,
-          retryCount: this.config.retryCount,
-          bazelFlags: this.config.bazelFlags
-        }
-      });
+    const configDisposable = this.config.onDidChangeConfiguration(() => {
+      // guard: only post when webview is available
+      try {
+        webviewView.webview.postMessage({
+          command: 'settings',
+          payload: {
+            flaky: this.config.flaky,
+            retryCount: this.config.retryCount,
+            bazelFlags: this.config.bazelFlags
+          }
+        });
+      } catch (e) {
+        // ignore if webview is gone
+      }
     });
-    this.context.subscriptions.push(disposable);
+
+    // Tie disposables to the lifecycle of the view to avoid leaking listeners
+    webviewView.onDidDispose(() => {
+      try { messageDisposable.dispose(); } catch (e) {}
+      try { configDisposable.dispose(); } catch (e) {}
+    });
   }
 
   private getHtmlForWebview(webview: vscode.Webview): string {
