@@ -26,13 +26,12 @@
   "main": "./dist/extension.js",
   "contributes": {
     "viewsContainers": {
-      "activitybar": [
-        {
-          "id": "bazelTestExplorer",
+      "activitybar": {
+        "bazelTestExplorer": {
           "title": "Bazel Test Explorer",
           "icon": "images/icon_Bazel_TestExplorer.png"
         }
-      ]
+      }
     },
     "commands": [
       {
@@ -58,8 +57,7 @@
       {
         "command": "bazelTestExplorer.rerunTestFromHistory",
         "title": "Bazel-TestExplorer: Rerun Test From History"
-      }
-      ,
+      },
       {
         "command": "bazelTestExplorer.openSettingsView",
         "title": "Bazel-TestExplorer: Open Test Settings View"
@@ -133,8 +131,7 @@
           "description": "Time-to-live in milliseconds for cached test case discovery results. Lower values cause more frequent re-discovery but ensure fresher results.",
           "default": 15000,
           "minimum": 1000
-        }
-        ,
+        },
         "bazelTestRunner.flaky": {
           "type": "boolean",
           "description": "Treat some tests as flaky and enable retry UI/logic.",
@@ -150,33 +147,47 @@
           "type": "array",
           "description": "Additional Bazel flags to append to Bazel invocations for tests (e.g. --test_output=errors).",
           "default": [],
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         }
       }
     }
+    ,
+    "views": {
+      "bazelTestExplorer": [
+        {
+          "id": "bazelTestExplorer.settingsView",
+          "name": "Bazel Test Settings"
+        },
+        {
+          "id": "bazelTestExplorer.history",
+          "name": "Bazel Test History"
+        }
+      ],
+      "explorer": [
+        {
+          "id": "bazelTestExplorer.settingsView",
+          "name": "Bazel Test Settings"
+        },
+        {
+          "id": "bazelTestExplorer.history",
+          "name": "Bazel Test History"
+        }
+      ],
+      "testing": [
+        {
+          "id": "bazelTestExplorer.settingsView",
+          "name": "Bazel Test Settings"
+        },
+        {
+          "id": "bazelTestExplorer.history",
+          "name": "Bazel Test History"
+        }
+      ]
+    }
   },
-  "views": {
-    "explorer": [
-      {
-        "id": "bazelTestExplorer.settingsView",
-        "name": "Bazel Test Settings"
-      },
-      {
-        "id": "bazelTestExplorer.history",
-        "name": "Bazel Test History"
-      }
-    ],
-    "testing": [
-      {
-        "id": "bazelTestExplorer.settingsView",
-        "name": "Bazel Test Settings"
-      },
-      {
-        "id": "bazelTestExplorer.history",
-        "name": "Bazel Test History"
-      }
-    ]
-  },
+  
   "scripts": {
     "compile": "npm run check-types && tsc -p tsconfig.json && node esbuild.js",
     "check-types": "tsc --noEmit",
