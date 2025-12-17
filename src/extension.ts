@@ -102,23 +102,15 @@ export async function activate(context: vscode.ExtensionContext) {
 		} catch (e) {
 			// ignore
 		}
+		// We cannot reliably programmatically open a specific contributed view in all VS Code versions.
+		// Instead, focus the Testing (or Explorer) view and show a short instruction to the user.
 		try {
-			await vscode.commands.executeCommand('workbench.views.openView', TestSettingsView.viewType);
-			logWithTimestamp(`Opened settings view: ${TestSettingsView.viewType}`);
-		} catch (err) {
-			logWithTimestamp(`Could not programmatically open settings view: ${formatError(err)}`, 'warn');
-			const pick = await vscode.window.showInformationMessage(
-				'Could not open the settings view automatically. Open the Testing panel and run "View: Open View..." to select "Bazel Test Settings".',
-				'Open Command Palette',
-				'Copy Instructions'
-			);
-			if (pick === 'Open Command Palette') {
-				await vscode.commands.executeCommand('workbench.action.showCommands');
-			} else if (pick === 'Copy Instructions') {
-				await vscode.env.clipboard.writeText('Open the Testing panel and run "View: Open View..." then choose "Bazel Test Settings".');
-				void vscode.window.showInformationMessage('Instructions copied to clipboard');
-			}
+			await vscode.commands.executeCommand('workbench.view.testing');
+		} catch {
+			// fallback to explorer if testing view command not available
+			await vscode.commands.executeCommand('workbench.view.explorer');
 		}
+		void vscode.window.showInformationMessage('Open the Testing panel (or Explorer) and use "View: Open View..." to select "Bazel Test Settings".');
 	}));
 
 	context.subscriptions.push(
