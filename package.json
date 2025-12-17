@@ -27,12 +27,13 @@
   "main": "./dist/extension.js",
   "contributes": {
     "viewsContainers": {
-      "activitybar": {
-        "bazel-test-explorer": {
+      "activitybar": [
+        {
+          "id": "bazel-test-explorer",
           "title": "Bazel Test Explorer",
           "icon": "images/icon_Bazel_TestExplorer.png"
         }
-      }
+      ]
     },
     "commands": [
       {
