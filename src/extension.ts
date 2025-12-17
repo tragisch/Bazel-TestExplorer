@@ -95,22 +95,86 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	// Commands for history items
 
-	// Convenience command to open the Testing view and reveal the Bazel Test Settings view
+	// Command to open a standalone settings WebviewPanel (works regardless of Test Explorer integration)
 	context.subscriptions.push(vscode.commands.registerCommand('bazelTestExplorer.openSettingsView', async () => {
-		try {
-			await vscode.commands.executeCommand('workbench.view.testing');
-		} catch (e) {
-			// ignore
-		}
-		// We cannot reliably programmatically open a specific contributed view in all VS Code versions.
-		// Instead, focus the Testing (or Explorer) view and show a short instruction to the user.
-		try {
-			await vscode.commands.executeCommand('workbench.view.testing');
-		} catch {
-			// fallback to explorer if testing view command not available
-			await vscode.commands.executeCommand('workbench.view.explorer');
-		}
-		void vscode.window.showInformationMessage('Open the Testing panel (or Explorer) and use "View: Open View..." to select "Bazel Test Settings".');
+		const panel = vscode.window.createWebviewPanel(
+			'bazelTestExplorer.settingsPanel',
+			'Bazel Test Settings',
+			vscode.ViewColumn.Active,
+			{ enableScripts: true }
+		);
+
+		const nonce = Date.now().toString(36);
+		const settingsPayload = {
+			flaky: configurationService.flaky,
+			retryCount: configurationService.retryCount,
+			bazelFlags: configurationService.bazelFlags
+		};
+
+		panel.webview.html = `<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+      body { font-family: var(--vscode-font-family); padding: 10px; color: var(--vscode-foreground); }
+      label { display:block; margin: 8px 0; }
+      input[type="text"] { width: 100%; }
+      .flags { font-size: 0.9em; color: var(--vscode-descriptionForeground); }
+      button { margin-top: 8px; }
+    </style>
+    <title>Bazel Test Settings</title>
+  </head>
+  <body>
+    <h3>Bazel Test Settings</h3>
+    <label><input id="flaky" type="checkbox"/> Treat flaky tests</label>
+    <label>Retry count: <input id="retryCount" type="number" min="0" style="width:4em"/></label>
+    <label>Bazel flags (comma separated):</label>
+    <input id="bazelFlags" type="text" placeholder="--test_output=errors, --build_tests_only" />
+    <div><button id="save">Save</button></div>
+
+    <script nonce="${nonce}">
+      const vscode = acquireVsCodeApi();
+      const initial = ${JSON.stringify(settingsPayload)};
+      document.getElementById('flaky').checked = !!initial.flaky;
+      document.getElementById('retryCount').value = initial.retryCount ?? 1;
+      document.getElementById('bazelFlags').value = (initial.bazelFlags || []).join(', ');
+
+      window.addEventListener('message', event => {
+        const msg = event.data;
+        if (msg.command === 'updated') {
+          // simple ack
+        }
+      });
+
+      document.getElementById('save').addEventListener('click', () => {
+        const flaky = document.getElementById('flaky').checked;
+        const retryCount = Number(document.getElementById('retryCount').value) || 0;
+        const flags = document.getElementById('bazelFlags').value.split(',').map(s => s.trim()).filter(Boolean);
+        vscode.postMessage({ command: 'setSetting', payload: { key: 'flaky', value: flaky } });
+        vscode.postMessage({ command: 'setSetting', payload: { key: 'retryCount', value: retryCount } });
+        vscode.postMessage({ command: 'setSetting', payload: { key: 'bazelFlags', value: flags } });
+      });
+    </script>
+  </body>
+</html>`;
+
+		panel.webview.onDidReceiveMessage(async (msg) => {
+			const workspaceConfig = vscode.workspace.getConfiguration('bazelTestRunner');
+			switch (msg.command) {
+				case 'setSetting': {
+					try {
+						const { key, value } = msg.payload;
+						await workspaceConfig.update(key, value, vscode.ConfigurationTarget.Workspace);
+						panel.webview.postMessage({ command: 'updated', payload: { key, value } });
+					} catch (err) {
+						panel.webview.postMessage({ command: 'error', payload: String(err) });
+					}
+					break;
+				}
+			}
+		});
 	}));
 
 	context.subscriptions.push(
