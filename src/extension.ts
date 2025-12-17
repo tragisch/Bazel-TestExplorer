@@ -11,7 +11,7 @@
  */
 
 import * as vscode from 'vscode';
-import { initializeLogger, logWithTimestamp, measure } from './logging';
+import { initializeLogger, logWithTimestamp, measure, formatError } from './logging';
 import { findBazelWorkspace } from './bazel/workspace';
 import { BazelClient } from './bazel/client';
 import { ConfigurationService } from './configuration';
