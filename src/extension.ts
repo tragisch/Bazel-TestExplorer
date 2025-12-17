@@ -63,8 +63,13 @@ export async function activate(context: vscode.ExtensionContext) {
 	}
 
 	// Settings view in the Testing sidebar (Webview)
-	const settingsProvider = new TestSettingsView(configurationService, context);
-	context.subscriptions.push(vscode.window.registerWebviewViewProvider(TestSettingsView.viewType, settingsProvider));
+	try {
+		const settingsProvider = new TestSettingsView(configurationService, context);
+		context.subscriptions.push(vscode.window.registerWebviewViewProvider(TestSettingsView.viewType, settingsProvider));
+		logWithTimestamp(`Registered webview view: ${TestSettingsView.viewType}`);
+	} catch (err) {
+		logWithTimestamp(`Failed to register webview view '${TestSettingsView.viewType}': ${formatError(err)}`, 'error');
+	}
 
 	// Status bar: show count of recent failures and total entries
 	const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
@@ -89,6 +94,33 @@ export async function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(testEventDisposable);
 
 	// Commands for history items
+
+	// Convenience command to open the Testing view and reveal the Bazel Test Settings view
+	context.subscriptions.push(vscode.commands.registerCommand('bazelTestExplorer.openSettingsView', async () => {
+		try {
+			await vscode.commands.executeCommand('workbench.view.testing');
+		} catch (e) {
+			// ignore
+		}
+		try {
+			await vscode.commands.executeCommand('workbench.views.openView', TestSettingsView.viewType);
+			logWithTimestamp(`Opened settings view: ${TestSettingsView.viewType}`);
+		} catch (err) {
+			logWithTimestamp(`Could not programmatically open settings view: ${formatError(err)}`, 'warn');
+			const pick = await vscode.window.showInformationMessage(
+				'Could not open the settings view automatically. Open the Testing panel and run "View: Open View..." to select "Bazel Test Settings".',
+				'Open Command Palette',
+				'Copy Instructions'
+			);
+			if (pick === 'Open Command Palette') {
+				await vscode.commands.executeCommand('workbench.action.showCommands');
+			} else if (pick === 'Copy Instructions') {
+				await vscode.env.clipboard.writeText('Open the Testing panel and run "View: Open View..." then choose "Bazel Test Settings".');
+				void vscode.window.showInformationMessage('Instructions copied to clipboard');
+			}
+		}
+	}));
+
 	context.subscriptions.push(
 		vscode.commands.registerCommand('bazelTestExplorer.openHistoryItem', async (entry: any) => {
 			if (!entry) return;
