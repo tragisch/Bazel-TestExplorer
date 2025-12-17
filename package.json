@@ -18,10 +18,6 @@
   "bugs": {
     "url": "https://github.com/tragisch/Bazel-TestExplorer/issues"
   },
-  "activationEvents": [
-    "workspaceContains:**/MODULE.bazel",
-    "workspaceContains:**/WORKSPACE"
-  ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
@@ -148,11 +144,13 @@
       "explorer": [
         {
           "id": "bazelTestExplorer.settingsView",
-          "name": "Bazel Test Settings"
+          "name": "Bazel Test Settings",
+          "icon": "images/icon_Bazel_TestExplorer.png"
         },
         {
           "id": "bazelTestExplorer.history",
-          "name": "Bazel Test History"
+          "name": "Bazel Test History",
+          "icon": "images/icon_Bazel_TestExplorer.png"
         }
       ]
     }
