@@ -156,7 +156,7 @@
       }
     },
     "views": {
-      "bazel-test-explorer": [
+      "testing": [
         {
           "id": "bazelTestExplorer.settingsView",
           "name": "Bazel Test Settings"
