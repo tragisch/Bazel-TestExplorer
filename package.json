@@ -142,13 +142,6 @@
     }
   },
   "views": {
-    "explorer": [
-      {
-        "id": "bazelTestExplorer.history",
-        "name": "Bazel Test History"
-      }
-    ]
-    ,
     "testing": [
       {
         "id": "bazelTestExplorer.settingsView",
