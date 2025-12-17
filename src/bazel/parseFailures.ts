@@ -17,7 +17,7 @@ export function analyzeTestFailures(
   workspacePath: string,
   testItem: vscode.TestItem
 ): vscode.TestMessage[] {
-  const config = vscode.workspace.getConfiguration('bazelTestRunner');
+  const config = vscode.workspace.getConfiguration('bazelTestExplorer');
   const customPatterns = config.get<string[]>('failLinePatterns', []);
   const failPatterns: { pattern: RegExp; source: string }[] = [
     ...customPatterns

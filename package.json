@@ -22,14 +22,7 @@
   "activationEvents": [
     "workspaceContains:**/MODULE.bazel",
     "workspaceContains:**/WORKSPACE",
-    "onView:workbench.view.testing",
-    "onView:bazelTestExplorer.settingsView",
-    "onView:bazelTestExplorer.settingsView.explorer",
-    "onView:bazelTestExplorer.history",
-    "onView:bazelTestExplorer.history.explorer",
-    "onCommand:extension.reloadBazelTests",
-    "onCommand:bazelTestExplorer.openSettingsView",
-    "onCommand:bazelTestExplorer.showTestHistory"
+    "onView:workbench.view.testing"
   ],
   "contributes": {
     "commands": [
@@ -74,7 +67,7 @@
     "configuration": {
       "title": "Bazel Test Explorer",
       "properties": {
-        "bazelTestRunner.testTypes": {
+        "bazelTestExplorer.testTypes": {
           "type": "array",
           "description": "List of Bazel test types to detect",
           "default": [
@@ -84,7 +77,7 @@
             "type": "string"
           }
         },
-        "bazelTestRunner.queryPaths": {
+        "bazelTestExplorer.queryPaths": {
           "type": "array",
           "description": "List of relative Bazel paths (i.e. //tests) where tests should be queried. If left empty, defaults to querying the entire workspace ('//...').",
           "default": [],
@@ -92,7 +85,7 @@
             "type": "string"
           }
         },
-        "bazelTestRunner.sequentialTestTypes": {
+        "bazelTestExplorer.sequentialTestTypes": {
           "type": "array",
           "description": "List of test types (i.e. 'java_test') that should be run sequentially instead of in parallel.",
           "default": [
@@ -102,7 +95,7 @@
             "type": "string"
           }
         },
-        "bazelTestRunner.testArgs": {
+        "bazelTestExplorer.testArgs": {
           "type": "array",
           "description": "Additional command line arguments to pass to 'bazel test'. Example: ['--config=ci', '--build_tests_only', '--runs_per_test=2', etc.]",
           "default": [],
@@ -110,7 +103,7 @@
             "type": "string"
           }
         },
-        "bazelTestRunner.failLinePatterns": {
+        "bazelTestExplorer.failLinePatterns": {
           "type": "array",
           "description": "Custom regular expressions to extract file and line from test failures. The first two capture groups must be filename and line number.",
           "default": [
@@ -120,44 +113,36 @@
             "type": "string"
           }
         },
-        "bazelTestRunner.enableTestCaseDiscovery": {
+        "bazelTestExplorer.enableTestCaseDiscovery": {
           "type": "boolean",
           "description": "Experimental: Enable discovering individual test cases by running tests (currently: only for some test types, and slow).",
           "default": false
         },
-        "bazelTestRunner.discoveryCacheMs": {
+        "bazelTestExplorer.discoveryCacheMs": {
           "type": "number",
           "description": "Time-to-live in milliseconds for cached test case discovery results. Lower values cause more frequent re-discovery but ensure fresher results.",
           "default": 15000,
           "minimum": 1000
         },
-        "bazelTestRunner.flaky": {
+        "bazelTestExplorer.flaky": {
           "type": "boolean",
           "description": "Treat some tests as flaky and enable retry UI/logic.",
           "default": false
         },
-        "bazelTestRunner.retryCount": {
+        "bazelTestExplorer.retryCount": {
           "type": "number",
           "description": "Number of automatic retries for flaky tests.",
           "default": 1,
           "minimum": 0
         },
-        "bazelTestRunner.bazelFlags": {
-          "type": "array",
-          "description": "Additional Bazel flags to append to Bazel invocations for tests (e.g. --test_output=errors).",
-          "default": [],
-          "items": {
-            "type": "string"
-          }
-        },
-        "bazelTestExplorer.debugViewRegistration": {
+        "bazelTestExplorer.verboseViewRegistrationLogging": {
           "type": "boolean",
           "description": "Developer: enable verbose activation diagnostics for view/container registration. Keep disabled for production to avoid slow activation.",
           "default": false
         },
-        "bazelTestRunner.verboseLogging": {
+        "bazelTestExplorer.verboseLogging": {
           "type": "boolean",
-          "description": "Enable verbose test event logging (developer use). Defaults to false to avoid flooding logs.",
+          "description": "Enable verbose test event logging. Defaults to false to avoid flooding logs.",
           "default": false
         }
       }

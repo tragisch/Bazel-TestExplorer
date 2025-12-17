@@ -22,7 +22,7 @@ import { findBazelWorkspace } from '../bazel/workspace';
 function getDiscoveryEnabled(): boolean {
   try {
     const vscode = require('vscode');
-    const cfg = vscode.workspace.getConfiguration('bazelTestRunner');
+    const cfg = vscode.workspace.getConfiguration('bazelTestExplorer');
     return (cfg.get('enableTestCaseDiscovery', false) as boolean);
   } catch {
     // When running outside of VS Code (unit tests), default to true
@@ -404,7 +404,7 @@ export const resolveTestCaseChildren = async (
     // Respect user setting: if discovery is disabled, do not attempt to resolve children
     try {
       const vscode = require('vscode');
-      const cfg = vscode.workspace.getConfiguration('bazelTestRunner');
+      const cfg = vscode.workspace.getConfiguration('bazelTestExplorer');
       const enabled = (cfg.get('enableTestCaseDiscovery', false) as boolean);
       if (!enabled) {
         logWithTimestamp(`Skipping resolution for ${testItem.id} because discovery is disabled by configuration.`);

@@ -17,7 +17,7 @@ import * as vscode from 'vscode';
  * Avoids scattered workspace.getConfiguration calls.
  */
 export class ConfigurationService {
-  private readonly section = 'bazelTestRunner';
+  private readonly section = 'bazelTestExplorer';
 
   private get config(): vscode.WorkspaceConfiguration {
     return vscode.workspace.getConfiguration(this.section);

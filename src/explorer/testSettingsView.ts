@@ -16,7 +16,7 @@ export class TestSettingsView implements vscode.WebviewViewProvider {
 
     // handle messages from the webview
     const messageDisposable = webviewView.webview.onDidReceiveMessage(async (msg) => {
-      const workspaceConfig = vscode.workspace.getConfiguration('bazelTestRunner');
+      const workspaceConfig = vscode.workspace.getConfiguration('bazelTestExplorer');
       switch (msg.command) {
         case 'getSettings': {
           webviewView.webview.postMessage({

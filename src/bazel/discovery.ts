@@ -29,7 +29,7 @@ class VSCodeConfigService implements IConfigService {
   getDiscoveryTtlMs(): number {
     try {
       const vscode = require('vscode');
-      const cfg = vscode.workspace.getConfiguration('bazelTestRunner');
+      const cfg = vscode.workspace.getConfiguration('bazelTestExplorer');
       return (cfg.get('discoveryCacheMs', this.DISCOVERY_CACHE_MS_DEFAULT) as number);
     } catch (error) {
       logWithTimestamp(`Failed to read discoveryCacheMs config, using default: ${formatError(error)}`, 'warn');
@@ -40,7 +40,7 @@ class VSCodeConfigService implements IConfigService {
   isDiscoveryEnabled(): boolean {
     try {
       const vscode = require('vscode');
-      const cfg = vscode.workspace.getConfiguration('bazelTestRunner');
+      const cfg = vscode.workspace.getConfiguration('bazelTestExplorer');
       return (cfg.get('enableTestCaseDiscovery', true) as boolean);
     } catch (error) {
       logWithTimestamp(`Failed to read enableTestCaseDiscovery config, using default: ${formatError(error)}`, 'warn');

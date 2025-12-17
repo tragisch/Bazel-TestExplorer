@@ -30,7 +30,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	logWithTimestamp(`Bazel Test Explorer v${extensionVersion} aktiviert.`);
 
 	// Verbose activation diagnostics to help track view registration issues (opt-in)
-	const enableActivationDiagnostics = vscode.workspace.getConfiguration('bazelTestExplorer').get('debugViewRegistration') === true || process.env['VSCODE_DEV'] === 'true';
+	const enableActivationDiagnostics = vscode.workspace.getConfiguration('bazelTestExplorer').get('verboseViewRegistrationLogging') === true || process.env['VSCODE_DEV'] === 'true';
 	if (enableActivationDiagnostics) {
 		try {
 		// Log host VS Code and UI kind to help debug when views/containers
@@ -241,7 +241,7 @@ export async function activate(context: vscode.ExtensionContext) {
 </html>`;
 
 		panel.webview.onDidReceiveMessage(async (msg) => {
-			const workspaceConfig = vscode.workspace.getConfiguration('bazelTestRunner');
+			const workspaceConfig = vscode.workspace.getConfiguration('bazelTestExplorer');
 			switch (msg.command) {
 				case 'setSetting': {
 					try {

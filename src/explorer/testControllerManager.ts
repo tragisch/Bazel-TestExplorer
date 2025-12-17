@@ -224,7 +224,7 @@ export class TestControllerManager {
   private registerConfigListener(): void {
     this.context.subscriptions.push(
       vscode.workspace.onDidChangeConfiguration((e) => {
-        if (e.affectsConfiguration('bazelTestRunner')) {
+        if (e.affectsConfiguration('bazelTestExplorer')) {
           logWithTimestamp('Configuration changed. Reloading tests...');
           vscode.window.withProgress(
             {

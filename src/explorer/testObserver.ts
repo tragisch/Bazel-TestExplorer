@@ -23,7 +23,7 @@ export class TestObserver implements vscode.Disposable {
   private verboseLogging = false;
 
   constructor(private readonly context: vscode.ExtensionContext) {
-    this.verboseLogging = vscode.workspace.getConfiguration('bazelTestRunner').get('verboseLogging') === true;
+    this.verboseLogging = vscode.workspace.getConfiguration('bazelTestExplorer').get('verboseLogging') === true;
 
     const d = onDidTestEvent((e: TestEvent) => this.handleEvent(e));
     this.disposables.push(d);
@@ -37,8 +37,8 @@ export class TestObserver implements vscode.Disposable {
 
     // watch configuration changes for verbose logging toggle
     const cfg = vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration && e.affectsConfiguration('bazelTestRunner.verboseLogging')) {
-        this.verboseLogging = vscode.workspace.getConfiguration('bazelTestRunner').get('verboseLogging') === true;
+      if (e.affectsConfiguration && e.affectsConfiguration('bazelTestExplorer.verboseLogging')) {
+        this.verboseLogging = vscode.workspace.getConfiguration('bazelTestExplorer').get('verboseLogging') === true;
       }
     });
     this.disposables.push(cfg);
