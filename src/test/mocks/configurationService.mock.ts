@@ -17,15 +17,12 @@ export class MockConfigurationService implements Partial<ConfigurationService> {
   private _testTypes = ['cc_test', 'py_test'];
   private _sequentialTestTypes: string[] = [];
   private _testArgs: string[] = [];
-  private _bazelFlags: string[] = [];
   private _buildTestsOnly = false;
   private _runsPerTest = 0;
   private _runsPerTestDetectsFlakes = false;
   private _nocacheTestResults = false;
   private _testStrategyExclusive = false;
-  private _shardingEnabled = false;
-  private _shardTotal = 0;
-  private _shardIndex = 0;
+  
   private _listeners: Array<() => void> = [];
 
   set bazelPath(value: string) {
@@ -64,13 +61,6 @@ export class MockConfigurationService implements Partial<ConfigurationService> {
     return this._testArgs;
   }
 
-  set bazelFlags(value: string[]) {
-    this._bazelFlags = value;
-  }
-  get bazelFlags(): string[] {
-    return this._bazelFlags;
-  }
-
   set buildTestsOnly(value: boolean) {
     this._buildTestsOnly = value;
   }
@@ -106,27 +96,6 @@ export class MockConfigurationService implements Partial<ConfigurationService> {
     return this._testStrategyExclusive;
   }
 
-  set shardingEnabled(value: boolean) {
-    this._shardingEnabled = value;
-  }
-  get shardingEnabled(): boolean {
-    return this._shardingEnabled;
-  }
-
-  set shardTotal(value: number) {
-    this._shardTotal = value;
-  }
-  get shardTotal(): number {
-    return this._shardTotal;
-  }
-
-  set shardIndex(value: number) {
-    this._shardIndex = value;
-  }
-  get shardIndex(): number {
-    return this._shardIndex;
-  }
-
   onDidChangeConfiguration(listener: () => void) {
     this._listeners.push(listener);
     return { dispose: () => {
@@ -150,14 +119,11 @@ export class MockConfigurationService implements Partial<ConfigurationService> {
     this._testTypes = [];
     this._sequentialTestTypes = [];
     this._testArgs = [];
-    this._bazelFlags = [];
     this._buildTestsOnly = false;
     this._runsPerTest = 0;
     this._runsPerTestDetectsFlakes = false;
     this._nocacheTestResults = false;
     this._testStrategyExclusive = false;
-    this._shardingEnabled = false;
-    this._shardTotal = 0;
-    this._shardIndex = 0;
+    
   }
 }

@@ -103,24 +103,11 @@
             "type": "string"
           }
         },
-        "bazelTestExplorer.bazelFlags": {
-          "type": "array",
-          "description": "Extra flags appended after user-defined testArgs (e.g. build/test configuration presets).",
-          "default": [],
-          "items": {
-            "type": "string"
-          }
-        },
         "bazelTestExplorer.runsPerTest": {
           "type": "number",
           "description": "Number of times Bazel should execute every test target (0 disables the flag).",
           "default": 0,
           "minimum": 0
-        },
-        "bazelTestExplorer.runsPerTestRegex": {
-          "type": "string",
-          "description": "Optional value for --runs_per_test in Bazel's '<regex>@<number>' syntax. Overrides runsPerTest when set.",
-          "default": ""
         },
         "bazelTestExplorer.runsPerTestDetectsFlakes": {
           "type": "boolean",
@@ -136,23 +123,6 @@
           "type": "boolean",
           "description": "Apply --test_strategy=exclusive so tests run serially.",
           "default": false
-        },
-        "bazelTestExplorer.shardingEnabled": {
-          "type": "boolean",
-          "description": "Expose TEST_TOTAL_SHARDS / TEST_SHARD_INDEX to Bazel test processes for sharded execution.",
-          "default": false
-        },
-        "bazelTestExplorer.shardTotal": {
-          "type": "number",
-          "description": "Total number of shards when sharding is enabled.",
-          "default": 0,
-          "minimum": 0
-        },
-        "bazelTestExplorer.shardIndex": {
-          "type": "number",
-          "description": "Current shard index (0-based) when sharding is enabled.",
-          "default": 0,
-          "minimum": 0
         },
         "bazelTestExplorer.failLinePatterns": {
           "type": "array",

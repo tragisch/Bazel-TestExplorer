@@ -250,15 +250,13 @@ export const initiateBazelTest = async (
     effectiveTestId = `${effectiveTestId}/...`;
   }
 
-  const userArgs: string[] = [...config.testArgs, ...config.bazelFlags];
+  const userArgs: string[] = [...config.testArgs];
   if (config.buildTestsOnly) {
     userArgs.push('--build_tests_only');
   }
 
   const runSpecificFlags: string[] = [];
-  if (config.runsPerTestRegex) {
-    runSpecificFlags.push(`--runs_per_test=${config.runsPerTestRegex}`);
-  } else if (config.runsPerTest && config.runsPerTest > 0) {
+  if (config.runsPerTest && config.runsPerTest > 0) {
     runSpecificFlags.push(`--runs_per_test=${config.runsPerTest}`);
   }
   if (config.runsPerTestDetectsFlakes) runSpecificFlags.push('--runs_per_test_detects_flakes');
@@ -275,10 +273,8 @@ export const initiateBazelTest = async (
 
   const args = ['test', effectiveTestId, ...mergedFlags];
 
-  // sharding is applied via environment variables TEST_SHARD_INDEX / TEST_TOTAL_SHARDS
-  const env: NodeJS.ProcessEnv | undefined = (config.shardingEnabled && config.shardTotal > 0)
-    ? { TEST_TOTAL_SHARDS: String(config.shardTotal), TEST_SHARD_INDEX: String(config.shardIndex) }
-    : undefined;
+  // No sharding support configured (removed shared shard settings)
+  const env: NodeJS.ProcessEnv | undefined = undefined;
 
   return runBazelCommand(
     args,

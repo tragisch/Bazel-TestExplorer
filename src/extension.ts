@@ -185,50 +185,24 @@ export async function activate(context: vscode.ExtensionContext) {
 			{ enableScripts: true }
 		);
 
-		const nonce = Date.now().toString(36);
-		const settingsPayload = {
-			bazelFlags: configurationService.bazelFlags
-		};
+				const nonce = Date.now().toString(36);
 
-		panel.webview.html = `<!doctype html>
+				panel.webview.html = `<!doctype html>
 <html lang="de">
-  <head>
-    <meta charset="utf-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-      body { font-family: var(--vscode-font-family); padding: 10px; color: var(--vscode-foreground); }
-      label { display:block; margin: 8px 0; }
-      input[type="text"] { width: 100%; }
-      .flags { font-size: 0.9em; color: var(--vscode-descriptionForeground); }
-      button { margin-top: 8px; }
-    </style>
-    <title>Bazel Test Settings</title>
-  </head>
-  <body>
-    <h3>Bazel Test Settings</h3>
-		<label>Bazel flags (comma separated):</label>
-    <input id="bazelFlags" type="text" placeholder="--test_output=errors, --build_tests_only" />
-    <div><button id="save">Save</button></div>
-
-    <script nonce="${nonce}">
-      const vscode = acquireVsCodeApi();
-		const initial = ${JSON.stringify(settingsPayload)};
-      document.getElementById('bazelFlags').value = (initial.bazelFlags || []).join(', ');
-
-      window.addEventListener('message', event => {
-        const msg = event.data;
-        if (msg.command === 'updated') {
-          // simple ack
-        }
-      });
-
-      document.getElementById('save').addEventListener('click', () => {
-		const flags = document.getElementById('bazelFlags').value.split(',').map(s => s.trim()).filter(Boolean);
-		vscode.postMessage({ command: 'setSetting', payload: { key: 'bazelFlags', value: flags } });
-      });
-    </script>
-  </body>
+	<head>
+		<meta charset="utf-8" />
+		<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<style>
+			body { font-family: var(--vscode-font-family); padding: 10px; color: var(--vscode-foreground); }
+			label { display:block; margin: 8px 0; }
+		</style>
+		<title>Bazel Test Settings</title>
+	</head>
+	<body>
+		<h3>Bazel Test Settings</h3>
+		<p>Die Einstellung für zusätzliche Bazel-Flags wurde entfernt. Verwende stattdessen <em>testArgs</em> in den Einstellungen.</p>
+	</body>
 </html>`;
 
 		panel.webview.onDidReceiveMessage(async (msg) => {

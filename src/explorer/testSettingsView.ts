@@ -22,13 +22,10 @@ export class TestSettingsView implements vscode.WebviewViewProvider {
           webviewView.webview.postMessage({
             command: 'settings',
             payload: {
-              runsPerTest: this.config.runsPerTest,
-              runsPerTestDetectsFlakes: this.config.runsPerTestDetectsFlakes,
-              nocacheTestResults: this.config.nocacheTestResults,
-              buildTestsOnly: this.config.buildTestsOnly,
-              shardingEnabled: this.config.shardingEnabled,
-              shardTotal: this.config.shardTotal,
-              shardIndex: this.config.shardIndex
+                  runsPerTest: this.config.runsPerTest,
+                  runsPerTestDetectsFlakes: this.config.runsPerTestDetectsFlakes,
+                  nocacheTestResults: this.config.nocacheTestResults,
+                  buildTestsOnly: this.config.buildTestsOnly
             }
           });
           break;
@@ -57,10 +54,7 @@ export class TestSettingsView implements vscode.WebviewViewProvider {
             runsPerTest: this.config.runsPerTest,
             runsPerTestDetectsFlakes: this.config.runsPerTestDetectsFlakes,
             nocacheTestResults: this.config.nocacheTestResults,
-            buildTestsOnly: this.config.buildTestsOnly,
-            shardingEnabled: this.config.shardingEnabled,
-            shardTotal: this.config.shardTotal,
-            shardIndex: this.config.shardIndex
+            buildTestsOnly: this.config.buildTestsOnly
           }
         });
       } catch (e) {
@@ -105,12 +99,7 @@ export class TestSettingsView implements vscode.WebviewViewProvider {
       <label><input id="runsPerTestDetectsFlakes" type="checkbox"/> Detect flakes per run (<code>--runs_per_test_detects_flakes</code>)</label>
     </fieldset>
 
-    <fieldset>
-      <legend>Sharding</legend>
-      <label><input id="shardingEnabled" type="checkbox"/> Enable test sharding (sets TEST_SHARD_INDEX / TEST_TOTAL_SHARDS env)</label>
-      <label>Total shards: <input id="shardTotal" type="number" min="0" style="width:5em"/></label>
-      <label>Shard index: <input id="shardIndex" type="number" min="0" style="width:5em"/></label>
-    </fieldset>
+    
 
     <script nonce="${nonce}">
       const vscode = acquireVsCodeApi();
@@ -123,7 +112,6 @@ export class TestSettingsView implements vscode.WebviewViewProvider {
           { id: 'nocacheTestResults', key: 'nocacheTestResults' },
           { id: 'buildTestsOnly', key: 'buildTestsOnly' },
           { id: 'runsPerTestDetectsFlakes', key: 'runsPerTestDetectsFlakes' },
-          { id: 'shardingEnabled', key: 'shardingEnabled' },
           { id: 'testStrategyExclusive', key: 'testStrategyExclusive' }
         ];
         checkboxFields.forEach(({ id, key }) => {
@@ -132,9 +120,7 @@ export class TestSettingsView implements vscode.WebviewViewProvider {
         });
 
         const numberFields = [
-          { id: 'runsPerTest', key: 'runsPerTest' },
-          { id: 'shardTotal', key: 'shardTotal' },
-          { id: 'shardIndex', key: 'shardIndex' }
+          { id: 'runsPerTest', key: 'runsPerTest' }
         ];
         numberFields.forEach(({ id, key }) => {
           const el = document.getElementById(id);
@@ -157,9 +143,7 @@ export class TestSettingsView implements vscode.WebviewViewProvider {
           document.getElementById('nocacheTestResults').checked = !!s.nocacheTestResults;
           document.getElementById('buildTestsOnly').checked = !!s.buildTestsOnly;
           document.getElementById('testStrategyExclusive').checked = !!s.testStrategyExclusive;
-          document.getElementById('shardingEnabled').checked = !!s.shardingEnabled;
-          document.getElementById('shardTotal').value = s.shardTotal ?? 0;
-          document.getElementById('shardIndex').value = s.shardIndex ?? 0;
+          // sharding removed
         }
       });
 

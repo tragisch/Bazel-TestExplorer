@@ -43,9 +43,6 @@ export class ConfigurationService {
     return this.normalizeStringArray(this.config.get<string[]>('testArgs', []));
   }
 
-  get bazelFlags(): string[] {
-    return this.normalizeStringArray(this.config.get<string[]>('bazelFlags', []));
-  }
 
   get buildTestsOnly(): boolean {
     return this.config.get<boolean>('buildTestsOnly', false);
@@ -58,13 +55,6 @@ export class ConfigurationService {
     return this.config.get<number>('runsPerTest', 0);
   }
 
-  /**
-   * Optional regex to apply per-test runs in the form of Bazel's `--runs_per_test=<regex>@<number>`
-   */
-  get runsPerTestRegex(): string | undefined {
-    return this.config.get<string | undefined>('runsPerTestRegex', undefined);
-  }
-
   get runsPerTestDetectsFlakes(): boolean {
     return this.config.get<boolean>('runsPerTestDetectsFlakes', false);
   }
@@ -75,18 +65,6 @@ export class ConfigurationService {
 
   get testStrategyExclusive(): boolean {
     return this.config.get<boolean>('testStrategyExclusive', false);
-  }
-
-  get shardingEnabled(): boolean {
-    return this.config.get<boolean>('shardingEnabled', false);
-  }
-
-  get shardTotal(): number {
-    return this.config.get<number>('shardTotal', 0);
-  }
-
-  get shardIndex(): number {
-    return this.config.get<number>('shardIndex', 0);
   }
 
   /**
