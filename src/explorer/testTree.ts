@@ -213,7 +213,7 @@ function createTestItem(
   const isSuite = testType === "test_suite";
   testItem.canResolveChildren = !isSuite && discoveryEnabled;
   if (!discoveryEnabled) {
-    testItem.description = `${testItem.description} (individual test discovery disabled)`;
+    // individual test discovery is disabled; leave description unchanged
 
   }
 
