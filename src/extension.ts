@@ -139,7 +139,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	// Status bar: show count of recent failures and total entries
 	const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
-	statusBar.command = 'bazelTestExplorer.showTestHistory';
+	statusBar.command = 'bazelTestExplorer.history.focus';
 	context.subscriptions.push(statusBar);
 
 	// Note: logs are opened in a readonly text editor tab when requested
@@ -160,67 +160,6 @@ export async function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(testEventDisposable);
 
 	// Commands for history items
-
-	// Command to open a standalone settings WebviewPanel (works regardless of Test Explorer integration)
-	context.subscriptions.push(vscode.commands.registerCommand('bazelTestExplorer.openSettingsView', async () => {
-		// Try to show an appropriate container if available; avoid calling removed commands
-		try {
-			const cmds = await vscode.commands.getCommands(true);
-			if (cmds.includes('workbench.view.extension.bazel-test-explorer')) {
-				await vscode.commands.executeCommand('workbench.view.extension.bazel-test-explorer');
-			} else if (cmds.includes('workbench.view.testing')) {
-				await vscode.commands.executeCommand('workbench.view.testing');
-			} else if (cmds.includes('workbench.view.explorer')) {
-				await vscode.commands.executeCommand('workbench.view.explorer');
-			}
-		} catch (e) {
-			// ignore failures — this is a best-effort UI hint
-		}
-
-		// also open a standalone panel as fallback to ensure settings are reachable
-		const panel = vscode.window.createWebviewPanel(
-			'bazelTestExplorer.settingsPanel',
-			'Bazel Test Settings',
-			vscode.ViewColumn.Active,
-			{ enableScripts: true }
-		);
-
-				const nonce = Date.now().toString(36);
-
-				panel.webview.html = `<!doctype html>
-<html lang="de">
-	<head>
-		<meta charset="utf-8" />
-		<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
-		<meta name="viewport" content="width=device-width, initial-scale=1.0">
-		<style>
-			body { font-family: var(--vscode-font-family); padding: 10px; color: var(--vscode-foreground); }
-			label { display:block; margin: 8px 0; }
-		</style>
-		<title>Bazel Test Settings</title>
-	</head>
-	<body>
-		<h3>Bazel Test Settings</h3>
-		<p>Die Einstellung für zusätzliche Bazel-Flags wurde entfernt. Verwende stattdessen <em>testArgs</em> in den Einstellungen.</p>
-	</body>
-</html>`;
-
-		panel.webview.onDidReceiveMessage(async (msg) => {
-			const workspaceConfig = vscode.workspace.getConfiguration('bazelTestExplorer');
-			switch (msg.command) {
-				case 'setSetting': {
-					try {
-						const { key, value } = msg.payload;
-						await workspaceConfig.update(key, value, vscode.ConfigurationTarget.Workspace);
-						panel.webview.postMessage({ command: 'updated', payload: { key, value } });
-					} catch (err) {
-						panel.webview.postMessage({ command: 'error', payload: String(err) });
-					}
-					break;
-				}
-			}
-		});
-	}));
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand('bazelTestExplorer.openHistoryItem', async (entry: any) => {

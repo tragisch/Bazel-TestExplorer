@@ -39,20 +39,12 @@
         "title": "Bazel-TestExplorer: Show Selected Test Metadata"
       },
       {
-        "command": "bazelTestExplorer.showTestHistory",
-        "title": "Bazel-TestExplorer: Show Test History"
-      },
-      {
         "command": "bazelTestExplorer.openHistoryItem",
         "title": "Bazel-TestExplorer: Open Test History Item"
       },
       {
         "command": "bazelTestExplorer.rerunTestFromHistory",
         "title": "Bazel-TestExplorer: Rerun Test From History"
-      },
-      {
-        "command": "bazelTestExplorer.openSettingsView",
-        "title": "Bazel-TestExplorer: Open Test Settings View"
       }
     ],
     "menus": {
@@ -177,19 +169,6 @@
         },
         {
           "id": "bazelTestExplorer.history",
-          "name": "Bazel Test History",
-          "icon": "images/icon_Bazel_TestExplorer.png"
-        }
-      ],
-      "explorer": [
-        {
-          "id": "bazelTestExplorer.settingsView.explorer",
-          "name": "Bazel Test Settings",
-          "type": "webview",
-          "icon": "images/icon_Bazel_TestExplorer.png"
-        },
-        {
-          "id": "bazelTestExplorer.history.explorer",
           "name": "Bazel Test History",
           "icon": "images/icon_Bazel_TestExplorer.png"
         }

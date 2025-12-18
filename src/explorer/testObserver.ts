@@ -30,11 +30,6 @@ export class TestObserver implements vscode.Disposable {
     this.context.subscriptions.push(this);
     logWithTimestamp('TestObserver initialized');
 
-    // register quickpick command to show recent history
-    const cmd = vscode.commands.registerCommand('bazelTestExplorer.showTestHistory', () => this.showHistory());
-    this.disposables.push(cmd);
-    this.context.subscriptions.push(cmd);
-
     // watch configuration changes for verbose logging toggle
     const cfg = vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration && e.affectsConfiguration('bazelTestExplorer.verboseLogging')) {
@@ -76,33 +71,6 @@ export class TestObserver implements vscode.Disposable {
   private toMessageString(msg?: string | vscode.MarkdownString): string {
     if (!msg) return '';
     return typeof msg === 'string' ? msg : msg.value ?? String(msg);
-  }
-
-  async showHistory() {
-    if (this.history.length === 0) {
-      void vscode.window.showInformationMessage('No recent test history available.');
-      return;
-    }
-
-    const items = this.history.slice(0, 50).map(h => ({
-      label: `${h.type.toUpperCase()}: ${h.testId}`,
-      description: h.durationMs ? `${h.durationMs} ms` : undefined,
-      detail: this.toMessageString(h.message),
-      // attach the actual history entry so selection is stable even if history mutates
-      entry: h
-    } as vscode.QuickPickItem & { entry: TestHistoryEntry }));
-
-    const pick = await vscode.window.showQuickPick(items, { placeHolder: 'Recent test history (select to view details)', matchOnDetail: true }) as (vscode.QuickPickItem & { entry: TestHistoryEntry }) | undefined;
-    if (!pick) return;
-
-    const entry = pick.entry;
-    const content = `--- Test: ${entry.testId} ---\nStatus: ${entry.type}\nDuration: ${entry.durationMs ?? '-'} ms\n\n${this.toMessageString(entry.message)}`;
-    const doc = await vscode.workspace.openTextDocument({ content, language: 'text' });
-    await vscode.window.showTextDocument(doc, { preview: true, viewColumn: vscode.ViewColumn.Beside });
-    const action = await vscode.window.showInformationMessage('Opened test log in editor', 'Rerun');
-    if (action === 'Rerun') {
-      void vscode.commands.executeCommand('bazelTestExplorer.rerunTestFromHistory', entry.testId);
-    }
   }
 
   dispose() {
