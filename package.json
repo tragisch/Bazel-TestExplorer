@@ -103,6 +103,57 @@
             "type": "string"
           }
         },
+        "bazelTestExplorer.bazelFlags": {
+          "type": "array",
+          "description": "Extra flags appended after user-defined testArgs (e.g. build/test configuration presets).",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "bazelTestExplorer.runsPerTest": {
+          "type": "number",
+          "description": "Number of times Bazel should execute every test target (0 disables the flag).",
+          "default": 0,
+          "minimum": 0
+        },
+        "bazelTestExplorer.runsPerTestRegex": {
+          "type": "string",
+          "description": "Optional value for --runs_per_test in Bazel's '<regex>@<number>' syntax. Overrides runsPerTest when set.",
+          "default": ""
+        },
+        "bazelTestExplorer.runsPerTestDetectsFlakes": {
+          "type": "boolean",
+          "description": "Enable Bazel's --runs_per_test_detects_flakes flag to treat reruns as flake detection.",
+          "default": false
+        },
+        "bazelTestExplorer.nocacheTestResults": {
+          "type": "boolean",
+          "description": "Apply --nocache_test_results so Bazel always re-runs tests instead of using cached results.",
+          "default": false
+        },
+        "bazelTestExplorer.testStrategyExclusive": {
+          "type": "boolean",
+          "description": "Apply --test_strategy=exclusive so tests run serially.",
+          "default": false
+        },
+        "bazelTestExplorer.shardingEnabled": {
+          "type": "boolean",
+          "description": "Expose TEST_TOTAL_SHARDS / TEST_SHARD_INDEX to Bazel test processes for sharded execution.",
+          "default": false
+        },
+        "bazelTestExplorer.shardTotal": {
+          "type": "number",
+          "description": "Total number of shards when sharding is enabled.",
+          "default": 0,
+          "minimum": 0
+        },
+        "bazelTestExplorer.shardIndex": {
+          "type": "number",
+          "description": "Current shard index (0-based) when sharding is enabled.",
+          "default": 0,
+          "minimum": 0
+        },
         "bazelTestExplorer.failLinePatterns": {
           "type": "array",
           "description": "Custom regular expressions to extract file and line from test failures. The first two capture groups must be filename and line number.",
@@ -124,16 +175,10 @@
           "default": 15000,
           "minimum": 1000
         },
-        "bazelTestExplorer.flaky": {
+        "bazelTestExplorer.buildTestsOnly": {
           "type": "boolean",
-          "description": "Treat some tests as flaky and enable retry UI/logic.",
+          "description": "Use Bazel's --build_tests_only to build targets without executing them.",
           "default": false
-        },
-        "bazelTestExplorer.retryCount": {
-          "type": "number",
-          "description": "Number of automatic retries for flaky tests.",
-          "default": 1,
-          "minimum": 0
         },
         "bazelTestExplorer.verboseViewRegistrationLogging": {
           "type": "boolean",

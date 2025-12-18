@@ -187,8 +187,6 @@ export async function activate(context: vscode.ExtensionContext) {
 
 		const nonce = Date.now().toString(36);
 		const settingsPayload = {
-			flaky: configurationService.flaky,
-			retryCount: configurationService.retryCount,
 			bazelFlags: configurationService.bazelFlags
 		};
 
@@ -209,17 +207,13 @@ export async function activate(context: vscode.ExtensionContext) {
   </head>
   <body>
     <h3>Bazel Test Settings</h3>
-    <label><input id="flaky" type="checkbox"/> Treat flaky tests</label>
-    <label>Retry count: <input id="retryCount" type="number" min="0" style="width:4em"/></label>
-    <label>Bazel flags (comma separated):</label>
+		<label>Bazel flags (comma separated):</label>
     <input id="bazelFlags" type="text" placeholder="--test_output=errors, --build_tests_only" />
     <div><button id="save">Save</button></div>
 
     <script nonce="${nonce}">
       const vscode = acquireVsCodeApi();
-      const initial = ${JSON.stringify(settingsPayload)};
-      document.getElementById('flaky').checked = !!initial.flaky;
-      document.getElementById('retryCount').value = initial.retryCount ?? 1;
+		const initial = ${JSON.stringify(settingsPayload)};
       document.getElementById('bazelFlags').value = (initial.bazelFlags || []).join(', ');
 
       window.addEventListener('message', event => {
@@ -230,12 +224,8 @@ export async function activate(context: vscode.ExtensionContext) {
       });
 
       document.getElementById('save').addEventListener('click', () => {
-        const flaky = document.getElementById('flaky').checked;
-        const retryCount = Number(document.getElementById('retryCount').value) || 0;
-        const flags = document.getElementById('bazelFlags').value.split(',').map(s => s.trim()).filter(Boolean);
-        vscode.postMessage({ command: 'setSetting', payload: { key: 'flaky', value: flaky } });
-        vscode.postMessage({ command: 'setSetting', payload: { key: 'retryCount', value: retryCount } });
-        vscode.postMessage({ command: 'setSetting', payload: { key: 'bazelFlags', value: flags } });
+		const flags = document.getElementById('bazelFlags').value.split(',').map(s => s.trim()).filter(Boolean);
+		vscode.postMessage({ command: 'setSetting', payload: { key: 'bazelFlags', value: flags } });
       });
     </script>
   </body>

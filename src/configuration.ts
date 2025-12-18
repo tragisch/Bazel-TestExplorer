@@ -43,16 +43,50 @@ export class ConfigurationService {
     return this.normalizeStringArray(this.config.get<string[]>('testArgs', []));
   }
 
-  get flaky(): boolean {
-    return this.config.get<boolean>('flaky', false);
-  }
-
-  get retryCount(): number {
-    return this.config.get<number>('retryCount', 1);
-  }
-
   get bazelFlags(): string[] {
     return this.normalizeStringArray(this.config.get<string[]>('bazelFlags', []));
+  }
+
+  get buildTestsOnly(): boolean {
+    return this.config.get<boolean>('buildTestsOnly', false);
+  }
+
+  /**
+   * Runs-per-test: number of times to run each test (0 = disabled)
+   */
+  get runsPerTest(): number {
+    return this.config.get<number>('runsPerTest', 0);
+  }
+
+  /**
+   * Optional regex to apply per-test runs in the form of Bazel's `--runs_per_test=<regex>@<number>`
+   */
+  get runsPerTestRegex(): string | undefined {
+    return this.config.get<string | undefined>('runsPerTestRegex', undefined);
+  }
+
+  get runsPerTestDetectsFlakes(): boolean {
+    return this.config.get<boolean>('runsPerTestDetectsFlakes', false);
+  }
+
+  get nocacheTestResults(): boolean {
+    return this.config.get<boolean>('nocacheTestResults', false);
+  }
+
+  get testStrategyExclusive(): boolean {
+    return this.config.get<boolean>('testStrategyExclusive', false);
+  }
+
+  get shardingEnabled(): boolean {
+    return this.config.get<boolean>('shardingEnabled', false);
+  }
+
+  get shardTotal(): number {
+    return this.config.get<number>('shardTotal', 0);
+  }
+
+  get shardIndex(): number {
+    return this.config.get<number>('shardIndex', 0);
   }
 
   /**

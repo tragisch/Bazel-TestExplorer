@@ -22,9 +22,13 @@ export class TestSettingsView implements vscode.WebviewViewProvider {
           webviewView.webview.postMessage({
             command: 'settings',
             payload: {
-              flaky: this.config.flaky,
-              retryCount: this.config.retryCount,
-              bazelFlags: this.config.bazelFlags
+              runsPerTest: this.config.runsPerTest,
+              runsPerTestDetectsFlakes: this.config.runsPerTestDetectsFlakes,
+              nocacheTestResults: this.config.nocacheTestResults,
+              buildTestsOnly: this.config.buildTestsOnly,
+              shardingEnabled: this.config.shardingEnabled,
+              shardTotal: this.config.shardTotal,
+              shardIndex: this.config.shardIndex
             }
           });
           break;
@@ -50,9 +54,13 @@ export class TestSettingsView implements vscode.WebviewViewProvider {
         webviewView.webview.postMessage({
           command: 'settings',
           payload: {
-            flaky: this.config.flaky,
-            retryCount: this.config.retryCount,
-            bazelFlags: this.config.bazelFlags
+            runsPerTest: this.config.runsPerTest,
+            runsPerTestDetectsFlakes: this.config.runsPerTestDetectsFlakes,
+            nocacheTestResults: this.config.nocacheTestResults,
+            buildTestsOnly: this.config.buildTestsOnly,
+            shardingEnabled: this.config.shardingEnabled,
+            shardTotal: this.config.shardTotal,
+            shardIndex: this.config.shardIndex
           }
         });
       } catch (e) {
@@ -78,39 +86,81 @@ export class TestSettingsView implements vscode.WebviewViewProvider {
     <style>
       body { font-family: var(--vscode-font-family); padding: 10px; color: var(--vscode-foreground); }
       label { display:block; margin: 8px 0; }
-      input[type="text"] { width: 100%; }
-      .flags { font-size: 0.9em; color: var(--vscode-descriptionForeground); }
-      button { margin-top: 8px; }
+      fieldset { margin-top:12px; padding:8px; border-radius:6px; background:var(--vscode-inputBackground); }
+      fieldset legend { font-weight:600; }
     </style>
     <title>Bazel Test Settings</title>
   </head>
   <body>
-    <h3>Bazel Test Settings</h3>
-    <label><input id="flaky" type="checkbox"/> Treat flaky tests</label>
-    <label>Retry count: <input id="retryCount" type="number" min="0" style="width:4em"/></label>
-    <label>Bazel flags (comma separated):</label>
-    <input id="bazelFlags" type="text" placeholder="--test_output=errors, --build_tests_only" />
-    <div><button id="save">Save</button></div>
+    <fieldset>
+      <legend>Execution</legend>
+      <label><input id="nocacheTestResults" type="checkbox"/> Run tests without cache (<code>--nocache_test_results</code>)</label>
+      <label><input id="buildTestsOnly" type="checkbox"/> Only build test targets (<code>--build_tests_only</code>)</label>
+      <label><input id="testStrategyExclusive" type="checkbox"/> Force serial execution (<code>--test_strategy=exclusive</code>)</label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Runs Per Test</legend>
+      <label>Runs per test (0 = disabled): <input id="runsPerTest" type="number" min="0" style="width:5em"/></label>
+      <label><input id="runsPerTestDetectsFlakes" type="checkbox"/> Detect flakes per run (<code>--runs_per_test_detects_flakes</code>)</label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Sharding</legend>
+      <label><input id="shardingEnabled" type="checkbox"/> Enable test sharding (sets TEST_SHARD_INDEX / TEST_TOTAL_SHARDS env)</label>
+      <label>Total shards: <input id="shardTotal" type="number" min="0" style="width:5em"/></label>
+      <label>Shard index: <input id="shardIndex" type="number" min="0" style="width:5em"/></label>
+    </fieldset>
 
     <script nonce="${nonce}">
       const vscode = acquireVsCodeApi();
+      const sendSetting = (key, value) => {
+        vscode.postMessage({ command: 'setSetting', payload: { key, value } });
+      };
+
+      const wireControls = () => {
+        const checkboxFields = [
+          { id: 'nocacheTestResults', key: 'nocacheTestResults' },
+          { id: 'buildTestsOnly', key: 'buildTestsOnly' },
+          { id: 'runsPerTestDetectsFlakes', key: 'runsPerTestDetectsFlakes' },
+          { id: 'shardingEnabled', key: 'shardingEnabled' },
+          { id: 'testStrategyExclusive', key: 'testStrategyExclusive' }
+        ];
+        checkboxFields.forEach(({ id, key }) => {
+          const el = document.getElementById(id);
+          el?.addEventListener('change', () => sendSetting(key, el.checked));
+        });
+
+        const numberFields = [
+          { id: 'runsPerTest', key: 'runsPerTest' },
+          { id: 'shardTotal', key: 'shardTotal' },
+          { id: 'shardIndex', key: 'shardIndex' }
+        ];
+        numberFields.forEach(({ id, key }) => {
+          const el = document.getElementById(id);
+          el?.addEventListener('change', () => {
+            const value = Number(el.value);
+            sendSetting(key, Number.isFinite(value) ? value : 0);
+          });
+        });
+
+      };
+
+      wireControls();
+
       window.addEventListener('message', event => {
         const msg = event.data;
         if (msg.command === 'settings') {
           const s = msg.payload;
-          document.getElementById('flaky').checked = !!s.flaky;
-          document.getElementById('retryCount').value = s.retryCount ?? 1;
-          document.getElementById('bazelFlags').value = (s.bazelFlags || []).join(', ');
+          document.getElementById('runsPerTest').value = s.runsPerTest ?? 0;
+          document.getElementById('runsPerTestDetectsFlakes').checked = !!s.runsPerTestDetectsFlakes;
+          document.getElementById('nocacheTestResults').checked = !!s.nocacheTestResults;
+          document.getElementById('buildTestsOnly').checked = !!s.buildTestsOnly;
+          document.getElementById('testStrategyExclusive').checked = !!s.testStrategyExclusive;
+          document.getElementById('shardingEnabled').checked = !!s.shardingEnabled;
+          document.getElementById('shardTotal').value = s.shardTotal ?? 0;
+          document.getElementById('shardIndex').value = s.shardIndex ?? 0;
         }
-      });
-
-      document.getElementById('save').addEventListener('click', () => {
-        const flaky = document.getElementById('flaky').checked;
-        const retryCount = Number(document.getElementById('retryCount').value) || 0;
-        const flags = document.getElementById('bazelFlags').value.split(',').map(s => s.trim()).filter(Boolean);
-        vscode.postMessage({ command: 'setSetting', payload: { key: 'flaky', value: flaky } });
-        vscode.postMessage({ command: 'setSetting', payload: { key: 'retryCount', value: retryCount } });
-        vscode.postMessage({ command: 'setSetting', payload: { key: 'bazelFlags', value: flags } });
       });
 
       // ask for current settings

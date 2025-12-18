@@ -33,6 +33,29 @@ const DEFAULT_BAZEL_TEST_FLAGS = [
 ] as const;
 
 /**
+ * Merge flag arrays with override semantics: later arrays override earlier ones
+ * for flags that share the same key (e.g. --test_output=all vs --test_output=errors).
+ */
+function mergeFlags(...arrays: string[][]): string[] {
+  const map = new Map<string, string>();
+  const order: string[] = [];
+
+  for (const arr of arrays) {
+    for (const arg of arr) {
+      const key = arg.startsWith('--') ? arg.split('=')[0] : arg;
+      if (map.has(key)) {
+        const idx = order.indexOf(key);
+        if (idx !== -1) order.splice(idx, 1);
+      }
+      map.set(key, arg);
+      order.push(key);
+    }
+  }
+
+  return order.map(k => map.get(k)!) as string[];
+}
+
+/**
  * Maps Bazel test type to test framework identifier
  */
 function mapTestTypeToFramework(testType: string): TestFramework {
@@ -227,8 +250,35 @@ export const initiateBazelTest = async (
     effectiveTestId = `${effectiveTestId}/...`;
   }
 
-  const additionalArgs: string[] = [...config.testArgs];
-  const args = ['test', effectiveTestId, ...DEFAULT_BAZEL_TEST_FLAGS, ...additionalArgs, ...filterArgs];
+  const userArgs: string[] = [...config.testArgs, ...config.bazelFlags];
+  if (config.buildTestsOnly) {
+    userArgs.push('--build_tests_only');
+  }
+
+  const runSpecificFlags: string[] = [];
+  if (config.runsPerTestRegex) {
+    runSpecificFlags.push(`--runs_per_test=${config.runsPerTestRegex}`);
+  } else if (config.runsPerTest && config.runsPerTest > 0) {
+    runSpecificFlags.push(`--runs_per_test=${config.runsPerTest}`);
+  }
+  if (config.runsPerTestDetectsFlakes) runSpecificFlags.push('--runs_per_test_detects_flakes');
+  if (config.nocacheTestResults) runSpecificFlags.push('--nocache_test_results');
+  if (config.testStrategyExclusive) runSpecificFlags.push('--test_strategy=exclusive');
+
+  // Merge flags so that later entries (user / runSpecific) override defaults when appropriate
+  const mergedFlags = mergeFlags(
+    Array.from(DEFAULT_BAZEL_TEST_FLAGS),
+    userArgs,
+    runSpecificFlags,
+    filterArgs
+  );
+
+  const args = ['test', effectiveTestId, ...mergedFlags];
+
+  // sharding is applied via environment variables TEST_SHARD_INDEX / TEST_TOTAL_SHARDS
+  const env: NodeJS.ProcessEnv | undefined = (config.shardingEnabled && config.shardTotal > 0)
+    ? { TEST_TOTAL_SHARDS: String(config.shardTotal), TEST_SHARD_INDEX: String(config.shardIndex) }
+    : undefined;
 
   return runBazelCommand(
     args,
@@ -236,6 +286,7 @@ export const initiateBazelTest = async (
     undefined,
     undefined,
     config.bazelPath,
+    env,
     cancellationToken
   );
 };
@@ -328,9 +379,10 @@ export const callRunBazelCommandForTest = async (options: {
   if (/^\/\/[^:]*$/.test(testId)) {
     effectiveTestId = `${testId}/...`;
   }
+  const userArgs: string[] = [...additionalArgs];
+  const args = ['test', effectiveTestId, ...DEFAULT_BAZEL_TEST_FLAGS, ...userArgs];
 
-  const args = ['test', effectiveTestId, ...DEFAULT_BAZEL_TEST_FLAGS, ...additionalArgs];
-  const { stdout, stderr } = await runBazelCommand(args, cwd, undefined, undefined, undefined, cancellationToken);
+  const { stdout, stderr } = await runBazelCommand(args, cwd, undefined, undefined, undefined, undefined, cancellationToken);
   
   return { stdout, stderr };
 };

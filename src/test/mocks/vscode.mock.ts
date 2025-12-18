@@ -152,7 +152,6 @@ export function createMockBazelTestTarget(overrides?: Partial<any>): any {
     srcs: ['test.cc'],
     timeout: '30',
     size: 'small',
-    flaky: false,
     toolchain: 'gcc',
     deps: [],
     tests: [],
