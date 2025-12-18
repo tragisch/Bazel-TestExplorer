@@ -17,6 +17,7 @@ import { discoverAndDisplayTests, resolveTestCaseChildren } from './testTree';
 import { showTestMetadataById } from './testInfoPanel';
 import { logWithTimestamp, formatError } from '../logging';
 import { startTest, finishTest } from './testEventBus';
+import { TestCaseAnnotations } from './testCaseAnnotations';
 
 /**
  * Manages VS Code TestController and orchestrates test discovery,
@@ -29,7 +30,8 @@ export class TestControllerManager {
   constructor(
     private readonly bazelClient: BazelClient,
     private readonly config: ConfigurationService,
-    private readonly context: vscode.ExtensionContext
+    private readonly context: vscode.ExtensionContext,
+    private readonly annotations: TestCaseAnnotations
   ) {
     this.controller = vscode.tests.createTestController(
       'bazelUnityTestController',
@@ -61,7 +63,7 @@ export class TestControllerManager {
       }
 
       // Individual test case discovery for a specific test item
-      await resolveTestCaseChildren(item, this.controller, this.bazelClient);
+      await resolveTestCaseChildren(item, this.controller, this.bazelClient, this.annotations);
     };
   }
 

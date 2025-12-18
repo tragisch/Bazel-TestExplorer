@@ -21,7 +21,7 @@ import { TestControllerManager } from './explorer/testControllerManager';
 import { TestObserver } from './explorer/testObserver';
 import TestHistoryProvider from './explorer/testHistoryProvider';
 import { onDidTestEvent } from './explorer/testEventBus';
-import TestSettingsView from './explorer/testSettingsView';
+import { TestCaseAnnotations, TestCaseCodeLensProvider, TestCaseHoverProvider } from './explorer/testCaseAnnotations';
 
 export async function activate(context: vscode.ExtensionContext) {
 	initializeLogger();
@@ -104,7 +104,10 @@ export async function activate(context: vscode.ExtensionContext) {
 	logWithTimestamp(`Bazel validated: ${validation.version || 'OK'}`);
 
 	// TestControllerManager orchestrates all test-related operations
-	const testManager = new TestControllerManager(bazelClient, configurationService, context);
+	const testCaseAnnotations = new TestCaseAnnotations();
+	context.subscriptions.push(testCaseAnnotations);
+
+	const testManager = new TestControllerManager(bazelClient, configurationService, context, testCaseAnnotations);
 	testManager.initialize();
 
 	// Observer for collecting runtimes and small in-memory history
@@ -160,6 +163,13 @@ export async function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(testEventDisposable);
 
 	// Commands for history items
+	const codeLensProvider = new TestCaseCodeLensProvider(testCaseAnnotations);
+	const hoverProvider = new TestCaseHoverProvider(testCaseAnnotations);
+	context.subscriptions.push(
+		vscode.languages.registerCodeLensProvider({ scheme: 'file' }, codeLensProvider),
+		vscode.languages.registerHoverProvider({ scheme: 'file' }, hoverProvider),
+		codeLensProvider
+	);
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand('bazelTestExplorer.openHistoryItem', async (entry: any) => {
@@ -187,6 +197,13 @@ export async function activate(context: vscode.ExtensionContext) {
 			} catch (err) {
 				void vscode.window.showErrorMessage('Failed to rerun test from history');
 			}
+		}),
+
+		vscode.commands.registerCommand('bazelTestExplorer.runTestCase', async (testId: string) => {
+			if (!testId) {
+				return;
+			}
+			await testManager.runTestsByIds([testId]);
 		})
 	);
 

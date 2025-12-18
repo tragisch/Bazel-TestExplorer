@@ -14,10 +14,11 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { BazelClient } from '../bazel/client';
-import { BazelTestTarget } from '../bazel/types';
+import { BazelTestTarget, IndividualTestCase } from '../bazel/types';
 import { logWithTimestamp, measure, formatError } from '../logging';
 import { discoverIndividualTestCases } from '../bazel/discovery';
 import { findBazelWorkspace } from '../bazel/workspace';
+import { TestCaseAnnotations, AnnotationUpdate } from './testCaseAnnotations';
 
 function getDiscoveryEnabled(): boolean {
   try {
@@ -398,7 +399,8 @@ export function getExtensionsByType(testType: string): string[] {
 export const resolveTestCaseChildren = async (
   testItem: vscode.TestItem,
   controller: vscode.TestController,
-  bazelClient: BazelClient
+  bazelClient: BazelClient,
+  annotations?: TestCaseAnnotations
 ): Promise<void> => {
   try {
     // Respect user setting: if discovery is disabled, do not attempt to resolve children
@@ -442,38 +444,53 @@ export const resolveTestCaseChildren = async (
       const fallbackLocation = targetMetadata
         ? resolveSourceFromMetadata(testItem.id, workspacePath, targetMetadata)
         : undefined;
-      
+      const annotationEntries: AnnotationUpdate[] = [];
+
       for (const testCase of result.testCases) {
         const testCaseId = `${testItem.id}::${testCase.name}`;
         const existing = testItem.children.get(testCaseId);
+        const resolvedFile = selectFilePath(testCase.file, fallbackLocation?.file);
+        const uri = resolvedFile
+          ? vscode.Uri.file(toAbsolutePath(resolvedFile, workspacePath))
+          : undefined;
+        const resolvedLine = testCase.line && testCase.line > 0
+          ? testCase.line
+          : fallbackLocation?.line;
+        const range = resolvedLine && resolvedLine > 0
+          ? new vscode.Range(
+              new vscode.Position(Math.max(0, resolvedLine - 1), 0),
+              new vscode.Position(Math.max(0, resolvedLine - 1), 0)
+            )
+          : undefined;
 
         if (!existing) {
           const statusIcon = '🧪';
-          const resolvedFile = selectFilePath(testCase.file, fallbackLocation?.file);
-          const uri = resolvedFile
-            ? vscode.Uri.file(toAbsolutePath(resolvedFile, workspacePath))
-            : undefined;
-          const resolvedLine = testCase.line && testCase.line > 0
-            ? testCase.line
-            : fallbackLocation?.line;
-
           const testCaseItem = controller.createTestItem(testCaseId, `${statusIcon} ${testCase.name}`, uri);
-
-          if (resolvedLine && resolvedLine > 0) {
-            const lineZeroBased = Math.max(0, resolvedLine - 1);
-            testCaseItem.range = new vscode.Range(
-              new vscode.Position(lineZeroBased, 0),
-              new vscode.Position(lineZeroBased, 0)
-            );
+          if (range) {
+            testCaseItem.range = range;
             testCaseItem.description = `Line ${resolvedLine}`;
           }
-
           testCaseItem.canResolveChildren = false;
           testItem.children.add(testCaseItem);
+        } else if (range) {
+          existing.range = range;
+          existing.description = `Line ${resolvedLine}`;
+        }
+
+        if (uri) {
+          annotationEntries.push({
+            id: testCaseId,
+            testName: testCase.name,
+            status: testCase.status,
+            message: testCase.errorMessage,
+            uri,
+            range
+          });
         }
       }
 
       logWithTimestamp(`Resolved ${result.testCases.length} test cases for ${testItem.id}`);
+      annotations?.setTestCasesForTarget(testItem.id, annotationEntries);
     } finally {
       testItem.busy = false;
     }
