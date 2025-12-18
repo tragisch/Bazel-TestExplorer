@@ -2,7 +2,7 @@
   "name": "bazel-testexplorer",
   "displayName": "Bazel-TestExplorer",
   "description": "A VS Code extension to run and manage Bazel tests.",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "icon": "images/icon_Bazel_TestExplorer.png",
   "engines": {
     "vscode": "^1.99.0"
@@ -18,12 +18,12 @@
   "bugs": {
     "url": "https://github.com/tragisch/Bazel-TestExplorer/issues"
   },
-  "activationEvents": [
-    "onView:workbench.view.testing",
-    "workspaceContains:**/MODULE.bazel",
-    "workspaceContains:**/WORKSPACE"
-  ],
   "main": "./dist/extension.js",
+  "activationEvents": [
+    "workspaceContains:**/MODULE.bazel",
+    "workspaceContains:**/WORKSPACE",
+    "onView:workbench.view.testing"
+  ],
   "contributes": {
     "commands": [
       {
@@ -37,10 +37,6 @@
       {
         "command": "bazelTestExplorer.showSelectedTestMetadata",
         "title": "Bazel-TestExplorer: Show Selected Test Metadata"
-      },
-      {
-        "command": "bazelTestExplorer.showTestHistory",
-        "title": "Bazel-TestExplorer: Show Test History"
       },
       {
         "command": "bazelTestExplorer.openHistoryItem",
@@ -63,7 +59,7 @@
     "configuration": {
       "title": "Bazel Test Explorer",
       "properties": {
-        "bazelTestRunner.testTypes": {
+        "bazelTestExplorer.testTypes": {
           "type": "array",
           "description": "List of Bazel test types to detect",
           "default": [
@@ -73,7 +69,7 @@
             "type": "string"
           }
         },
-        "bazelTestRunner.queryPaths": {
+        "bazelTestExplorer.queryPaths": {
           "type": "array",
           "description": "List of relative Bazel paths (i.e. //tests) where tests should be queried. If left empty, defaults to querying the entire workspace ('//...').",
           "default": [],
@@ -81,7 +77,7 @@
             "type": "string"
           }
         },
-        "bazelTestRunner.sequentialTestTypes": {
+        "bazelTestExplorer.sequentialTestTypes": {
           "type": "array",
           "description": "List of test types (i.e. 'java_test') that should be run sequentially instead of in parallel.",
           "default": [
@@ -91,7 +87,7 @@
             "type": "string"
           }
         },
-        "bazelTestRunner.testArgs": {
+        "bazelTestExplorer.testArgs": {
           "type": "array",
           "description": "Additional command line arguments to pass to 'bazel test'. Example: ['--config=ci', '--build_tests_only', '--runs_per_test=2', etc.]",
           "default": [],
@@ -99,7 +95,32 @@
             "type": "string"
           }
         },
-        "bazelTestRunner.failLinePatterns": {
+        "bazelTestExplorer.runsPerTest": {
+          "type": "number",
+          "description": "Number of times Bazel should execute every test target (0 disables the flag).",
+          "default": 0,
+          "minimum": 0,
+          "markdownDeprecationMessage": "Configure this option via the Bazel Test Settings view."
+        },
+        "bazelTestExplorer.runsPerTestDetectsFlakes": {
+          "type": "boolean",
+          "description": "Enable Bazel's --runs_per_test_detects_flakes flag to treat reruns as flake detection.",
+          "default": false,
+          "markdownDeprecationMessage": "Configure this option via the Bazel Test Settings view."
+        },
+        "bazelTestExplorer.nocacheTestResults": {
+          "type": "boolean",
+          "description": "Apply --nocache_test_results so Bazel always re-runs tests instead of using cached results.",
+          "default": false,
+          "markdownDeprecationMessage": "Configure this option via the Bazel Test Settings view."
+        },
+        "bazelTestExplorer.testStrategyExclusive": {
+          "type": "boolean",
+          "description": "Apply --test_strategy=exclusive so tests run serially.",
+          "default": false,
+          "markdownDeprecationMessage": "Configure this option via the Bazel Test Settings view."
+        },
+        "bazelTestExplorer.failLinePatterns": {
           "type": "array",
           "description": "Custom regular expressions to extract file and line from test failures. The first two capture groups must be filename and line number.",
           "default": [
@@ -109,27 +130,50 @@
             "type": "string"
           }
         },
-        "bazelTestRunner.enableTestCaseDiscovery": {
+        "bazelTestExplorer.enableTestCaseDiscovery": {
           "type": "boolean",
           "description": "Experimental: Enable discovering individual test cases by running tests (currently: only for some test types, and slow).",
           "default": false
         },
-        "bazelTestRunner.discoveryCacheMs": {
+        "bazelTestExplorer.discoveryCacheMs": {
           "type": "number",
           "description": "Time-to-live in milliseconds for cached test case discovery results. Lower values cause more frequent re-discovery but ensure fresher results.",
           "default": 15000,
           "minimum": 1000
+        },
+        "bazelTestExplorer.buildTestsOnly": {
+          "type": "boolean",
+          "description": "Use Bazel's --build_tests_only to build targets without executing them.",
+          "default": false
+        },
+        "bazelTestExplorer.verboseViewRegistrationLogging": {
+          "type": "boolean",
+          "description": "Developer: enable verbose activation diagnostics for view/container registration. Keep disabled for production to avoid slow activation.",
+          "default": false
+        },
+        "bazelTestExplorer.verboseLogging": {
+          "type": "boolean",
+          "description": "Enable verbose test event logging. Defaults to false to avoid flooding logs.",
+          "default": false
         }
       }
+    },
+    "views": {
+      "test": [
+        {
+          "id": "bazelTestExplorer.settingsView",
+          "name": "Bazel Test Settings",
+          "type": "webview",
+          "contextualTitle": "Bazel Test Settings",
+          "icon": "images/icon_Bazel_TestExplorer.png"
+        },
+        {
+          "id": "bazelTestExplorer.history",
+          "name": "Bazel Test History",
+          "icon": "images/icon_Bazel_TestExplorer.png"
+        }
+      ]
     }
-  },
-  "views": {
-    "explorer": [
-      {
-        "id": "bazelTestExplorer.history",
-        "name": "Bazel Test History"
-      }
-    ]
   },
   "scripts": {
     "compile": "npm run check-types && tsc -p tsconfig.json && node esbuild.js",

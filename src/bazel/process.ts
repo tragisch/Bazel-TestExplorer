@@ -23,11 +23,12 @@ export function runBazelCommand(
     onLine?: (line: string) => void,
     onErrorLine?: (line: string) => void,
     bazelPath: string = 'bazel',
+    env?: NodeJS.ProcessEnv,
     cancellationToken?: CancellationToken
 ): Promise<{ code: number; stdout: string; stderr: string }> {
     return new Promise((resolve, reject) => {
         logWithTimestamp(`Running Bazel: ${bazelPath} ${args.join(" ")}`);
-        const proc = cp.spawn(bazelPath, args, { cwd, shell: true });
+        const proc = cp.spawn(bazelPath, args, { cwd, shell: true, env: { ...process.env, ...(env || {}) } });
         let isCancelled = false;
 
         let stdout = '';

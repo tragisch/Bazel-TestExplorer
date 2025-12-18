@@ -149,33 +149,41 @@ export class TestControllerManager {
           ? request.include
           : Array.from(this.controller.items).map(([_, item]) => item);
 
-        for (const testItem of testsToRun) {
-          const allTests = collectAllTests(testItem);
-          for (const t of allTests) {
-            // Check if cancellation was requested
-            if (token.isCancellationRequested) {
-              run.skipped(t);
-              try { finishTest(t.id, 'skipped'); } catch {}
-              logWithTimestamp(`Test skipped due to cancellation request: ${t.id}`, 'info');
-              continue;
-            }
+        try {
+          for (const testItem of testsToRun) {
+            const allTests = collectAllTests(testItem);
+            for (const t of allTests) {
+              // Check if cancellation was requested
+              if (token.isCancellationRequested) {
+                run.skipped(t);
+                try { finishTest(t.id, 'skipped'); } catch { }
+                logWithTimestamp(`Test skipped due to cancellation request: ${t.id}`, 'info');
+                continue;
+              }
 
-            run.started(t);
-            try { startTest(t.id, t.label); } catch {}
-            const testTypeMatch = t.label.match(/^\[(.+?)\]/);
-            const testType = testTypeMatch?.[1];
-            const isSequential = sequentialTypes.includes(testType ?? '');
-            const promise = this.bazelClient.runTest(t, run, token);
-            if (isSequential) {
-              await promise;
-            } else {
-              promises.push(promise);
+              run.started(t);
+              try { startTest(t.id, t.label); } catch { }
+              const testTypeMatch = t.label.match(/^\[(.+?)\]/);
+              const testType = testTypeMatch?.[1];
+              const isSequential = sequentialTypes.includes(testType ?? '');
+              const promise = this.bazelClient.runTest(t, run, token);
+              if (isSequential) {
+                await promise;
+              } else {
+                promises.push(promise);
+              }
             }
           }
+        } finally {
+          try {
+            await Promise.all(promises);
+          } catch (err) {
+            // Ensure failures in individual test promises do not prevent finalizing the run
+            logWithTimestamp(`One or more test promises rejected: ${String(err)}`, 'error');
+          } finally {
+            run.end();
+          }
         }
-
-        await Promise.all(promises);
-        run.end();
       },
       true
     );
@@ -216,7 +224,7 @@ export class TestControllerManager {
   private registerConfigListener(): void {
     this.context.subscriptions.push(
       vscode.workspace.onDidChangeConfiguration((e) => {
-        if (e.affectsConfiguration('bazelTestRunner')) {
+        if (e.affectsConfiguration('bazelTestExplorer')) {
           logWithTimestamp('Configuration changed. Reloading tests...');
           vscode.window.withProgress(
             {
@@ -274,7 +282,7 @@ export class TestControllerManager {
       const allTests = collectAllTests(testItem);
       for (const t of allTests) {
         run.started(t);
-        try { startTest(t.id, t.label); } catch {}
+        try { startTest(t.id, t.label); } catch { }
         const testTypeMatch = t.label.match(/^\[(.+?)\]/);
         const testType = testTypeMatch?.[1];
         const isSequential = sequentialTypes.includes(testType ?? '');
@@ -287,8 +295,13 @@ export class TestControllerManager {
       }
     }
 
-    await Promise.all(promises);
-    run.end();
+    try {
+      await Promise.all(promises);
+    } catch (err) {
+      logWithTimestamp(`One or more test promises rejected in runTestsByIds: ${String(err)}`, 'error');
+    } finally {
+      run.end();
+    }
   }
 
   /**
@@ -304,9 +317,11 @@ export class TestControllerManager {
 
   private searchTestItem(node: vscode.TestItem, id: string): vscode.TestItem | undefined {
     if (node.id === id) return node;
-    for (const child of node.children.values()) {
+    for (const [, child] of node.children) {
       const found = this.searchTestItem(child, id);
-      if (found) return found;
+      if (found) {
+        return found;
+      }
     }
     return undefined;
   }

@@ -17,6 +17,13 @@ export class MockConfigurationService implements Partial<ConfigurationService> {
   private _testTypes = ['cc_test', 'py_test'];
   private _sequentialTestTypes: string[] = [];
   private _testArgs: string[] = [];
+  private _buildTestsOnly = false;
+  private _enableTestCaseDiscovery = false;
+  private _runsPerTest = 0;
+  private _runsPerTestDetectsFlakes = false;
+  private _nocacheTestResults = false;
+  private _testStrategyExclusive = false;
+  
   private _listeners: Array<() => void> = [];
 
   set bazelPath(value: string) {
@@ -55,6 +62,47 @@ export class MockConfigurationService implements Partial<ConfigurationService> {
     return this._testArgs;
   }
 
+  set buildTestsOnly(value: boolean) {
+    this._buildTestsOnly = value;
+  }
+  get buildTestsOnly(): boolean {
+    return this._buildTestsOnly;
+  }
+  set enableTestCaseDiscovery(value: boolean) {
+    this._enableTestCaseDiscovery = value;
+  }
+  get enableTestCaseDiscovery(): boolean {
+    return this._enableTestCaseDiscovery;
+  }
+
+  set runsPerTest(value: number) {
+    this._runsPerTest = value;
+  }
+  get runsPerTest(): number {
+    return this._runsPerTest;
+  }
+
+  set runsPerTestDetectsFlakes(value: boolean) {
+    this._runsPerTestDetectsFlakes = value;
+  }
+  get runsPerTestDetectsFlakes(): boolean {
+    return this._runsPerTestDetectsFlakes;
+  }
+
+  set nocacheTestResults(value: boolean) {
+    this._nocacheTestResults = value;
+  }
+  get nocacheTestResults(): boolean {
+    return this._nocacheTestResults;
+  }
+
+  set testStrategyExclusive(value: boolean) {
+    this._testStrategyExclusive = value;
+  }
+  get testStrategyExclusive(): boolean {
+    return this._testStrategyExclusive;
+  }
+
   onDidChangeConfiguration(listener: () => void) {
     this._listeners.push(listener);
     return { dispose: () => {
@@ -78,5 +126,12 @@ export class MockConfigurationService implements Partial<ConfigurationService> {
     this._testTypes = [];
     this._sequentialTestTypes = [];
     this._testArgs = [];
+    this._buildTestsOnly = false;
+    this._enableTestCaseDiscovery = false;
+    this._runsPerTest = 0;
+    this._runsPerTestDetectsFlakes = false;
+    this._nocacheTestResults = false;
+    this._testStrategyExclusive = false;
+    
   }
 }

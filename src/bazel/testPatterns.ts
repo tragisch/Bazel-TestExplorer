@@ -326,7 +326,7 @@ export function getAllTestPatterns(): TestCasePattern[] {
 
     try {
         const vscode = require('vscode');
-        const config = vscode.workspace.getConfiguration("bazelTestRunner");
+        const config = vscode.workspace.getConfiguration("bazelTestExplorer");
         const customPatterns = config.get("customTestPatterns", []) as any[];
 
         for (const customPattern of customPatterns) {
