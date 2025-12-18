@@ -135,7 +135,7 @@
           "description": "Experimental: Show individual test-cases per target by analysing Bazel's test.xml (can be slow).",
           "default": false
         },
-        "bazelTestRunner.testCaseDiscoveryCacheMs": {
+        "bazelTestExplorer.testCaseDiscoveryCacheMs": {
           "type": "number",
           "description": "Time-to-live (ms) for cached individual test-case discovery results. Lower values rerun discovery sooner.",
           "default": 15000,

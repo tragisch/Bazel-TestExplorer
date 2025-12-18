@@ -652,16 +652,16 @@ sequenceDiagram
 
 ```json
 {
-  "bazelTestRunner.testTypes": ["cc_test", "py_test", "java_test"],
-  "bazelTestRunner.queryPaths": ["//tests", "//integration"],
-  "bazelTestRunner.testArgs": ["--config=ci", "--runs_per_test=2"],
-  "bazelTestRunner.sequentialTestTypes": ["java_test"],
-  "bazelTestRunner.failLinePatterns": [
+  "bazelTestExplorer.testTypes": ["cc_test", "py_test", "java_test"],
+  "bazelTestExplorer.queryPaths": ["//tests", "//integration"],
+  "bazelTestExplorer.testArgs": ["--config=ci", "--runs_per_test=2"],
+  "bazelTestExplorer.sequentialTestTypes": ["java_test"],
+  "bazelTestExplorer.failLinePatterns": [
     "^(.+?):(\\d+): Failure",
     "File \"(.+?)\", line (\\d+)"
   ],
-  "bazelTestRunner.enableTestCaseDiscovery": true,
-  "bazelTestRunner.testCaseDiscoveryCacheMs": 15000
+  "bazelTestExplorer.enableTestCaseDiscovery": true,
+  "bazelTestExplorer.testCaseDiscoveryCacheMs": 15000
 }
 ```
 
