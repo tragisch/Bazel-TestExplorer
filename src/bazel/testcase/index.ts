@@ -5,4 +5,4 @@
  * `src/bazel/testcase` instead of deep paths.
  */
 
-export * from './parseOutput';
+export * from './parseXml';

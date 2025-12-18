@@ -319,9 +319,7 @@ export class TestControllerManager {
     if (node.id === id) return node;
     for (const [, child] of node.children) {
       const found = this.searchTestItem(child, id);
-      if (found) {
-        return found;
-      }
+      if (found) return found;
     }
     return undefined;
   }

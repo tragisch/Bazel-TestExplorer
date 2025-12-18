@@ -12,9 +12,11 @@ import {
   discoverIndividualTestCases,
   setConfigService,
   getConfigService,
-  IConfigService
+  IConfigService,
+  setTestXmlLoader,
+  getTestXmlLoader
 } from '../../bazel/discovery';
-import { extractTestCasesFromOutput } from '../../bazel/testcase/parseOutput';
+import { TestCaseParseResult } from '../../bazel/types';
 import * as runner from '../../bazel/runner';
 
 class TestConfigService implements IConfigService {
@@ -30,13 +32,40 @@ class TestConfigService implements IConfigService {
   isDiscoveryEnabled(): boolean {
     return this.enabled;
   }
+
+  getBazelPath(): string {
+    return 'bazel';
+  }
 }
 
 suite('Discovery', () => {
   const mockWorkspacePath = '/mock/workspace';
   let originalCall: typeof runner.callRunBazelCommandForTest | undefined;
   let originalConfigService: IConfigService | undefined;
+  let originalXmlLoader: ReturnType<typeof getTestXmlLoader> | undefined;
   let callCount = 0;
+  let xmlResults: Map<string, TestCaseParseResult | null>;
+
+  const createResultForTarget = (target: string): TestCaseParseResult => ({
+    testCases: [
+      {
+        name: 'test_one',
+        file: 'tests/test_example.py',
+        line: 1,
+        parentTarget: target,
+        status: 'PASS'
+      },
+      {
+        name: 'test_two',
+        file: 'tests/test_example.py',
+        line: 5,
+        parentTarget: target,
+        status: 'FAIL',
+        errorMessage: 'Expected true to be false'
+      }
+    ],
+    summary: { total: 2, passed: 1, failed: 1, ignored: 0 }
+  });
 
   setup(() => {
     // stub out Bazel command execution to provide deterministic output
@@ -67,6 +96,15 @@ suite('Discovery', () => {
     // Force discovery to be enabled for the default test runs
     originalConfigService = getConfigService();
     setConfigService(new TestConfigService(true));
+
+    xmlResults = new Map();
+    originalXmlLoader = getTestXmlLoader();
+    setTestXmlLoader(async (target: string) => {
+      if (xmlResults.has(target)) {
+        return xmlResults.get(target) ?? null;
+      }
+      return createResultForTarget(target);
+    });
   });
 
   teardown(() => {
@@ -77,6 +115,9 @@ suite('Discovery', () => {
       }
       if (originalConfigService) {
         setConfigService(originalConfigService);
+      }
+      if (originalXmlLoader) {
+        setTestXmlLoader(originalXmlLoader);
       }
     } catch (e) {
       // swallow
@@ -227,13 +268,15 @@ suite('Discovery', () => {
     assert.ok(result.summary.ignored >= 0);
   });
 
-  test('should parse gtest output via parser directly', () => {
-    const gtestOutput = `[  PASSED  ] MatrixTest.test_create (5 ms)\n[  FAILED  ] MatrixTest.test_fail (3 ms)`;
-    const res = extractTestCasesFromOutput(gtestOutput, '//tests:matrix');
-    assert.ok(res);
-    assert.ok(Array.isArray(res.testCases));
-    const found = res.testCases.find(tc => tc.name === 'test_create');
-    assert.ok(found, 'Should find gtest test_create via parser');
+  test('should return empty result when XML is missing', async () => {
+    const target = '//test:no_xml';
+    xmlResults.set(target, null);
+
+    const result = await discoverIndividualTestCases(target, mockWorkspacePath);
+
+    assert.ok(Array.isArray(result.testCases));
+    assert.strictEqual(result.testCases.length, 0);
+    assert.strictEqual(result.summary.total, 0);
   });
 
   test('should return empty when discovery disabled via config', async () => {

@@ -16,7 +16,6 @@ import { runBazelCommand } from './process';
 import { logWithTimestamp, measure, formatError } from '../logging';
 import { ConfigurationService } from '../configuration';
 import { analyzeTestFailures } from './parseFailures';
-import { extractTestCasesFromOutput } from './testcase/parseOutput';
 import { TestFramework } from './testFilterStrategies';
 
 // ───────────────────────────────────────────────────────────────

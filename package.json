@@ -132,7 +132,7 @@
         },
         "bazelTestExplorer.enableTestCaseDiscovery": {
           "type": "boolean",
-          "description": "Experimental: Enable discovering individual test cases by running tests (currently: only for some test types, and slow).",
+          "description": "Experimental: Show individual test-cases per target by analysing Bazel's test.xml (can be slow).",
           "default": false
         },
         "bazelTestExplorer.discoveryCacheMs": {

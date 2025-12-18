@@ -11,8 +11,7 @@ import { createHash } from 'crypto';
 import { callRunBazelCommandForTest } from './runner';
 import { logWithTimestamp, formatError } from '../logging';
 import { TestCaseParseResult } from './types';
-import { extractTestCasesFromOutput } from './testcase/parseOutput';
-import { PATTERN_IDS_BY_TEST_TYPE } from './testPatterns';
+import { readStructuredTestXmlResult } from './testcase/parseXml';
 
 interface CacheEntry { result: TestCaseParseResult; stdoutHash: string; timestamp: number; }
 
@@ -20,6 +19,7 @@ interface CacheEntry { result: TestCaseParseResult; stdoutHash: string; timestam
 export interface IConfigService {
   getDiscoveryTtlMs(): number;
   isDiscoveryEnabled(): boolean;
+  getBazelPath(): string;
 }
 
 // Default configuration service using VS Code API
@@ -47,6 +47,17 @@ class VSCodeConfigService implements IConfigService {
       return true;
     }
   }
+
+  getBazelPath(): string {
+    try {
+      const vscode = require('vscode');
+      const cfg = vscode.workspace.getConfiguration('bazelTestRunner');
+      return (cfg.get('bazelPath', 'bazel') as string);
+    } catch (error) {
+      logWithTimestamp(`Failed to read bazelPath config, using default: ${formatError(error)}`, 'warn');
+      return 'bazel';
+    }
+  }
 }
 
 // Hash service for SHA1 generation
@@ -63,6 +74,8 @@ class CryptoHashService implements IHashService {
 const discoveryCache = new Map<string, CacheEntry>();
 let configService: IConfigService = new VSCodeConfigService();
 let hashService: IHashService = new CryptoHashService();
+type TestXmlLoader = (targetLabel: string, workspacePath: string, bazelPath: string) => Promise<TestCaseParseResult | null>;
+let xmlLoader: TestXmlLoader = readStructuredTestXmlResult;
 
 // Export for testing: allow dependency injection
 export function setConfigService(service: IConfigService): void {
@@ -82,10 +95,18 @@ export function getHashService(): IHashService {
   return hashService;
 }
 
+export function setTestXmlLoader(loader: TestXmlLoader): void {
+  xmlLoader = loader;
+}
+
+export function getTestXmlLoader(): TestXmlLoader {
+  return xmlLoader;
+}
+
 export const discoverIndividualTestCases = async (
   testTarget: string,
   workspacePath: string,
-  testType?: string
+  _testType?: string
 ): Promise<TestCaseParseResult> => {
   try {
     if (!configService.isDiscoveryEnabled()) {
@@ -106,29 +127,39 @@ export const discoverIndividualTestCases = async (
     logWithTimestamp(`Discovering individual test cases for ${testTarget}`);
 
     // Run the test to get output with individual test case results
-    const { stdout, stderr } = await callRunBazelCommandForTest({
+    const { stdout } = await callRunBazelCommandForTest({
       testId: testTarget,
       cwd: workspacePath,
     });
 
-    const combined = [stdout, stderr].filter(Boolean).join("\n");
-    const allowed = testType ? PATTERN_IDS_BY_TEST_TYPE[testType] : undefined;
-    let result = extractTestCasesFromOutput(combined, testTarget, allowed);
-    
-    if (allowed && result.testCases.length === 0) {
-      logWithTimestamp(`No test cases matched with restricted patterns for ${testTarget} [${testType}]. Trying all patterns as fallback.`, "warn");
-      result = extractTestCasesFromOutput(combined, testTarget, undefined);
+    const bazelPath = configService.getBazelPath();
+    const xmlResult = await xmlLoader(testTarget, workspacePath, bazelPath);
+    if (xmlResult && xmlResult.testCases.length > 0) {
+      const entry: CacheEntry = {
+        result: xmlResult,
+        stdoutHash: hashService.sha1(stdout),
+        timestamp: Date.now()
+      };
+      discoveryCache.set(testTarget, entry);
+      logWithTimestamp(`Found ${xmlResult.testCases.length} test cases via structured XML for ${testTarget}`);
+      return xmlResult;
     }
 
-    const entry: CacheEntry = { 
-      result, 
-      stdoutHash: hashService.sha1(stdout), 
-      timestamp: Date.now() 
+    logWithTimestamp(`No structured test.xml available for ${testTarget}; returning empty result.`, 'warn');
+
+    const emptyResult: TestCaseParseResult = {
+      testCases: [],
+      summary: { total: 0, passed: 0, failed: 0, ignored: 0 }
+    };
+
+    const entry: CacheEntry = {
+      result: emptyResult,
+      stdoutHash: hashService.sha1(stdout),
+      timestamp: Date.now()
     };
     discoveryCache.set(testTarget, entry);
 
-    logWithTimestamp(`Found ${result.testCases.length} test cases in ${testTarget}`);
-    return result;
+    return emptyResult;
   } catch (error) {
     logWithTimestamp(`Failed to discover test cases for ${testTarget}: ${formatError(error)}`);
     return {

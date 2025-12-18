@@ -14,7 +14,9 @@ import {
   getConfigService,
   getHashService,
   IConfigService,
-  IHashService
+  IHashService,
+  setTestXmlLoader,
+  getTestXmlLoader
 } from '../../bazel/discovery';
 
 class MockConfigService implements IConfigService {
@@ -30,6 +32,10 @@ class MockConfigService implements IConfigService {
   isDiscoveryEnabled(): boolean {
     return this.enabled;
   }
+
+  getBazelPath(): string {
+    return 'bazel';
+  }
 }
 
 class MockHashService implements IHashService {
@@ -41,15 +47,18 @@ class MockHashService implements IHashService {
 suite('discovery (cache + DI)', () => {
   let originalConfigService: IConfigService | undefined;
   let originalHashService: IHashService | undefined;
+  let originalXmlLoader: ReturnType<typeof getTestXmlLoader> | undefined;
 
   setup(() => {
     // save originals
     originalConfigService = getConfigService();
     originalHashService = getHashService();
+    originalXmlLoader = getTestXmlLoader();
 
     clearDiscoveryCache();
     setConfigService(new MockConfigService());
     setHashService(new MockHashService());
+    setTestXmlLoader(async () => null);
   });
 
   teardown(() => {
@@ -60,6 +69,9 @@ suite('discovery (cache + DI)', () => {
       }
       if (originalHashService) {
         setHashService(originalHashService);
+      }
+      if (originalXmlLoader) {
+        setTestXmlLoader(originalXmlLoader);
       }
       clearDiscoveryCache();
     } catch (e) {
