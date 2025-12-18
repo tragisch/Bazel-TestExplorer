@@ -88,7 +88,8 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	const workspaceRoot = await findBazelWorkspace();
 	if (!workspaceRoot) {
-		vscode.window.showErrorMessage('No Bazel workspace found in the current directory');
+		// silently stop activation in non-Bazel workspaces to avoid noisy popups
+		logWithTimestamp('No Bazel workspace detected. Extension remains idle.');
 		return;
 	}
 
