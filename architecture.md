@@ -418,7 +418,7 @@ File "(.+?)", line (\d+)       # Python unittest
 - Memory management
 
 **Configuration**:
-- `discoveryCacheMs`: Configurable TTL (default: 15s)
+- `testCaseDiscoveryCacheMs`: Configurable TTL (default: 15s)
 
 ---
 
@@ -661,7 +661,7 @@ sequenceDiagram
     "File \"(.+?)\", line (\\d+)"
   ],
   "bazelTestRunner.enableTestCaseDiscovery": true,
-  "bazelTestRunner.discoveryCacheMs": 15000
+  "bazelTestRunner.testCaseDiscoveryCacheMs": 15000
 }
 ```
 
@@ -693,7 +693,7 @@ if (testType === 'robot_test') {
 
 ### Query Caching
 - Default TTL: 15 seconds
-- Configurable via `discoveryCacheMs`
+- Configurable via `testCaseDiscoveryCacheMs`
 - Invalidated on configuration change
 
 ### Test Case Discovery
