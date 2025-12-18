@@ -107,22 +107,26 @@
           "type": "number",
           "description": "Number of times Bazel should execute every test target (0 disables the flag).",
           "default": 0,
-          "minimum": 0
+          "minimum": 0,
+          "markdownDeprecationMessage": "Configure this option via the Bazel Test Settings view."
         },
         "bazelTestExplorer.runsPerTestDetectsFlakes": {
           "type": "boolean",
           "description": "Enable Bazel's --runs_per_test_detects_flakes flag to treat reruns as flake detection.",
-          "default": false
+          "default": false,
+          "markdownDeprecationMessage": "Configure this option via the Bazel Test Settings view."
         },
         "bazelTestExplorer.nocacheTestResults": {
           "type": "boolean",
           "description": "Apply --nocache_test_results so Bazel always re-runs tests instead of using cached results.",
-          "default": false
+          "default": false,
+          "markdownDeprecationMessage": "Configure this option via the Bazel Test Settings view."
         },
         "bazelTestExplorer.testStrategyExclusive": {
           "type": "boolean",
           "description": "Apply --test_strategy=exclusive so tests run serially.",
-          "default": false
+          "default": false,
+          "markdownDeprecationMessage": "Configure this option via the Bazel Test Settings view."
         },
         "bazelTestExplorer.failLinePatterns": {
           "type": "array",

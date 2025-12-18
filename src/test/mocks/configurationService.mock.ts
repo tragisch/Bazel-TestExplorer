@@ -18,6 +18,7 @@ export class MockConfigurationService implements Partial<ConfigurationService> {
   private _sequentialTestTypes: string[] = [];
   private _testArgs: string[] = [];
   private _buildTestsOnly = false;
+  private _enableTestCaseDiscovery = false;
   private _runsPerTest = 0;
   private _runsPerTestDetectsFlakes = false;
   private _nocacheTestResults = false;
@@ -66,6 +67,12 @@ export class MockConfigurationService implements Partial<ConfigurationService> {
   }
   get buildTestsOnly(): boolean {
     return this._buildTestsOnly;
+  }
+  set enableTestCaseDiscovery(value: boolean) {
+    this._enableTestCaseDiscovery = value;
+  }
+  get enableTestCaseDiscovery(): boolean {
+    return this._enableTestCaseDiscovery;
   }
 
   set runsPerTest(value: number) {
@@ -120,6 +127,7 @@ export class MockConfigurationService implements Partial<ConfigurationService> {
     this._sequentialTestTypes = [];
     this._testArgs = [];
     this._buildTestsOnly = false;
+    this._enableTestCaseDiscovery = false;
     this._runsPerTest = 0;
     this._runsPerTestDetectsFlakes = false;
     this._nocacheTestResults = false;

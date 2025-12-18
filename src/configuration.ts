@@ -14,7 +14,8 @@ import * as vscode from 'vscode';
 
 /**
  * Centralizes Bazel test settings with type-safe getters and sensible defaults.
- * Avoids scattered workspace.getConfiguration calls.
+ * Restores the `ConfigurationService` API expected across the codebase while
+ * providing runtime fallbacks if settings were removed from package.json.
  */
 export class ConfigurationService {
   private readonly section = 'bazelTestExplorer';
@@ -43,33 +44,31 @@ export class ConfigurationService {
     return this.normalizeStringArray(this.config.get<string[]>('testArgs', []));
   }
 
-
   get buildTestsOnly(): boolean {
     return this.config.get<boolean>('buildTestsOnly', false);
   }
 
-  /**
-   * Runs-per-test: number of times to run each test (0 = disabled)
-   */
+  get enableTestCaseDiscovery(): boolean {
+    return this.config.get<boolean>('enableTestCaseDiscovery', false) ?? false;
+  }
+
+  // Fallback defaults for settings that may be removed from package.json
   get runsPerTest(): number {
-    return this.config.get<number>('runsPerTest', 0);
+    return this.config.get<number>('runsPerTest', 0) ?? 0;
   }
 
   get runsPerTestDetectsFlakes(): boolean {
-    return this.config.get<boolean>('runsPerTestDetectsFlakes', false);
+    return this.config.get<boolean>('runsPerTestDetectsFlakes', false) ?? false;
   }
 
   get nocacheTestResults(): boolean {
-    return this.config.get<boolean>('nocacheTestResults', false);
+    return this.config.get<boolean>('nocacheTestResults', false) ?? false;
   }
 
   get testStrategyExclusive(): boolean {
-    return this.config.get<boolean>('testStrategyExclusive', false);
+    return this.config.get<boolean>('testStrategyExclusive', false) ?? false;
   }
 
-  /**
-   * Listen to configuration changes
-   */
   onDidChangeConfiguration(listener: () => void): vscode.Disposable {
     return vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration(this.section)) {

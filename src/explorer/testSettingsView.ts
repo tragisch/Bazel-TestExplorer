@@ -22,10 +22,12 @@ export class TestSettingsView implements vscode.WebviewViewProvider {
           webviewView.webview.postMessage({
             command: 'settings',
             payload: {
+                  enableTestCaseDiscovery: this.config.enableTestCaseDiscovery,
                   runsPerTest: this.config.runsPerTest,
                   runsPerTestDetectsFlakes: this.config.runsPerTestDetectsFlakes,
                   nocacheTestResults: this.config.nocacheTestResults,
-                  buildTestsOnly: this.config.buildTestsOnly
+                  buildTestsOnly: this.config.buildTestsOnly,
+                  testStrategyExclusive: this.config.testStrategyExclusive
             }
           });
           break;
@@ -51,10 +53,12 @@ export class TestSettingsView implements vscode.WebviewViewProvider {
         webviewView.webview.postMessage({
           command: 'settings',
           payload: {
+            enableTestCaseDiscovery: this.config.enableTestCaseDiscovery,
             runsPerTest: this.config.runsPerTest,
             runsPerTestDetectsFlakes: this.config.runsPerTestDetectsFlakes,
             nocacheTestResults: this.config.nocacheTestResults,
-            buildTestsOnly: this.config.buildTestsOnly
+            buildTestsOnly: this.config.buildTestsOnly,
+            testStrategyExclusive: this.config.testStrategyExclusive
           }
         });
       } catch (e) {
@@ -87,6 +91,11 @@ export class TestSettingsView implements vscode.WebviewViewProvider {
   </head>
   <body>
     <fieldset>
+      <legend>Test Cases</legend>
+      <label><input id="enableTestCaseDiscovery" type="checkbox"/> Enable test-cases in target</label>
+    </fieldset>
+
+    <fieldset>
       <legend>Execution</legend>
       <label><input id="nocacheTestResults" type="checkbox"/> Run tests without cache (<code>--nocache_test_results</code>)</label>
       <label><input id="buildTestsOnly" type="checkbox"/> Only build test targets (<code>--build_tests_only</code>)</label>
@@ -109,6 +118,7 @@ export class TestSettingsView implements vscode.WebviewViewProvider {
 
       const wireControls = () => {
         const checkboxFields = [
+          { id: 'enableTestCaseDiscovery', key: 'enableTestCaseDiscovery' },
           { id: 'nocacheTestResults', key: 'nocacheTestResults' },
           { id: 'buildTestsOnly', key: 'buildTestsOnly' },
           { id: 'runsPerTestDetectsFlakes', key: 'runsPerTestDetectsFlakes' },
@@ -138,6 +148,7 @@ export class TestSettingsView implements vscode.WebviewViewProvider {
         const msg = event.data;
         if (msg.command === 'settings') {
           const s = msg.payload;
+          document.getElementById('enableTestCaseDiscovery').checked = !!s.enableTestCaseDiscovery;
           document.getElementById('runsPerTest').value = s.runsPerTest ?? 0;
           document.getElementById('runsPerTestDetectsFlakes').checked = !!s.runsPerTestDetectsFlakes;
           document.getElementById('nocacheTestResults').checked = !!s.nocacheTestResults;
