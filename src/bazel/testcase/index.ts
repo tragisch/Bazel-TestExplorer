@@ -6,3 +6,4 @@
  */
 
 export * from './parseXml';
+export * from './parseOutput';

@@ -77,9 +77,15 @@ suite('Discovery', () => {
       // simple pytest-style output for parsing
       const pytestOutput = `tests/test_example.py::test_one PASSED\ntests/test_example.py::test_two FAILED\n2 Tests 1 Failures 0 Ignored`;
       const gtestOutput = `[  PASSED  ] MatrixTest.test_create (5 ms)\n[  FAILED  ] MatrixTest.test_fail (3 ms)`;
+      const unityOutput = `apps/tests/test_main.c:10:test_one:PASS
+apps/tests/test_main.c:12:test_two:FAIL`;
 
       if (testId.includes('invalid/target') || testId.includes('definitely/invalid')) {
         throw new Error(`Simulated Bazel failure for ${testId}`);
+      }
+
+      if (testId.includes('no_xml')) {
+        return { stdout: '', stderr: '' };
       }
 
       if (testId.includes('cached_target')) {
@@ -88,6 +94,10 @@ suite('Discovery', () => {
 
       if (testId.includes('gtest_target')) {
         return { stdout: gtestOutput, stderr: '' };
+      }
+
+      if (testId.includes('augment')) {
+        return { stdout: unityOutput, stderr: '' };
       }
 
       return { stdout: pytestOutput, stderr: '' };
@@ -99,7 +109,7 @@ suite('Discovery', () => {
 
     xmlResults = new Map();
     originalXmlLoader = getTestXmlLoader();
-    setTestXmlLoader(async (target: string) => {
+    setTestXmlLoader(async (target: string, _workspace?: string, _bazel?: string, _allowed?: string[]) => {
       if (xmlResults.has(target)) {
         return xmlResults.get(target) ?? null;
       }
@@ -207,6 +217,37 @@ suite('Discovery', () => {
     } catch (error) {
       assert.fail('Should handle both cases');
     }
+  });
+
+  test('should fall back to output parser when XML missing', async () => {
+    const target = '//test:needs_fallback';
+    xmlResults.set(target, null);
+
+    const result = await discoverIndividualTestCases(target, mockWorkspacePath, 'py_test');
+
+    assert.ok(result.testCases.length >= 2);
+    const testOne = result.testCases.find(tc => tc.name === 'test_one');
+    assert.strictEqual(testOne?.file, 'tests/test_example.py');
+  });
+
+  test('should augment structured XML data when file information missing', async () => {
+    const target = '//test:augment';
+    xmlResults.set(target, {
+      testCases: [
+        {
+          name: 'test_one',
+          file: '',
+          line: 0,
+          parentTarget: target,
+          status: 'PASS'
+        }
+      ],
+      summary: { total: 1, passed: 1, failed: 0, ignored: 0 }
+    });
+
+    const result = await discoverIndividualTestCases(target, mockWorkspacePath, 'cc_test');
+    assert.strictEqual(result.testCases[0].file, 'apps/tests/test_main.c');
+    assert.ok(result.testCases[0].line > 0);
   });
 
   test('should implement caching mechanism', async () => {

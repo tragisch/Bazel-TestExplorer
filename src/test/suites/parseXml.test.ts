@@ -78,4 +78,25 @@ Expected equality of these values:
     assert.strictEqual(timeout?.status, 'TIMEOUT');
     assert.ok(timeout?.errorMessage?.includes('Operation timed out'));
   });
+
+  test('parses system-out fallback for unity style output', () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="apps/tests:unity">
+    <testcase name="apps/tests:unity" status="run"><error message="exited"/></testcase>
+    <system-out><![CDATA[app/tests/test_one.c:10:test_add:FAIL: expected 5 was 4
+app/tests/test_one.c:20:test_sub:PASS
+]]></system-out>
+  </testsuite>
+</testsuites>`;
+
+    const result = parseStructuredTestXml(xml, '//apps:unity', { allowedPatternIds: ['unity_c_standard'] });
+    assert.strictEqual(result.testCases.length, 2);
+    const add = result.testCases.find(tc => tc.name === 'test_add');
+    assert.strictEqual(add?.file, 'app/tests/test_one.c');
+    assert.strictEqual(add?.line, 10);
+    assert.strictEqual(add?.status, 'FAIL');
+    const sub = result.testCases.find(tc => tc.name === 'test_sub');
+    assert.strictEqual(sub?.status, 'PASS');
+  });
 });

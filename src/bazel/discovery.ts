@@ -10,8 +10,11 @@
 import { createHash } from 'crypto';
 import { callRunBazelCommandForTest } from './runner';
 import { logWithTimestamp, formatError } from '../logging';
-import { TestCaseParseResult } from './types';
+import { IndividualTestCase, TestCaseParseResult, BazelTestTarget } from './types';
 import { readStructuredTestXmlResult } from './testcase/parseXml';
+import { extractTestCasesFromOutput } from './testcase/parseOutput';
+import { PATTERN_IDS_BY_TEST_TYPE } from './testPatterns';
+import { getTestTargetById } from './queries';
 
 interface CacheEntry { result: TestCaseParseResult; stdoutHash: string; timestamp: number; }
 
@@ -74,7 +77,12 @@ class CryptoHashService implements IHashService {
 const discoveryCache = new Map<string, CacheEntry>();
 let configService: IConfigService = new VSCodeConfigService();
 let hashService: IHashService = new CryptoHashService();
-type TestXmlLoader = (targetLabel: string, workspacePath: string, bazelPath: string) => Promise<TestCaseParseResult | null>;
+type TestXmlLoader = (
+  targetLabel: string,
+  workspacePath: string,
+  bazelPath: string,
+  allowedPatternIds?: string[]
+) => Promise<TestCaseParseResult | null>;
 let xmlLoader: TestXmlLoader = readStructuredTestXmlResult;
 
 // Export for testing: allow dependency injection
@@ -106,7 +114,7 @@ export function getTestXmlLoader(): TestXmlLoader {
 export const discoverIndividualTestCases = async (
   testTarget: string,
   workspacePath: string,
-  _testType?: string
+  testType?: string
 ): Promise<TestCaseParseResult> => {
   try {
     if (!configService.isDiscoveryEnabled()) {
@@ -127,25 +135,30 @@ export const discoverIndividualTestCases = async (
     logWithTimestamp(`Discovering individual test cases for ${testTarget}`);
 
     // Run the test to get output with individual test case results
-    const { stdout } = await callRunBazelCommandForTest({
+    const { stdout, stderr } = await callRunBazelCommandForTest({
       testId: testTarget,
       cwd: workspacePath,
     });
+    const combinedOutput = [stdout, stderr].filter(Boolean).join('\n');
 
     const bazelPath = configService.getBazelPath();
-    const xmlResult = await xmlLoader(testTarget, workspacePath, bazelPath);
-    if (xmlResult && xmlResult.testCases.length > 0) {
+    const allowedPatterns = resolveAllowedPatterns(testTarget, testType);
+    const xmlResult = await xmlLoader(testTarget, workspacePath, bazelPath, allowedPatterns);
+    const fallbackResult = extractTestCasesFromOutput(combinedOutput, testTarget, allowedPatterns);
+    const finalResult = selectFinalResult(xmlResult, fallbackResult);
+
+    if (finalResult && finalResult.testCases.length > 0) {
       const entry: CacheEntry = {
-        result: xmlResult,
-        stdoutHash: hashService.sha1(stdout),
+        result: finalResult,
+        stdoutHash: hashService.sha1(combinedOutput),
         timestamp: Date.now()
       };
       discoveryCache.set(testTarget, entry);
-      logWithTimestamp(`Found ${xmlResult.testCases.length} test cases via structured XML for ${testTarget}`);
-      return xmlResult;
+      logWithTimestamp(`Found ${finalResult.testCases.length} test cases for ${testTarget}`);
+      return finalResult;
     }
 
-    logWithTimestamp(`No structured test.xml available for ${testTarget}; returning empty result.`, 'warn');
+    logWithTimestamp(`No test cases discovered for ${testTarget}; returning empty result.`, 'warn');
 
     const emptyResult: TestCaseParseResult = {
       testCases: [],
@@ -154,7 +167,7 @@ export const discoverIndividualTestCases = async (
 
     const entry: CacheEntry = {
       result: emptyResult,
-      stdoutHash: hashService.sha1(stdout),
+      stdoutHash: hashService.sha1(combinedOutput),
       timestamp: Date.now()
     };
     discoveryCache.set(testTarget, entry);
@@ -179,4 +192,165 @@ export function getDiscoveryCacheStats(): { size: number; entries: string[] } {
     size: discoveryCache.size,
     entries: Array.from(discoveryCache.keys())
   };
+}
+
+function selectFinalResult(
+  xmlResult: TestCaseParseResult | null,
+  fallbackResult: TestCaseParseResult
+): TestCaseParseResult | null {
+  if (xmlResult && xmlResult.testCases.length > 0) {
+    if (needsAugmentation(xmlResult.testCases) && fallbackResult.testCases.length > 0) {
+      logWithTimestamp('Structured XML missing source info; augmenting with fallback output parser.');
+      return augmentStructuredResult(xmlResult, fallbackResult.testCases);
+    }
+    return xmlResult;
+  }
+
+  if (fallbackResult.testCases.length > 0) {
+    logWithTimestamp('Structured XML not available; using fallback output parser.');
+    return fallbackResult;
+  }
+
+  return null;
+}
+
+function needsAugmentation(testCases: IndividualTestCase[]): boolean {
+  return testCases.some(tc => !tc.file || tc.file.trim().length === 0 || !tc.line || tc.line <= 0);
+}
+
+function augmentStructuredResult(
+  structured: TestCaseParseResult,
+  fallbackCases: IndividualTestCase[]
+): TestCaseParseResult {
+  if (fallbackCases.length === 0) {
+    return structured;
+  }
+
+  const fallbackMap = new Map<string, IndividualTestCase>();
+  for (const fallback of fallbackCases) {
+    fallbackMap.set(buildCaseKey(fallback), fallback);
+  }
+
+  const enriched = structured.testCases.map(caseItem => {
+    const key = buildCaseKey(caseItem);
+    const fallback = fallbackMap.get(key);
+    if (!fallback) {
+      return caseItem;
+    }
+
+    const updated: IndividualTestCase = { ...caseItem };
+    if ((!updated.file || updated.file.trim().length === 0) && fallback.file) {
+      updated.file = fallback.file;
+    }
+    if ((!updated.line || updated.line <= 0) && fallback.line) {
+      updated.line = fallback.line;
+    }
+    if (!updated.frameworkId && fallback.frameworkId) {
+      updated.frameworkId = fallback.frameworkId;
+    }
+    if (!updated.errorMessage && fallback.errorMessage) {
+      updated.errorMessage = fallback.errorMessage;
+    }
+    if (!updated.suite && fallback.suite) {
+      updated.suite = fallback.suite;
+    }
+    if (!updated.className && fallback.className) {
+      updated.className = fallback.className;
+    }
+    return updated;
+  });
+
+  return {
+    testCases: enriched,
+    summary: structured.summary
+  };
+}
+
+function buildCaseKey(testCase: IndividualTestCase): string {
+  const scope = (testCase.suite || testCase.className || '').toLowerCase();
+  return `${scope}::${testCase.name.toLowerCase()}`;
+}
+
+function resolveAllowedPatterns(testTarget: string, testType?: string): string[] | undefined {
+  const metadata = getTestTargetById(testTarget);
+  const detectedFrameworks = detectFrameworks(metadata);
+  if (detectedFrameworks.length > 0) {
+    const patterns = Array.from(new Set(detectedFrameworks.flatMap(framework => FRAMEWORK_PATTERNS[framework] ?? [])));
+    if (patterns.length > 0) {
+      return patterns;
+    }
+  }
+
+  if (testType && PATTERN_IDS_BY_TEST_TYPE[testType]) {
+    return PATTERN_IDS_BY_TEST_TYPE[testType];
+  }
+
+  if (metadata?.type && PATTERN_IDS_BY_TEST_TYPE[metadata.type]) {
+    return PATTERN_IDS_BY_TEST_TYPE[metadata.type];
+  }
+
+  return undefined;
+}
+
+const FRAMEWORK_PATTERNS: Record<string, string[]> = {
+  rust: ['rust_test'],
+  pytest: ['pytest_python'],
+  unity: ['unity_c_standard', 'unity_c_with_message'],
+  doctest: ['doctest_cpp', 'doctest_subcase'],
+  catch2: ['catch2_cpp', 'catch2_passed', 'catch2_summary'],
+  gtest: ['gtest_cpp'],
+  check: ['parentheses_format'],
+  ctest: ['ctest_output', 'ctest_verbose'],
+  go: ['go_test'],
+  junit: ['junit_java']
+};
+
+function detectFrameworks(metadata?: BazelTestTarget): string[] {
+  if (!metadata) {
+    return [];
+  }
+  const frameworks = new Set<string>();
+  const type = metadata.type?.toLowerCase() ?? '';
+  const deps = (metadata.deps ?? []).map(dep => dep.toLowerCase());
+
+  const hasDep = (...keywords: string[]) => deps.some(dep => keywords.some(keyword => dep.includes(keyword)));
+
+  if (type.includes('rust')) {
+    frameworks.add('rust');
+  }
+
+  if (type.includes('py_test') || hasDep('pytest')) {
+    frameworks.add('pytest');
+  }
+
+  if (type.includes('go_test')) {
+    frameworks.add('go');
+  }
+
+  if (type.includes('java_test') || type.includes('junit')) {
+    frameworks.add('junit');
+  }
+
+  if (type.includes('cc_test')) {
+    if (hasDep('gtest', 'googletest')) {
+      frameworks.add('gtest');
+    }
+    if (hasDep('catch2')) {
+      frameworks.add('catch2');
+    }
+    if (hasDep('doctest')) {
+      frameworks.add('doctest');
+    }
+    if (hasDep('throw_the_switch', 'unity')) {
+      frameworks.add('unity');
+    }
+    if (hasDep('check')) {
+      frameworks.add('check');
+    }
+    if (hasDep('ctest')) {
+      frameworks.add('ctest');
+    }
+  }
+
+  return Array.from(frameworks);
 }

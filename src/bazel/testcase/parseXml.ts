@@ -11,17 +11,24 @@ import * as fs from 'fs/promises';
 import { logWithTimestamp, formatError } from '../../logging';
 import { IndividualTestCase, TestCaseParseResult } from '../types';
 import { buildTestXmlPath, getBazelTestLogsDirectory, hasTestXmlFile } from '../testlogs';
+import { extractTestCasesFromOutput } from './parseOutput';
 
 const FRAMEWORK_ID = 'bazel_test_xml';
 
-type TestXmlReader = (targetLabel: string, workspacePath: string, bazelPath: string) => Promise<TestCaseParseResult | null>;
+type TestXmlReader = (
+  targetLabel: string,
+  workspacePath: string,
+  bazelPath: string,
+  allowedPatternIds?: string[]
+) => Promise<TestCaseParseResult | null>;
 
 const attrPattern = /([A-Za-z_][\w:\-\.]*)\s*=\s*("([^"]*)"|'([^']*)')/g;
 
 export const readStructuredTestXmlResult: TestXmlReader = async (
   targetLabel: string,
   workspacePath: string,
-  bazelPath: string
+  bazelPath: string,
+  allowedPatternIds?: string[]
 ): Promise<TestCaseParseResult | null> => {
   try {
     const logsDir = await getBazelTestLogsDirectory(workspacePath, bazelPath);
@@ -39,7 +46,7 @@ export const readStructuredTestXmlResult: TestXmlReader = async (
       return null;
     }
 
-    const parsed = parseStructuredTestXml(xmlContent, targetLabel);
+    const parsed = parseStructuredTestXml(xmlContent, targetLabel, { allowedPatternIds });
     if (parsed.testCases.length > 0) {
       logWithTimestamp(`Parsed ${parsed.testCases.length} test cases from structured XML for ${targetLabel}`);
     }
@@ -50,9 +57,18 @@ export const readStructuredTestXmlResult: TestXmlReader = async (
   }
 };
 
-export function parseStructuredTestXml(xmlContent: string, parentTarget: string): TestCaseParseResult {
+interface ParseXmlOptions {
+  allowedPatternIds?: string[];
+}
+
+export function parseStructuredTestXml(
+  xmlContent: string,
+  parentTarget: string,
+  options?: ParseXmlOptions
+): TestCaseParseResult {
   const normalizedXml = xmlContent.replace(/\r\n/g, '\n');
   const testCases: IndividualTestCase[] = [];
+  const systemOutSections = collectSystemOutSections(normalizedXml);
 
   const suiteRegex = /<testsuite\b([^>]*)>([\s\S]*?)<\/testsuite>/gi;
   let suiteMatch: RegExpExecArray | null;
@@ -70,9 +86,23 @@ export function parseStructuredTestXml(xmlContent: string, parentTarget: string)
     extractTestCasesFromSuiteBody(normalizedXml, undefined, parentTarget, testCases);
   }
 
-  const summary = summarizeTestCases(testCases);
+  let finalTestCases = testCases;
+
+  if (systemOutSections.length > 0) {
+    const combinedOut = systemOutSections.join('\n').trim();
+    if (combinedOut.length > 0) {
+      const fallback = extractTestCasesFromOutput(
+        combinedOut,
+        parentTarget,
+        options?.allowedPatternIds
+      );
+      finalTestCases = mergeStructuredWithSystemOut(testCases, fallback.testCases);
+    }
+  }
+
+  const summary = summarizeTestCases(finalTestCases);
   return {
-    testCases,
+    testCases: finalTestCases,
     summary
   };
 }
@@ -240,4 +270,73 @@ function summarizeTestCases(testCases: IndividualTestCase[]): TestCaseParseResul
     failed,
     ignored
   };
+}
+
+function collectSystemOutSections(xml: string): string[] {
+  const sections: string[] = [];
+  const regex = /<system-out>([\s\S]*?)<\/system-out>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(xml)) !== null) {
+    const raw = match[1] ?? '';
+    sections.push(decodeCData(raw));
+  }
+  return sections;
+}
+
+function mergeStructuredWithSystemOut(
+  structured: IndividualTestCase[],
+  fallbackCases: IndividualTestCase[]
+): IndividualTestCase[] {
+  if (fallbackCases.length === 0) {
+    return structured;
+  }
+
+  if (structured.length === 0 || structured.every(caseItem => !hasLocation(caseItem))) {
+    return fallbackCases.map(caseItem => ({ ...caseItem, frameworkId: caseItem.frameworkId || FRAMEWORK_ID }));
+  }
+
+  const fallbackMap = new Map<string, IndividualTestCase>();
+  for (const fallback of fallbackCases) {
+    fallbackMap.set(buildCaseKey(fallback), fallback);
+  }
+
+  const merged = structured.map(item => {
+    if (hasLocation(item)) {
+      return item;
+    }
+    const fallback = fallbackMap.get(buildCaseKey(item));
+    if (!fallback) {
+      return item;
+    }
+    return {
+      ...item,
+      file: item.file || fallback.file,
+      line: item.line && item.line > 0 ? item.line : fallback.line,
+      status: item.status || fallback.status,
+      errorMessage: item.errorMessage || fallback.errorMessage,
+      suite: item.suite || fallback.suite,
+      className: item.className || fallback.className,
+      frameworkId: item.frameworkId || fallback.frameworkId
+    };
+  });
+
+  // Append any fallback cases not present in structured set
+  for (const fallback of fallbackCases) {
+    const key = buildCaseKey(fallback);
+    const alreadyPresent = merged.some(existing => buildCaseKey(existing) === key);
+    if (!alreadyPresent) {
+      merged.push(fallback);
+    }
+  }
+
+  return merged;
+}
+
+function hasLocation(testCase: IndividualTestCase): boolean {
+  return !!(testCase.file && testCase.file.trim().length > 0 && testCase.line && testCase.line > 0);
+}
+
+function buildCaseKey(testCase: IndividualTestCase): string {
+  const scope = (testCase.suite || testCase.className || '').toLowerCase();
+  return `${scope}::${testCase.name.toLowerCase()}`;
 }
