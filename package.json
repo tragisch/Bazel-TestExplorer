@@ -45,6 +45,10 @@
       {
         "command": "bazelTestExplorer.rerunTestFromHistory",
         "title": "Bazel-TestExplorer: Rerun Test From History"
+      },
+      {
+        "command": "bazelTestExplorer.showTestDetails",
+        "title": "Bazel-TestExplorer: Show Test Details"
       }
     ],
     "menus": {
@@ -53,6 +57,11 @@
           "command": "bazelTestExplorer.showTestMetadata",
           "when": "view == workbench.view.testing",
           "group": "navigation@2"
+        },
+        {
+          "command": "bazelTestExplorer.showTestDetails",
+          "when": "view == workbench.view.testing",
+          "group": "navigation@3"
         }
       ]
     },

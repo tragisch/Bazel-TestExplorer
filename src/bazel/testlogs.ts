@@ -36,6 +36,9 @@ export async function getBazelTestLogsDirectory(
       bazelPath
     );
 
+    // Neue Abschluss-Logzeile
+    logWithTimestamp(`Finished running Bazel: bazel info bazel-testlogs (code ${code})`, 'info');
+
     if (code !== 0) {
       logWithTimestamp(`Failed to locate bazel-testlogs (${code}): ${stderr.trim()}`, 'warn');
       return undefined;

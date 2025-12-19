@@ -22,6 +22,8 @@ import { TestObserver } from './explorer/testObserver';
 import TestHistoryProvider from './explorer/testHistoryProvider';
 import { onDidTestEvent } from './explorer/testEventBus';
 import { TestCaseAnnotations, TestCaseCodeLensProvider, TestCaseHoverProvider } from './explorer/testCaseAnnotations';
+import { TestCaseInsights } from './explorer/testCaseInsights';
+import { showTestDetailsById } from './explorer/testDetailsPanel';
 
 export async function activate(context: vscode.ExtensionContext) {
 	initializeLogger();
@@ -105,9 +107,10 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	// TestControllerManager orchestrates all test-related operations
 	const testCaseAnnotations = new TestCaseAnnotations();
+	const testCaseInsights = new TestCaseInsights();
 	context.subscriptions.push(testCaseAnnotations);
 
-	const testManager = new TestControllerManager(bazelClient, configurationService, context, testCaseAnnotations);
+	const testManager = new TestControllerManager(bazelClient, configurationService, context, testCaseAnnotations, testCaseInsights);
 	testManager.initialize();
 
 	// Observer for collecting runtimes and small in-memory history
@@ -204,6 +207,14 @@ export async function activate(context: vscode.ExtensionContext) {
 				return;
 			}
 			await testManager.runTestsByIds([testId]);
+		}),
+
+		vscode.commands.registerCommand('bazelTestExplorer.showTestDetails', async (testItem: vscode.TestItem) => {
+			if (!testItem) {
+				void vscode.window.showInformationMessage('Please select a test item in the Testing view.');
+				return;
+			}
+			showTestDetailsById(testItem.id, bazelClient, testCaseInsights);
 		})
 	);
 

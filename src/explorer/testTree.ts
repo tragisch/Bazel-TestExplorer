@@ -19,6 +19,7 @@ import { logWithTimestamp, measure, formatError } from '../logging';
 import { discoverIndividualTestCases } from '../bazel/discovery';
 import { findBazelWorkspace } from '../bazel/workspace';
 import { TestCaseAnnotations, AnnotationUpdate } from './testCaseAnnotations';
+import { TestCaseInsights } from './testCaseInsights';
 
 function getDiscoveryEnabled(): boolean {
   try {
@@ -400,7 +401,8 @@ export const resolveTestCaseChildren = async (
   testItem: vscode.TestItem,
   controller: vscode.TestController,
   bazelClient: BazelClient,
-  annotations?: TestCaseAnnotations
+  annotations?: TestCaseAnnotations,
+  insights?: TestCaseInsights
 ): Promise<void> => {
   try {
     // Respect user setting: if discovery is disabled, do not attempt to resolve children
@@ -491,6 +493,7 @@ export const resolveTestCaseChildren = async (
 
       logWithTimestamp(`Resolved ${result.testCases.length} test cases for ${testItem.id}`);
       annotations?.setTestCasesForTarget(testItem.id, annotationEntries);
+      insights?.setResult(testItem.id, result);
     } finally {
       testItem.busy = false;
     }

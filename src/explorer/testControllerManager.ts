@@ -18,6 +18,7 @@ import { showTestMetadataById } from './testInfoPanel';
 import { logWithTimestamp, formatError } from '../logging';
 import { startTest, finishTest } from './testEventBus';
 import { TestCaseAnnotations } from './testCaseAnnotations';
+import { TestCaseInsights } from './testCaseInsights';
 
 /**
  * Manages VS Code TestController and orchestrates test discovery,
@@ -31,7 +32,8 @@ export class TestControllerManager {
     private readonly bazelClient: BazelClient,
     private readonly config: ConfigurationService,
     private readonly context: vscode.ExtensionContext,
-    private readonly annotations: TestCaseAnnotations
+    private readonly annotations: TestCaseAnnotations,
+    private readonly insights: TestCaseInsights
   ) {
     this.controller = vscode.tests.createTestController(
       'bazelUnityTestController',
@@ -63,7 +65,7 @@ export class TestControllerManager {
       }
 
       // Individual test case discovery for a specific test item
-      await resolveTestCaseChildren(item, this.controller, this.bazelClient, this.annotations);
+      await resolveTestCaseChildren(item, this.controller, this.bazelClient, this.annotations, this.insights);
     };
   }
 
@@ -72,6 +74,8 @@ export class TestControllerManager {
    */
   async discover(progress?: vscode.Progress<{ message?: string; increment?: number }>): Promise<void> {
     try {
+      this.annotations.clear();
+      this.insights.clear();
       progress?.report({ message: 'Querying Bazel tests...' });
       await discoverAndDisplayTests(this.controller, this.bazelClient);
     } catch (error) {
