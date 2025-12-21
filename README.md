@@ -40,16 +40,15 @@ It uses 'bazel query' to identify test-cases and 'bazel test' to perform them.
 
 ### Performance Features
 
-#### Two-Phase Discovery (Experimental)
-Enable faster test discovery in large monorepos:
-- `bazelTestExplorer.discovery.twoPhase`: Enable two-phase discovery (default: `false`)
+#### Two-Phase Discovery
+Discovery uses a two-phase flow to improve performance in medium/large workspaces:
 - `bazelTestExplorer.discovery.metadataChunkSize`: Chunk size for metadata queries (default: `500`, min: `50`, max: `2000`)
 
-When enabled, discovery runs in two phases:
+Discovery runs in two phases:
 1. **Phase 1**: Fast label-only query (`--output=label`)
 2. **Phase 2**: Chunked metadata query for specific labels (parallel, configurable chunk size)
 
-This can significantly improve performance in large workspaces (10,000+ tests) by reducing the amount of data transferred in the initial query.
+This improves discovery speed in large workspaces by reducing the amount of data transferred in the initial query.
 
 #### Metadata Display
 - `bazelTestExplorer.showMetadataInLabel`: Display test metadata in labels/tooltips (default: `false`)

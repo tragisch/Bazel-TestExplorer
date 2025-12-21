@@ -23,16 +23,8 @@ import { TestCaseInsights } from './testCaseInsights';
 import { ConfigurationService } from '../configuration';
 import { expandTestSuite } from '../bazel/queries';
 
-function getDiscoveryEnabled(): boolean {
-  try {
-    const vscode = require('vscode');
-    const cfg = vscode.workspace.getConfiguration('bazelTestExplorer');
-    return (cfg.get('enableTestCaseDiscovery', false) as boolean);
-  } catch {
-    // When running outside of VS Code (unit tests), default to true
-    return true;
-  }
-}
+type PackageCacheEntry = { dirExists: boolean; files?: Set<string> };
+const packageFileCache: Map<string, PackageCacheEntry> = new Map();
 
 let isDiscoveringTests = false;
 
@@ -209,7 +201,7 @@ function createTestItem(
   const uri = resolveSourceUri(testTarget, packageName, testName);
   
   const icon = testType === "test_suite" ? "🧰 " : "";
-  const discoveryEnabled = getDiscoveryEnabled();
+  const discoveryEnabled = config.enableTestCaseDiscovery;
   let label = `${icon}[${testType}] ${testName}`;
   
   // Add flaky indicator in label
@@ -396,14 +388,7 @@ export function guessSourceUri(
 
   // Package-level cache to avoid repeated fs.existsSync calls for the same package.
   // Cache entry contains whether the directory exists and the set of file names.
-  type PackageCacheEntry = { dirExists: boolean; files?: Set<string> };
   const packageCacheKey = packagePath;
-
-  // Initialize module-scoped cache map lazily
-  if (!(global as any).__bazel_testexplorer_packageFileCache) {
-    (global as any).__bazel_testexplorer_packageFileCache = new Map<string, PackageCacheEntry>();
-  }
-  const packageFileCache: Map<string, PackageCacheEntry> = (global as any).__bazel_testexplorer_packageFileCache;
 
   // Ensure cache populated for this package
   if (!packageFileCache.has(packageCacheKey)) {
@@ -465,17 +450,16 @@ export const resolveTestCaseChildren = async (
 ): Promise<void> => {
   try {
     // Respect user setting: if discovery is disabled, do not attempt to resolve children
+    let discoveryEnabled = true;
     try {
-      const vscode = require('vscode');
-      const cfg = vscode.workspace.getConfiguration('bazelTestExplorer');
-      const enabled = (cfg.get('enableTestCaseDiscovery', false) as boolean);
-      if (!enabled) {
-        logWithTimestamp(`Skipping resolution for ${testItem.id} because discovery is disabled by configuration.`);
-        return;
-      }
+      const cfg = new ConfigurationService();
+      discoveryEnabled = cfg.enableTestCaseDiscovery;
     } catch (error) {
-      // Proceed when vscode not available (e.g. tests)
       logWithTimestamp(`Could not read enableTestCaseDiscovery config: ${formatError(error)}`, 'info');
+    }
+    if (!discoveryEnabled) {
+      logWithTimestamp(`Skipping resolution for ${testItem.id} because discovery is disabled by configuration.`);
+      return;
     }
     // Skip if already resolved
     if (testItem.children.size > 0) {

@@ -176,11 +176,6 @@
           "description": "Display test metadata (size, timeout, tags, flaky) in test item labels/tooltips.",
           "default": false
         },
-        "bazelTestExplorer.discovery.twoPhase": {
-          "type": "boolean",
-          "description": "Experimental: Enable two-phase discovery (fast label query + chunked metadata query) for improved performance in large workspaces.",
-          "default": false
-        },
         "bazelTestExplorer.discovery.metadataChunkSize": {
           "type": "number",
           "description": "Chunk size for two-phase metadata queries. Higher values may be faster but use more memory.",

@@ -80,11 +80,6 @@ export class ConfigurationService {
   get showMetadataInLabel(): boolean {
     return this.config.get<boolean>('showMetadataInLabel', false);
   }
-
-  get twoPhaseDiscovery(): boolean {
-    return this.config.get<boolean>('discovery.twoPhase', false);
-  }
-
   get metadataChunkSize(): number {
     const value = this.config.get<number>('discovery.metadataChunkSize', 500);
     const n = typeof value === 'number' ? Math.floor(value) : 500;

@@ -194,39 +194,6 @@ suite('Runner - Flag Merging', () => {
 });
 
 suite('Configuration - Two-Phase Discovery Settings', () => {
-  test('should document twoPhaseDiscovery setting', () => {
-    // When discovery.twoPhase is true:
-    // - Phase 1: Fast label query (--output=label)
-    // - Phase 2: Chunked metadata query (--output=streamed_jsonproto)
-    // When false: Original single-phase query (--output=streamed_jsonproto)
-    
-    const twoPhaseEnabled = true;
-    const twoPhasePhase1Query = '--output=label';
-    const twoPhasePhase2Query = '--output=streamed_jsonproto';
-    
-    assert.ok(
-      twoPhaseEnabled,
-      'twoPhaseDiscovery setting controls discovery mode'
-    );
-    assert.notStrictEqual(
-      twoPhasePhase1Query,
-      twoPhasePhase2Query,
-      'Two phases should use different output formats'
-    );
-  });
-
-  test('should document metadataChunkSize boundaries', () => {
-    const minChunkSize = 50;
-    const maxChunkSize = 2000;
-    const defaultChunkSize = 500;
-    
-    assert.ok(defaultChunkSize >= minChunkSize, 'default >= min');
-    assert.ok(defaultChunkSize <= maxChunkSize, 'default <= max');
-    assert.ok(
-      defaultChunkSize === 500,
-      'metadataChunkSize default should be 500'
-    );
-  });
 });
 
 suite('TestTree - Metadata Display', () => {
