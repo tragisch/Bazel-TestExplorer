@@ -13,7 +13,11 @@ import { BUILTIN_TEST_PATTERNS, PATTERN_IDS_BY_TEST_TYPE, normalizeStatus, getAl
 suite('Test Patterns', () => {
   test('should have builtin test patterns', () => {
     assert.ok(BUILTIN_TEST_PATTERNS.length > 0);
-    assert.strictEqual(BUILTIN_TEST_PATTERNS.length, 15, 'Expected 15 builtin patterns (8 original + 7 new framework patterns)');
+    assert.strictEqual(
+      BUILTIN_TEST_PATTERNS.length,
+      17,
+      'Expected 17 builtin patterns (8 original + 9 new framework patterns)'
+    );
   });
 
   test('unity_c_standard pattern should match valid output', () => {

@@ -18,7 +18,7 @@ export const extractTestCasesFromOutput = (
   parentTarget: string,
   allowedPatternIds?: string[]
 ): TestCaseParseResult => {
-  const lines = stdout.split(/\r?\n/).map(stripAnsi);
+  const lineReader = createAnsiStrippedLineReader(stdout);
   const testCases: IndividualTestCase[] = [];
   const rustPanicRegex = /^thread '([^']+)' panicked at (.+?):(\d+):(\d+)/;
   const rustMessageRegex = /^assertion `(.*)` failed$/;
@@ -46,6 +46,8 @@ export const extractTestCasesFromOutput = (
 
   let currentDoctestCase: string | undefined;
 
+  const activeRustWatchers = new Set<string>();
+
   const flushUnittestCase = () => {
     if (!pendingUnittest) return;
     const file = pendingUnittest.file || '';
@@ -66,8 +68,78 @@ export const extractTestCasesFromOutput = (
     pendingUnittest = null;
   };
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+  const summaryPattern = /(\d+)\s+Tests?\s+(\d+)\s+Failures?\s+(\d+)\s+Ignored/;
+  const doctestSummaryPattern = /\[doctest\]\s+test cases:\s+(\d+)\s+\|\s+(\d+)\s+passed\s+\|\s+(\d+)\s+failed\s+\|\s+(\d+)\s+skipped/i;
+  let unittestTotal: number | undefined;
+  let unittestFailures: number | undefined;
+  let summaryLocked = false;
+
+  const processRustWatchers = (line: string) => {
+    if (activeRustWatchers.size === 0) {
+      return;
+    }
+    const trimmed = line.trim();
+    if (!trimmed) {
+      return;
+    }
+    const messageMatch = trimmed.match(rustMessageRegex);
+    if (messageMatch) {
+      for (const testName of activeRustWatchers) {
+        const messageLines = collectingMessage.get(testName);
+        if (messageLines) {
+          messageLines.push(messageMatch[0]);
+        }
+      }
+      activeRustWatchers.clear();
+      return;
+    }
+    if (trimmed.startsWith('----') || trimmed.startsWith('failures:')) {
+      activeRustWatchers.clear();
+    }
+  };
+
+  let line: string | undefined;
+  while ((line = lineReader.next()) !== undefined) {
+    processRustWatchers(line);
+
+    if (!summaryLocked) {
+      const summaryMatch = line.match(summaryPattern);
+      if (summaryMatch) {
+        totalTests = parseInt(summaryMatch[1], 10);
+        failedTests = parseInt(summaryMatch[2], 10);
+        ignoredTests = parseInt(summaryMatch[3], 10);
+        passedTests = totalTests - failedTests - ignoredTests;
+        summaryLocked = true;
+      } else {
+        const doctestSummaryMatch = line.match(doctestSummaryPattern);
+        if (doctestSummaryMatch) {
+          totalTests = parseInt(doctestSummaryMatch[1], 10);
+          passedTests = parseInt(doctestSummaryMatch[2], 10);
+          failedTests = parseInt(doctestSummaryMatch[3], 10);
+          ignoredTests = parseInt(doctestSummaryMatch[4], 10);
+          summaryLocked = true;
+        }
+      }
+
+      if (!summaryLocked) {
+        const unittestRanMatch = line.match(/^Ran\s+(\d+)\s+tests?/i);
+        if (unittestRanMatch) {
+          unittestTotal = parseInt(unittestRanMatch[1], 10);
+        }
+        const unittestFailMatch = line.match(/^FAILED\s+\((?:failures=(\d+))(?:,\s*errors=(\d+))?.*\)/i);
+        if (unittestFailMatch) {
+          const failures = parseInt(unittestFailMatch[1] ?? '0', 10);
+          const errors = parseInt(unittestFailMatch[2] ?? '0', 10);
+          unittestFailures = failures + errors;
+        }
+        const unittestOkMatch = line.match(/^OK\b/i);
+        if (unittestOkMatch) {
+          unittestTotal = unittestTotal ?? testCases.length;
+          unittestFailures = 0;
+        }
+      }
+    }
+
     const unittestHeaderMatch = line.match(unittestHeaderRegex);
     if (unittestHeaderMatch) {
       flushUnittestCase();
@@ -109,6 +181,9 @@ export const extractTestCasesFromOutput = (
           targetCase.line = parsedLine;
         }
       }
+      if (collectingMessage.has(testName)) {
+        activeRustWatchers.add(testName);
+      }
       continue;
     }
 
@@ -122,7 +197,7 @@ export const extractTestCasesFromOutput = (
     if (doctestErrorMatch) {
       const [, filePath, lineNumber, messagePart] = doctestErrorMatch;
       const testName = currentDoctestCase || `line_${lineNumber}`;
-      const nextLine = lines[i + 1]?.trim();
+      const nextLine = lineReader.peek()?.trim();
       const extraMessage = nextLine && nextLine.toLowerCase().startsWith('values:')
         ? `\n${nextLine}`
         : '';
@@ -141,7 +216,7 @@ export const extractTestCasesFromOutput = (
       totalTests++;
       failedTests++;
       if (extraMessage) {
-        i++;
+        lineReader.next();
       }
       continue;
     }
@@ -213,82 +288,11 @@ export const extractTestCasesFromOutput = (
   }
   flushUnittestCase();
 
-  // second pass to capture rust assertion messages
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const panicMatch = line.match(rustPanicRegex);
-    if (panicMatch) {
-      const [, testName] = panicMatch;
-      const messageLines = collectingMessage.get(testName);
-      if (!messageLines) continue;
-      let j = i + 1;
-      while (j < lines.length) {
-        const candidate = lines[j].trim();
-        if (!candidate) {
-          j++;
-          continue;
-        }
-        const messageMatch = candidate.match(rustMessageRegex);
-        if (messageMatch) {
-          messageLines.push(messageMatch[0]);
-          break;
-        }
-        if (candidate.startsWith('----') || candidate.startsWith('failures:')) {
-          break;
-        }
-        j++;
-      }
-    }
-  }
-
   for (const [testName, messages] of collectingMessage.entries()) {
     if (messages.length === 0) continue;
     const targetCase = findLatestTestCase(testCases, testName);
     if (targetCase && !targetCase.errorMessage) {
       targetCase.errorMessage = messages.join('\n');
-    }
-  }
-
-  const summaryPattern = /(\d+)\s+Tests?\s+(\d+)\s+Failures?\s+(\d+)\s+Ignored/;
-  const doctestSummaryPattern = /\[doctest\]\s+test cases:\s+(\d+)\s+\|\s+(\d+)\s+passed\s+\|\s+(\d+)\s+failed\s+\|\s+(\d+)\s+skipped/i;
-  let unittestTotal: number | undefined;
-  let unittestFailures: number | undefined;
-  for (const line of lines) {
-    const summaryMatch = line.match(summaryPattern);
-    if (summaryMatch) {
-      totalTests = parseInt(summaryMatch[1], 10);
-      failedTests = parseInt(summaryMatch[2], 10);
-      ignoredTests = parseInt(summaryMatch[3], 10);
-      passedTests = totalTests - failedTests - ignoredTests;
-      break;
-    }
-
-    const doctestSummaryMatch = line.match(doctestSummaryPattern);
-    if (doctestSummaryMatch) {
-      totalTests = parseInt(doctestSummaryMatch[1], 10);
-      passedTests = parseInt(doctestSummaryMatch[2], 10);
-      failedTests = parseInt(doctestSummaryMatch[3], 10);
-      ignoredTests = parseInt(doctestSummaryMatch[4], 10);
-      break;
-    }
-
-    const unittestRanMatch = line.match(/^Ran\s+(\d+)\s+tests?/i);
-    if (unittestRanMatch) {
-      unittestTotal = parseInt(unittestRanMatch[1], 10);
-      continue;
-    }
-    const unittestFailMatch = line.match(/^FAILED\s+\((?:failures=(\d+))(?:,\s*errors=(\d+))?.*\)/i);
-    if (unittestFailMatch) {
-      const failures = parseInt(unittestFailMatch[1] ?? '0', 10);
-      const errors = parseInt(unittestFailMatch[2] ?? '0', 10);
-      unittestFailures = failures + errors;
-      continue;
-    }
-    const unittestOkMatch = line.match(/^OK\b/i);
-    if (unittestOkMatch) {
-      unittestTotal = unittestTotal ?? testCases.length;
-      unittestFailures = 0;
-      continue;
     }
   }
 
@@ -331,4 +335,56 @@ const ANSI_COLOR_PATTERN = /\x1B\[[0-9;]*m/g;
 
 function stripAnsi(input: string): string {
   return input.replace(ANSI_COLOR_PATTERN, '');
+}
+
+interface StrippedLineReader {
+  next(): string | undefined;
+  peek(): string | undefined;
+}
+
+function createAnsiStrippedLineReader(stdout: string): StrippedLineReader {
+  let offset = 0;
+  const length = stdout.length;
+  let peekedLine: string | undefined | null = null;
+
+  const readNext = (): string | undefined => {
+    if (offset > length) {
+      return undefined;
+    }
+
+    let end = offset;
+    while (end < length && stdout[end] !== '\n' && stdout[end] !== '\r') {
+      end++;
+    }
+
+    const rawLine = stdout.slice(offset, end);
+    if (end < length) {
+      if (stdout[end] === '\r' && end + 1 < length && stdout[end + 1] === '\n') {
+        offset = end + 2;
+      } else {
+        offset = end + 1;
+      }
+    } else {
+      offset = end + 1;
+    }
+
+    return stripAnsi(rawLine);
+  };
+
+  return {
+    next(): string | undefined {
+      if (peekedLine !== null) {
+        const nextLine = peekedLine;
+        peekedLine = null;
+        return nextLine;
+      }
+      return readNext();
+    },
+    peek(): string | undefined {
+      if (peekedLine === null) {
+        peekedLine = readNext();
+      }
+      return peekedLine === null ? undefined : peekedLine;
+    }
+  };
 }

@@ -8,6 +8,7 @@
  */
 
 import * as fs from 'fs/promises';
+import * as path from 'path';
 import { logWithTimestamp, formatError } from '../../logging';
 import { IndividualTestCase, TestCaseParseResult } from '../types';
 import { buildTestXmlPath, getBazelTestLogsDirectory, hasTestXmlFile } from '../testlogs';
@@ -378,13 +379,9 @@ function extractLocationFromMessage(message: string, packagePath?: string): { fi
   };
 }
 
-function getBasename(file: string): string {
-  return file.replace(/^.*[\\/]/, '');
-}
-
 function isLikelyUserCode(file: string): boolean {
   const lower = file.toLowerCase();
-  const base = getBasename(file).toLowerCase();
+  const base = path.basename(file).toLowerCase();
   if (lower.includes('/org/junit') || lower.includes('\\org\\junit')) {
     return false;
   }

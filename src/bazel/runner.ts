@@ -187,15 +187,14 @@ export const executeBazelTest = async (
 
     const { input: testLog } = parseBazelOutput(stdout);
     const { input: bazelLog } = parseBazelOutput(stderr);
-    const relevantCases = unifiedResult ? filterTestCasesForItem(testItem, unifiedResult.testCases) : [];
-    const displayTestLog = filterLogLinesForItem(testItem, relevantCases, testLog);
+    const baseDisplayLog = filterLogLinesForItem(testItem, undefined, testLog);
 
       if (code === 0) {
-      if (displayTestLog.length > 0) {
+      if (baseDisplayLog.length > 0) {
         const outputBlock = [
           getStatusHeader(code, testItem.id),
           '----- BEGIN OUTPUT -----',
-          ...displayTestLog,
+          ...baseDisplayLog,
           '------ END OUTPUT ------'
         ].join("\n");
 
@@ -206,12 +205,16 @@ export const executeBazelTest = async (
       run.passed(testItem);
       try { finishTest(testItem.id, 'passed'); } catch {}
     } else if (code === 3) {
+      const relevantCases = unifiedResult ? filterTestCasesForItem(testItem, unifiedResult.testCases) : [];
+      const scopedDisplayLog = relevantCases.length > 0
+        ? filterLogLinesForItem(testItem, relevantCases, testLog)
+        : baseDisplayLog;
       handleTestResult(
         run,
         testItem,
         code,
         bazelLog,
-        displayTestLog,
+        scopedDisplayLog,
         workspacePath,
         unifiedResult ?? EMPTY_UNIFIED_RESULT,
         relevantCases
@@ -419,7 +422,7 @@ function filterTestCasesForItem(testItem: vscode.TestItem, cases: IndividualTest
 
 function filterLogLinesForItem(
   testItem: vscode.TestItem,
-  cases: IndividualTestCase[],
+  cases: IndividualTestCase[] | undefined,
   logLines: string[]
 ): string[] {
   if (!testItem.id.includes('::')) {
@@ -427,7 +430,7 @@ function filterLogLinesForItem(
   }
 
   const needles = new Set<string>();
-  for (const testCase of cases) {
+  for (const testCase of cases ?? []) {
     needles.add(testCase.name.toLowerCase());
     if (testCase.suite) {
       needles.add(testCase.suite.toLowerCase());
