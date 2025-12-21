@@ -8,14 +8,8 @@
 
 /// <reference types="mocha" />
 import * as assert from 'assert';
-import {
-  formatPackageLabel,
-  parseTargetLabel,
-  getExtensionsByType,
-  removeStaleItems,
-  sortTestEntries,
-  guessSourceUri
-} from '../../explorer/testTree';
+import { formatPackageLabel, parseTargetLabel, removeStaleItems, sortTestEntries } from '../../explorer/testTree';
+import { getExtensionsByType, guessSourceUri } from '../../explorer/sourceUtils';
 
 /**
  * Test suite for testTree helper functions
