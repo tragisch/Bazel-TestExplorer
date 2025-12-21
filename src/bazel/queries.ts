@@ -53,9 +53,22 @@ function buildBazelQueries(paths: string[], testTypes: string[]): string[] {
 }
 
 async function executeBazelQueries(queries: string[], workspacePath: string, config: ConfigurationService): Promise<void> {
-  await Promise.all(
-    queries.map(query => executeSingleBazelQuery(query, workspacePath, config))
-  );
+  // Use configured limit when available; fall back to 4 for mocks
+  const rawLimit = (config as any).maxParallelQueries;
+  const limit = typeof rawLimit === 'number' && rawLimit >= 1 ? Math.min(64, Math.floor(rawLimit)) : 4;
+  // Simple concurrency pool without external deps
+  let index = 0;
+  const workers: Promise<void>[] = [];
+  for (let i = 0; i < limit; i++) {
+    workers.push((async () => {
+      while (index < queries.length) {
+        const myIndex = index++;
+        const q = queries[myIndex];
+        await executeSingleBazelQuery(q, workspacePath, config);
+      }
+    })());
+  }
+  await Promise.all(workers);
 }
 
 async function executeSingleBazelQuery(query: string, workspacePath: string, config: ConfigurationService): Promise<void> {

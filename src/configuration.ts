@@ -69,6 +69,14 @@ export class ConfigurationService {
     return this.config.get<boolean>('testStrategyExclusive', false) ?? false;
   }
 
+  // Performance tuning: cap parallel Bazel queries to avoid process oversubscription
+  get maxParallelQueries(): number {
+    const value = this.config.get<number>('maxParallelQueries', 4);
+    // Ensure sane bounds [1..64]
+    const n = typeof value === 'number' ? Math.floor(value) : 4;
+    return Math.min(64, Math.max(1, n));
+  }
+
   onDidChangeConfiguration(listener: () => void): vscode.Disposable {
     return vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration(this.section)) {

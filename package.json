@@ -165,6 +165,13 @@
           "description": "Enable verbose test event logging. Defaults to false to avoid flooding logs.",
           "default": false
         }
+        ,
+        "bazelTestExplorer.maxParallelQueries": {
+          "type": "number",
+          "description": "Maximum number of concurrent Bazel queries during discovery. Lower this in very large monorepos to reduce load.",
+          "default": 4,
+          "minimum": 1
+        }
       }
     },
     "views": {
@@ -216,6 +223,7 @@
   "dependencies": {
     "brace-expansion": "^4.0.0",
     "fast-glob": "^3.3.3",
-    "glob": "^10.3.0"
+    "glob": "^10.3.0",
+    "fast-xml-parser": "^4.5.0"
   }
 }
