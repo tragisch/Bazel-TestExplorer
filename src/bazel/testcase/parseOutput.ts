@@ -11,6 +11,8 @@ import { logWithTimestamp } from '../../logging';
 import { IndividualTestCase, TestCaseParseResult } from '../types';
 import { getAllTestPatterns, normalizeStatus, TestCasePattern } from '../testPatterns';
 
+type PatternWithOptionalStatus = TestCasePattern & { fixedStatus?: string };
+
 export const splitOutputLines = (stdout: string): string[] => stdout.split(/\r?\n/);
 
 export const extractTestCasesFromOutput = (
@@ -221,7 +223,7 @@ export const extractTestCasesFromOutput = (
       continue;
     }
 
-    let bestMatch: { match: RegExpMatchArray; pattern: TestCasePattern; } | null = null;
+    let bestMatch: { match: RegExpMatchArray; pattern: PatternWithOptionalStatus; } | null = null;
 
     for (const testPattern of testPatterns) {
       const match = line.match(testPattern.pattern);

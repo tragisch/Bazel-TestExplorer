@@ -23,6 +23,8 @@ export interface TestCasePattern {
         suite?: number;   // optional: suite/testcase group (e.g., gtest)
         class?: number;   // optional: class group (e.g., junit)
     };
+    // Optional: a pattern that always yields a fixed status (e.g. 'FAIL')
+    fixedStatus?: string;
     description: string;
     example: string;
     // Whether this framework supports individual test execution

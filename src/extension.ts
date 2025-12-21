@@ -20,6 +20,7 @@ import { ConfigurationService } from './configuration';
 import { TestControllerManager } from './explorer/testControllerManager';
 import { TestObserver } from './explorer/testObserver';
 import TestHistoryProvider from './explorer/testHistoryProvider';
+import TestSettingsView from './explorer/testSettingsView';
 import { onDidTestEvent } from './explorer/testEventBus';
 import { TestCaseAnnotations, TestCaseCodeLensProvider, TestCaseHoverProvider } from './explorer/testCaseAnnotations';
 import { TestCaseInsights } from './explorer/testCaseInsights';
