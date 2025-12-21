@@ -77,6 +77,20 @@ export class ConfigurationService {
     return Math.min(64, Math.max(1, n));
   }
 
+  get showMetadataInLabel(): boolean {
+    return this.config.get<boolean>('showMetadataInLabel', false);
+  }
+
+  get twoPhaseDiscovery(): boolean {
+    return this.config.get<boolean>('discovery.twoPhase', false);
+  }
+
+  get metadataChunkSize(): number {
+    const value = this.config.get<number>('discovery.metadataChunkSize', 500);
+    const n = typeof value === 'number' ? Math.floor(value) : 500;
+    return Math.min(2000, Math.max(50, n));
+  }
+
   onDidChangeConfiguration(listener: () => void): vscode.Disposable {
     return vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration(this.section)) {

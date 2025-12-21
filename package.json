@@ -164,13 +164,29 @@
           "type": "boolean",
           "description": "Enable verbose test event logging. Defaults to false to avoid flooding logs.",
           "default": false
-        }
-        ,
+        },
         "bazelTestExplorer.maxParallelQueries": {
           "type": "number",
           "description": "Maximum number of concurrent Bazel queries during discovery. Lower this in very large monorepos to reduce load.",
           "default": 4,
           "minimum": 1
+        },
+        "bazelTestExplorer.showMetadataInLabel": {
+          "type": "boolean",
+          "description": "Display test metadata (size, timeout, tags, flaky) in test item labels/tooltips.",
+          "default": false
+        },
+        "bazelTestExplorer.discovery.twoPhase": {
+          "type": "boolean",
+          "description": "Experimental: Enable two-phase discovery (fast label query + chunked metadata query) for improved performance in large workspaces.",
+          "default": false
+        },
+        "bazelTestExplorer.discovery.metadataChunkSize": {
+          "type": "number",
+          "description": "Chunk size for two-phase metadata queries. Higher values may be faster but use more memory.",
+          "default": 500,
+          "minimum": 50,
+          "maximum": 2000
         }
       }
     },

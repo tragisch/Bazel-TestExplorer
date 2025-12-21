@@ -37,6 +37,113 @@ export const queryBazelTestTargets = async (
   return Array.from(testMap.values());
 };
 
+/**
+ * Phase 1 of two-phase discovery: Fast label-only query.
+ * Returns just the test labels without metadata.
+ * 
+ * @param workspacePath Workspace root
+ * @param config Configuration service
+ * @returns Array of test target labels
+ */
+export const queryBazelTestLabelsOnly = async (
+  workspacePath: string,
+  config: ConfigurationService
+): Promise<string[]> => {
+  logWithTimestamp(`Two-phase discovery: Phase 1 (labels only)`);
+  
+  const testTypes: string[] = config.testTypes;
+  const queryPaths: string[] = config.queryPaths;
+  const sanitizedPaths = sanitizeQueryPaths(queryPaths);
+  const allTypes = [...new Set([...testTypes, "test_suite"])];
+  
+  const labels: string[] = [];
+  
+  for (const path of sanitizedPaths) {
+    const query = `"${allTypes.map(type => `kind(${type}, ${path}...)`).join(" union ")}"`;
+    const bazelArgs = ['query', query, '--keep_going', '--output=label'];
+    
+    const { stdout } = await runBazelCommand(
+      bazelArgs, 
+      workspacePath, 
+      undefined, 
+      undefined, 
+      config.bazelPath
+    );
+    
+    labels.push(...stdout.split('\n').filter(l => l.trim() !== ''));
+  }
+  
+  logWithTimestamp(`Phase 1 complete: Found ${labels.length} test labels`);
+  return labels;
+};
+
+/**
+ * Phase 2 of two-phase discovery: Chunked metadata query for specific labels.
+ * Queries metadata for a list of labels in parallel chunks.
+ * 
+ * @param labels Array of test labels
+ * @param workspacePath Workspace root
+ * @param config Configuration service
+ * @returns Array of BazelTestTarget with metadata
+ */
+export const queryBazelTestMetadata = async (
+  labels: string[],
+  workspacePath: string,
+  config: ConfigurationService
+): Promise<BazelTestTarget[]> => {
+  logWithTimestamp(`Two-phase discovery: Phase 2 (metadata for ${labels.length} labels)`);
+  
+  if (labels.length === 0) {
+    return [];
+  }
+  
+  testMap.clear();
+  
+  const chunkSize = config.metadataChunkSize;
+  const chunks: string[][] = [];
+  
+  for (let i = 0; i < labels.length; i += chunkSize) {
+    chunks.push(labels.slice(i, i + chunkSize));
+  }
+  
+  logWithTimestamp(`Processing ${chunks.length} chunks (size=${chunkSize})`);
+  
+  // Process chunks with parallelism limit
+  const limit = config.maxParallelQueries;
+  let chunkIndex = 0;
+  const workers: Promise<void>[] = [];
+  
+  for (let i = 0; i < limit; i++) {
+    workers.push((async () => {
+      while (chunkIndex < chunks.length) {
+        const myIndex = chunkIndex++;
+        const chunk = chunks[myIndex];
+        await queryMetadataChunk(chunk, workspacePath, config);
+      }
+    })());
+  }
+  
+  await Promise.all(workers);
+  
+  logWithTimestamp(`Phase 2 complete: Retrieved metadata for ${testMap.size} targets`);
+  return Array.from(testMap.values());
+};
+
+async function queryMetadataChunk(
+  labels: string[],
+  workspacePath: string,
+  config: ConfigurationService
+): Promise<void> {
+  const query = `"${labels.join(' union ')}"`;
+  const bazelArgs = ['query', query, '--keep_going', '--output=streamed_jsonproto'];
+  
+  await runBazelCommand(bazelArgs, workspacePath, line => {
+    parseBazelLine(line);
+  }, undefined, config.bazelPath);
+  
+  logWithTimestamp(`Chunk complete: ${labels.length} labels processed`);
+}
+
 export const getTestTargetById = (target: string): BazelTestTarget | undefined => {
   return testMap.get(target);
 };
@@ -109,7 +216,8 @@ function parseBazelLine(line: string): void {
       toolchain: getAttribute(rule, "$cc_toolchain")?.stringValue ?? undefined,
       deps: getAttribute(rule, "deps")?.stringListValue ?? [],
       tests: getAttribute(rule, "tests")?.stringListValue ?? [],
-      visibility: getAttribute(rule, "visibility")?.stringListValue ?? []
+      visibility: getAttribute(rule, "visibility")?.stringListValue ?? [],
+      shard_count: getAttribute(rule, "shard_count")?.intValue
     });
   } catch (e) {
     logWithTimestamp(`Failed to parse Bazel line: ${line}`, "warn");
@@ -119,3 +227,29 @@ function parseBazelLine(line: string): void {
 function getAttribute(rule: any, name: string) {
   return rule.attribute?.find((a: any) => a.name === name);
 }
+
+/**
+ * Expand test_suite to get actual test targets.
+ * 
+ * @param suiteLabel test_suite label (e.g. //pkg:suite)
+ * @param workspacePath Workspace root
+ * @param config Configuration service
+ * @returns Array of test target labels in the suite
+ */
+export const expandTestSuite = async (
+  suiteLabel: string,
+  workspacePath: string,
+  config: ConfigurationService
+): Promise<string[]> => {
+  logWithTimestamp(`Expanding test_suite: ${suiteLabel}`);
+  
+  const query = `tests(${suiteLabel})`;
+  const { stdout } = await runBazelCommand(
+    ['query', query, '--output=label'],
+    workspacePath, undefined, undefined, config.bazelPath
+  );
+  
+  const tests = stdout.split('\n').filter(l => l.trim() !== '');
+  logWithTimestamp(`Suite ${suiteLabel} contains ${tests.length} tests`);
+  return tests;
+};

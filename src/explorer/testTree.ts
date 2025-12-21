@@ -20,6 +20,8 @@ import { discoverIndividualTestCases } from '../bazel/discovery';
 import { findBazelWorkspace } from '../bazel/workspace';
 import { TestCaseAnnotations, AnnotationUpdate } from './testCaseAnnotations';
 import { TestCaseInsights } from './testCaseInsights';
+import { ConfigurationService } from '../configuration';
+import { expandTestSuite } from '../bazel/queries';
 
 function getDiscoveryEnabled(): boolean {
   try {
@@ -51,8 +53,9 @@ export const discoverAndDisplayTests = async (
     const testEntries = await measure("Query Bazel test targets", () =>
       bazelClient.queryTests()
     );
-
-    updateTestTree(controller, testEntries);
+    
+    const config = new ConfigurationService();
+    updateTestTree(controller, testEntries, config);
     logDiscoveryResult(controller, testEntries);
   } catch (error) {
     handleDiscoveryError(error);
@@ -66,7 +69,8 @@ export const discoverAndDisplayTests = async (
  */
 function updateTestTree(
   controller: vscode.TestController,
-  testEntries: BazelTestTarget[]
+  testEntries: BazelTestTarget[],
+  config: ConfigurationService
 ): void {
   const packageCache = new Map<string, vscode.TestItem>();
 
@@ -74,7 +78,7 @@ function updateTestTree(
 
   const sortedEntries = sortTestEntries(testEntries);
   for (const entry of sortedEntries) {
-    addTestItemToController(controller, entry, packageCache);
+    addTestItemToController(controller, entry, packageCache, config);
   }
 }
 
@@ -147,13 +151,14 @@ function handleDiscoveryError(error: unknown): void {
 export const addTestItemToController = (
   controller: vscode.TestController,
   testTarget: BazelTestTarget,
-  packageCache: Map<string, vscode.TestItem>
+  packageCache: Map<string, vscode.TestItem>,
+  config: ConfigurationService
 ): void => {
   const target = testTarget.target;
   const [packageName, testName] = parseTargetLabel(target);
 
   const packageItem = getOrCreatePackageItem(controller, packageName, packageCache);
-  const testItem = createTestItem(controller, testTarget, testName, packageName);
+  const testItem = createTestItem(controller, testTarget, testName, packageName, config);
 
   packageItem.children.add(testItem);
 };
@@ -193,7 +198,8 @@ function createTestItem(
   controller: vscode.TestController,
   testTarget: BazelTestTarget,
   testName: string,
-  packageName: string
+  packageName: string,
+  config: ConfigurationService
 ): vscode.TestItem {
   const target = testTarget.target;
   const testType = testTarget.type;
@@ -204,16 +210,30 @@ function createTestItem(
   
   const icon = testType === "test_suite" ? "🧰 " : "";
   const discoveryEnabled = getDiscoveryEnabled();
-  const label = `${icon}[${testType}] ${testName}`;
+  let label = `${icon}[${testType}] ${testName}`;
+  
+  // Add flaky indicator in label
+  if (testTarget.flaky) {
+    label = `⚠️ ${label}`;
+  }
 
   const testItem = controller.createTestItem(target, label, uri);
   testItem.tags = ["bazel", ...tags].map(t => new vscode.TestTag(t));
   testItem.description = `Target: ${target}`;
   testItem.busy = false;
   
+  // Add metadata description if enabled
+  if (config.showMetadataInLabel) {
+    const metadata = buildMetadataString(testTarget);
+    if (metadata) {
+      testItem.description = metadata;
+    }
+  }
+  
   // Enable children resolution for individual test case discovery
   const isSuite = testType === "test_suite";
-  testItem.canResolveChildren = !isSuite && discoveryEnabled;
+  // test_suite can have children (lazy-loaded), tests can have test cases
+  testItem.canResolveChildren = isSuite || discoveryEnabled;
   if (!discoveryEnabled) {
     // individual test discovery is disabled; leave description unchanged
 
@@ -258,6 +278,37 @@ function resolveSourceUri(
   
   // Fallback to guessing strategy
   return guessSourceUri(packageName, testName, testTarget.type);
+}
+
+/**
+ * Build metadata string for test item description/tooltip.
+ * Shows size, timeout, flaky status, and relevant tags.
+ */
+function buildMetadataString(target: BazelTestTarget): string {
+  const parts: string[] = [];
+  
+  if (target.size) {
+    parts.push(`size=${target.size}`);
+  }
+  
+  if (target.timeout) {
+    parts.push(`timeout=${target.timeout}`);
+  }
+  
+  if (target.flaky) {
+    parts.push('flaky');
+  }
+  
+  if (target.tags && target.tags.length > 0) {
+    const relevantTags = target.tags.filter(t => 
+      t === 'exclusive' || t === 'external' || t === 'manual' || t === 'local'
+    );
+    if (relevantTags.length > 0) {
+      parts.push(`tags=${relevantTags.join(',')}`);
+    }
+  }
+  
+  return parts.join(' ');
 }
 
 /**
@@ -424,10 +475,13 @@ export const resolveTestCaseChildren = async (
       return;
     }
 
-    // Skip for test suites
+    // Check if this is a test_suite
     const typeMatch = testItem.label.match(/\[(.*?)\]/);
     const testType = typeMatch?.[1];
     if (testType === "test_suite") {
+      // Expand test_suite to show contained tests
+      const config = new ConfigurationService();
+      await resolveTestSuiteChildren(testItem, controller, bazelClient, config);
       return;
     }
 
@@ -509,6 +563,51 @@ export const resolveTestCaseChildren = async (
     testItem.busy = false;
   }
 };
+
+/**
+ * Resolve test_suite children by expanding the suite to show contained tests
+ */
+async function resolveTestSuiteChildren(
+  suiteItem: vscode.TestItem,
+  controller: vscode.TestController,
+  bazelClient: BazelClient,
+  config: ConfigurationService
+): Promise<void> {
+  try {
+    const workspacePath = await findBazelWorkspace();
+    if (!workspacePath) {
+      logWithTimestamp(`No Bazel workspace found for expanding suite ${suiteItem.id}`);
+      return;
+    }
+
+    logWithTimestamp(`Expanding test_suite: ${suiteItem.id}...`);
+    suiteItem.busy = true;
+
+    try {
+      const tests = await expandTestSuite(suiteItem.id, workspacePath, config);
+      
+      for (const testLabel of tests) {
+        const metadata = bazelClient.getTargetMetadata(testLabel);
+        const childLabel = metadata 
+          ? `[${metadata.type}] ${testLabel.split(':').pop() || testLabel}`
+          : testLabel;
+        
+        const childItem = controller.createTestItem(testLabel, childLabel);
+        childItem.canResolveChildren = false;
+        childItem.description = `Target: ${testLabel}`;
+        suiteItem.children.add(childItem);
+      }
+      
+      logWithTimestamp(`Suite ${suiteItem.id} expanded: ${tests.length} tests`);
+    } finally {
+      suiteItem.busy = false;
+    }
+  } catch (error) {
+    const message = formatError(error);
+    logWithTimestamp(`Failed to expand test_suite ${suiteItem.id}: ${message}`, 'error');
+    suiteItem.busy = false;
+  }
+}
 
 function selectFilePath(primary?: string, fallback?: string): string | undefined {
   if (primary && primary.trim().length > 0) {

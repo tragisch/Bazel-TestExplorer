@@ -12,7 +12,7 @@
 
 import { TestRun, CancellationToken } from 'vscode';
 import { BazelTestTarget } from './types';
-import { queryBazelTestTargets, getTestTargetById } from './queries';
+import { queryBazelTestTargets, queryBazelTestLabelsOnly, queryBazelTestMetadata, getTestTargetById } from './queries';
 import { executeBazelTest } from './runner';
 import { runBazelCommand } from './process';
 import { ConfigurationService } from '../configuration';
@@ -41,6 +41,8 @@ export class BazelClient {
    */
   async queryTests(): Promise<BazelTestTarget[]> {
     try {
+      const useTwoPhase = this.config.twoPhaseDiscovery;
+      
       // Create cache key based on config
       const cacheKey = QueryCache.createKey(
         this.config.queryPaths,
@@ -53,8 +55,19 @@ export class BazelClient {
         return cached;
       }
 
-      // Execute query
-      const targets = await queryBazelTestTargets(this.workspaceRoot, this.config);
+      let targets: BazelTestTarget[];
+      
+      if (useTwoPhase) {
+        logWithTimestamp('Using two-phase discovery');
+        // Phase 1: Fast label query
+        const labels = await queryBazelTestLabelsOnly(this.workspaceRoot, this.config);
+        // Phase 2: Chunked metadata query
+        targets = await queryBazelTestMetadata(labels, this.workspaceRoot, this.config);
+      } else {
+        logWithTimestamp('Using single-phase discovery');
+        // Original single-phase query
+        targets = await queryBazelTestTargets(this.workspaceRoot, this.config);
+      }
       
       // Im Cache speichern
       this.cache.set(cacheKey, targets);

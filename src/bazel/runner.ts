@@ -21,6 +21,7 @@ import { analyzeTestFailures } from './parseFailures';
 import { TestFramework } from './testFilterStrategies';
 import { parseUnifiedTestResult, UnifiedTestResult } from './testcase/testResultParser';
 import { IndividualTestCase } from './types';
+import { getTestTargetById } from './queries';
 
 // ───────────────────────────────────────────────────────────────
 // Bazel Test Configuration
@@ -93,6 +94,46 @@ function mapTestTypeToFramework(testType: string): TestFramework {
   }
   
   return 'other';
+}
+
+/**
+ * Compute per-target flags based on Bazel target metadata (tags, attributes).
+ * Implements Bazel Test Encyclopedia semantics for exclusive/external/sharding.
+ * 
+ * @param targetId Bazel target label
+ * @returns Array of Bazel flags to apply only for this target
+ */
+export function computePerTargetFlags(targetId: string): string[] {
+  const flags: string[] = [];
+  const metadata = getTestTargetById(targetId);
+  
+  if (!metadata) {
+    return flags;
+  }
+  
+  const tags = metadata.tags ?? [];
+  
+  // Tag: exclusive → serialize test execution
+  if (tags.includes('exclusive')) {
+    flags.push('--test_strategy=exclusive');
+    logWithTimestamp(`Target ${targetId} has 'exclusive' tag → --test_strategy=exclusive`);
+  }
+  
+  // Tag: external → disable caching (non-hermetic)
+  if (tags.includes('external')) {
+    flags.push('--cache_test_results=no');
+    logWithTimestamp(`Target ${targetId} has 'external' tag → --cache_test_results=no`);
+  }
+  
+  // Shard count (if defined)
+  if (metadata.shard_count && metadata.shard_count > 1) {
+    // Bazel uses the shard_count target attribute internally and exposes sharding via
+    // TEST_SHARD_INDEX/TEST_TOTAL_SHARDS, so no additional CLI flags are required here;
+    // we just log the configured shard_count for visibility.
+    logWithTimestamp(`Target ${targetId} has shard_count=${metadata.shard_count}`);
+  }
+  
+  return flags;
 }
 
 // ───────────────────────────────────────────────────────────────
@@ -296,11 +337,15 @@ export const initiateBazelTest = async (
   if (config.nocacheTestResults) runSpecificFlags.push('--nocache_test_results');
   if (config.testStrategyExclusive) runSpecificFlags.push('--test_strategy=exclusive');
 
+  // Per-target flags (from tags/metadata)
+  const perTargetFlags = computePerTargetFlags(effectiveTestId);
+
   // Merge flags so that later entries (user / runSpecific) override defaults when appropriate
   const mergedFlags = mergeFlags(
     Array.from(DEFAULT_BAZEL_TEST_FLAGS),
     userArgs,
     runSpecificFlags,
+    perTargetFlags,
     filterArgs
   );
 

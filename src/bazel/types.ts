@@ -23,6 +23,7 @@ export interface BazelTestTarget {
     deps?: string[];
     tests?: string[];
     visibility?: string[];
+    shard_count?: number;
 }
 
 /**
