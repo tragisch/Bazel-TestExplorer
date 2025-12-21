@@ -21,11 +21,29 @@ export class MockTestItem implements Partial<vscode.TestItem> {
   description?: string;
   // Children stored separately for testing
   childrenMap = new Map<string, MockTestItem>();
+  children: any;
 
   constructor(id: string, label: string, uri?: vscode.Uri) {
     this.id = id;
     this.label = label;
     this.uri = uri;
+    // Minimal TestItemCollection implementation used by TestControllerManager
+    this.children = {
+      add: (child: MockTestItem) => {
+        this.childrenMap.set(child.id, child);
+      },
+      get size() {
+        return (Array.from((this as any).owner.childrenMap.keys()).length);
+      },
+      forEach: (callback: (item: MockTestItem) => void) => {
+        for (const [, child] of (this.childrenMap as Map<string, MockTestItem>).entries()) {
+          callback(child);
+        }
+      },
+      [Symbol.iterator]: () => (this.childrenMap as Map<string, MockTestItem>)[Symbol.iterator]()
+    } as any;
+    // bind owner reference for size getter
+    (this.children as any).owner = this;
   }
 
   addChild(child: MockTestItem): void {
@@ -104,6 +122,14 @@ export class MockTestController implements Partial<vscode.TestController> {
   private runProfiles: any[] = [];
   id = 'mock-controller';
   label = 'Mock Test Controller';
+  // Minimal items collection to emulate vscode.TestItemCollection
+  private itemsMap = new Map<string, MockTestItem>();
+  items: any = {
+    add: (item: MockTestItem) => {
+      this.itemsMap.set(item.id, item);
+    },
+    [Symbol.iterator]: () => this.itemsMap[Symbol.iterator]()
+  } as any;
 
   createTestItem(id: string, label: string, uri?: vscode.Uri): any {
     const item = new MockTestItem(id, label, uri);
@@ -123,7 +149,9 @@ export class MockTestController implements Partial<vscode.TestController> {
   }
 
   createTestRun(request: vscode.TestRunRequest): vscode.TestRun {
-    return new MockTestRun() as any;
+    const run = new MockTestRun();
+    (this as any)._lastRun = run;
+    return run as any;
   }
 
   dispose(): void {
@@ -134,9 +162,15 @@ export class MockTestController implements Partial<vscode.TestController> {
     return this.runProfiles;
   }
 
+  getLastRun(): MockTestRun | undefined {
+    return (this as any)._lastRun as MockTestRun | undefined;
+  }
+
   reset(): void {
     this.itemsArray = [];
     this.runProfiles = [];
+    this.itemsMap.clear();
+    (this as any)._lastRun = undefined;
   }
 }
 

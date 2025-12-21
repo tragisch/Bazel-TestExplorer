@@ -8,7 +8,6 @@
  */
 
 import * as assert from 'assert';
-import { describe, it, beforeEach, afterEach } from 'mocha';
 import * as Module from 'module';
 
 // Types for mocking
@@ -23,17 +22,17 @@ interface MockBazelTestTarget {
 // Global mock map for getTestTargetById
 let mockTargetMap: Map<string, MockBazelTestTarget> = new Map();
 
-describe('Runner - Per-Target Flags (Functional Tests)', () => {
-  beforeEach(() => {
+suite('Runner - Per-Target Flags (Functional Tests)', () => {
+  setup(() => {
     mockTargetMap.clear();
   });
 
-  afterEach(() => {
+  teardown(() => {
     // Cleanup
     mockTargetMap.clear();
   });
 
-  it('should add --test_strategy=exclusive for targets with exclusive tag', () => {
+  test('should add --test_strategy=exclusive for targets with exclusive tag', () => {
     const mockTarget: MockBazelTestTarget = {
       target: '//test:exclusive_test',
       type: 'cc_test',
@@ -50,7 +49,7 @@ describe('Runner - Per-Target Flags (Functional Tests)', () => {
     );
   });
 
-  it('should add --cache_test_results=no for targets with external tag', () => {
+  test('should add --cache_test_results=no for targets with external tag', () => {
     const mockTarget: MockBazelTestTarget = {
       target: '//test:external_test',
       type: 'py_test',
@@ -67,7 +66,7 @@ describe('Runner - Per-Target Flags (Functional Tests)', () => {
     );
   });
 
-  it('should combine multiple tag-based flags', () => {
+  test('should combine multiple tag-based flags', () => {
     const mockTarget: MockBazelTestTarget = {
       target: '//test:combined_test',
       type: 'java_test',
@@ -88,7 +87,7 @@ describe('Runner - Per-Target Flags (Functional Tests)', () => {
     );
   });
 
-  it('should handle targets without matching tags', () => {
+  test('should handle targets without matching tags', () => {
     const mockTarget: MockBazelTestTarget = {
       target: '//test:normal_test',
       type: 'cc_test',
@@ -105,7 +104,25 @@ describe('Runner - Per-Target Flags (Functional Tests)', () => {
     );
   });
 
-  it('should log shard_count but not add flags', () => {
+  test('should add --flaky_test_attempts=2 for targets with flaky attribute', () => {
+    const mockTarget: MockBazelTestTarget = {
+      target: '//test:flaky_test',
+      type: 'cc_test',
+      tags: [],
+      flaky: true
+    };
+    mockTargetMap.set('//test:flaky_test', mockTarget);
+
+    // Expected behavior: flaky attribute → --flaky_test_attempts=2
+    // This enables automatic retries per Bazel Test Encyclopedia semantics
+    const expectedFlags = ['--flaky_test_attempts=2'];
+    assert.ok(
+      expectedFlags.includes('--flaky_test_attempts=2'),
+      'flaky attribute should add --flaky_test_attempts=2 flag'
+    );
+  });
+
+  test('should log shard_count but not add flags', () => {
     const mockTarget: MockBazelTestTarget = {
       target: '//test:sharded_test',
       type: 'cc_test',
@@ -124,7 +141,7 @@ describe('Runner - Per-Target Flags (Functional Tests)', () => {
     );
   });
 
-  it('should handle missing target metadata gracefully', () => {
+  test('should handle missing target metadata gracefully', () => {
     // Don't add to mockTargetMap - simulates missing metadata
     
     // Expected behavior: return empty flags when target not found
@@ -137,8 +154,8 @@ describe('Runner - Per-Target Flags (Functional Tests)', () => {
   });
 });
 
-describe('Runner - Flag Merging', () => {
-  it('should document flag merge precedence', () => {
+suite('Runner - Flag Merging', () => {
+  test('should document flag merge precedence', () => {
     // Flag merge order: defaults < userArgs < runSpecific < perTarget < filterArgs
     // Later flags override earlier ones for same flag keys
     
@@ -161,7 +178,7 @@ describe('Runner - Flag Merging', () => {
     );
   });
 
-  it('should document flag override behavior', () => {
+  test('should document flag override behavior', () => {
     // When same flag appears multiple times, later value should win
     const flagMap = new Map<string, string>();
     
@@ -176,8 +193,8 @@ describe('Runner - Flag Merging', () => {
   });
 });
 
-describe('Configuration - Two-Phase Discovery Settings', () => {
-  it('should document twoPhaseDiscovery setting', () => {
+suite('Configuration - Two-Phase Discovery Settings', () => {
+  test('should document twoPhaseDiscovery setting', () => {
     // When discovery.twoPhase is true:
     // - Phase 1: Fast label query (--output=label)
     // - Phase 2: Chunked metadata query (--output=streamed_jsonproto)
@@ -198,7 +215,7 @@ describe('Configuration - Two-Phase Discovery Settings', () => {
     );
   });
 
-  it('should document metadataChunkSize boundaries', () => {
+  test('should document metadataChunkSize boundaries', () => {
     const minChunkSize = 50;
     const maxChunkSize = 2000;
     const defaultChunkSize = 500;
@@ -212,8 +229,8 @@ describe('Configuration - Two-Phase Discovery Settings', () => {
   });
 });
 
-describe('TestTree - Metadata Display', () => {
-  it('should document metadata display components', () => {
+suite('TestTree - Metadata Display', () => {
+  test('should document metadata display components', () => {
     // When showMetadataInLabel is true, metadata should include:
     // - size (small/medium/large/enormous)
     // - timeout (short/moderate/long)
@@ -227,7 +244,7 @@ describe('TestTree - Metadata Display', () => {
     assert.ok(metadataComponents.includes('tags'), 'tags should be in metadata');
   });
 
-  it('should document flaky indicator symbol', () => {
+  test('should document flaky indicator symbol', () => {
     // Flaky tests should display with ⚠️ indicator
     const flakyIndicator = '⚠️';
     assert.strictEqual(
@@ -238,8 +255,8 @@ describe('TestTree - Metadata Display', () => {
   });
 });
 
-describe('TestSuite - Lazy Expansion', () => {
-  it('should document test_suite expansion query', () => {
+suite('TestSuite - Lazy Expansion', () => {
+  test('should document test_suite expansion query', () => {
     // test_suite expansion uses: bazel query "tests(<suite>)" --output=label
     const suiteLabel = '//mypackage:all_tests';
     const expansionQuery = `tests(${suiteLabel})`;

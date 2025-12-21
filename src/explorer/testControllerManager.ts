@@ -151,9 +151,10 @@ export class TestControllerManager {
         const promises: Promise<void>[] = [];
 
         // If no tests are explicitly included, run all tests from controller
-        const testsToRun = request.include && request.include.length > 0
-          ? request.include
-          : Array.from(this.controller.items).map(([_, item]) => item);
+        const isGlobalRun = !request.include || request.include.length === 0;
+        const testsToRun = isGlobalRun
+          ? Array.from(this.controller.items).map(([_, item]) => item)
+          : request.include;
 
         try {
           for (const testItem of testsToRun) {
@@ -164,6 +165,16 @@ export class TestControllerManager {
                 run.skipped(t);
                 try { finishTest(t.id, 'skipped'); } catch { }
                 logWithTimestamp(`Test skipped due to cancellation request: ${t.id}`, 'info');
+                continue;
+              }
+
+              // Enforce Bazel 'manual' tag semantics: only run when explicitly named
+              const metadata = this.bazelClient.getTargetMetadata(t.id);
+              const isManual = metadata?.tags?.includes('manual');
+              if (isGlobalRun && isManual) {
+                run.skipped(t);
+                try { finishTest(t.id, 'skipped'); } catch { }
+                logWithTimestamp(`Skipping manual target on global run: ${t.id}`, 'info');
                 continue;
               }
 

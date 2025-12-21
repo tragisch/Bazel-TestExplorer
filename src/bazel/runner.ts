@@ -125,6 +125,12 @@ export function computePerTargetFlags(targetId: string): string[] {
     logWithTimestamp(`Target ${targetId} has 'external' tag → --cache_test_results=no`);
   }
   
+  // Flaky attribute → enable automatic retry attempts
+  if (metadata.flaky) {
+    flags.push('--flaky_test_attempts=2');
+    logWithTimestamp(`Target ${targetId} has 'flaky' attribute → --flaky_test_attempts=2`);
+  }
+  
   // Shard count (if defined)
   if (metadata.shard_count && metadata.shard_count > 1) {
     // Bazel uses the shard_count target attribute internally and exposes sharding via
@@ -261,9 +267,18 @@ export const executeBazelTest = async (
         relevantCases
       );
     } else if (code === 4) {
-      run.skipped(testItem);
-      vscode.window.showWarningMessage(`⚠️ Flaky tests: ${testItem.id}`);
-      try { finishTest(testItem.id, 'skipped'); } catch {}
+      // Bazel Test Encyclopedia: exit code 4 indicates tests passed only after retries (flaky)
+      // and the overall command should be treated as unsuccessful.
+      const cleaned = bazelLog.filter(line => line.trim() !== "").join("\n");
+      const cleaned_with_Header = getStatusHeader(code, testItem.id) + cleaned;
+      vscode.window.showWarningMessage(`⚠️ Flaky tests detected; run marked unsuccessful: ${testItem.id}`);
+      run.failed(
+        testItem,
+        new vscode.TestMessage(
+          `⚠️ Flaky tests: passed after retries. Treating as failure (Code ${code}).\n\n${cleaned_with_Header}`
+        )
+      );
+      try { finishTest(testItem.id, 'failed', cleaned_with_Header); } catch {}
     } else {
       const cleaned = bazelLog.filter(line => line.trim() !== "").join("\n");
       const cleaned_with_Header = getStatusHeader(code, testItem.id) + cleaned;
