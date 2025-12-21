@@ -18,11 +18,21 @@ export const extractTestCasesFromOutput = (
   parentTarget: string,
   allowedPatternIds?: string[]
 ): TestCaseParseResult => {
-  const lines = stdout.split(/\r?\n/);
+  const lines = stdout.split(/\r?\n/).map(stripAnsi);
   const testCases: IndividualTestCase[] = [];
   const rustPanicRegex = /^thread '([^']+)' panicked at (.+?):(\d+):(\d+)/;
   const rustMessageRegex = /^assertion `(.*)` failed$/;
+  const unittestHeaderRegex = /^FAIL:\s+([^(]+)\s+\((.+?)\)/;
+  const unittestFileRegex = /^\s*File "(.+?)", line (\d+), in (.+)$/;
+  const unittestMessageRegex = /^\s*(AssertionError[:\s].+)$/;
   const collectingMessage = new Map<string, string[]>();
+  let pendingUnittest: {
+    name: string;
+    suite?: string;
+    file?: string;
+    line?: number;
+    messages: string[];
+  } | null = null;
 
   const all = getAllTestPatterns();
   const testPatterns = allowedPatternIds && allowedPatternIds.length
@@ -34,7 +44,58 @@ export const extractTestCasesFromOutput = (
   let failedTests = 0;
   let ignoredTests = 0;
 
-  for (const line of lines) {
+  let currentDoctestCase: string | undefined;
+
+  const flushUnittestCase = () => {
+    if (!pendingUnittest) return;
+    const file = pendingUnittest.file || '';
+    const lineValue = pendingUnittest.line || 0;
+    const testCase: IndividualTestCase = {
+      name: pendingUnittest.name,
+      file,
+      line: lineValue,
+      parentTarget,
+      status: 'FAIL',
+      errorMessage: pendingUnittest.messages.join('\n') || undefined,
+      suite: pendingUnittest.suite,
+      frameworkId: 'python_unittest'
+    };
+    testCases.push(testCase);
+    totalTests++;
+    failedTests++;
+    pendingUnittest = null;
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const unittestHeaderMatch = line.match(unittestHeaderRegex);
+    if (unittestHeaderMatch) {
+      flushUnittestCase();
+      pendingUnittest = {
+        name: unittestHeaderMatch[1].trim(),
+        suite: unittestHeaderMatch[2].trim(),
+        messages: []
+      };
+      continue;
+    }
+    if (pendingUnittest) {
+      const fileMatch = line.match(unittestFileRegex);
+      if (fileMatch) {
+        pendingUnittest.file = fileMatch[1];
+        pendingUnittest.line = parseInt(fileMatch[2], 10) || pendingUnittest.line;
+        continue;
+      }
+      const msgMatch = line.match(unittestMessageRegex);
+      if (msgMatch) {
+        pendingUnittest.messages.push(msgMatch[1].trim());
+        continue;
+      }
+      if (!line.trim()) {
+        flushUnittestCase();
+        continue;
+      }
+    }
+
     const panicMatch = line.match(rustPanicRegex);
     if (panicMatch) {
       const [, testName, filePath, lineNumber] = panicMatch;
@@ -47,6 +108,40 @@ export const extractTestCasesFromOutput = (
         if (!targetCase.line || targetCase.line <= 0) {
           targetCase.line = parsedLine;
         }
+      }
+      continue;
+    }
+
+    const doctestCaseMatch = line.match(/^TEST CASE:\s*(.+?)\s*$/i);
+    if (doctestCaseMatch) {
+      currentDoctestCase = doctestCaseMatch[1].trim();
+      continue;
+    }
+
+    const doctestErrorMatch = line.match(/^(.+?):(\d+):\s+ERROR:\s+(.+)$/i);
+    if (doctestErrorMatch) {
+      const [, filePath, lineNumber, messagePart] = doctestErrorMatch;
+      const testName = currentDoctestCase || `line_${lineNumber}`;
+      const nextLine = lines[i + 1]?.trim();
+      const extraMessage = nextLine && nextLine.toLowerCase().startsWith('values:')
+        ? `\n${nextLine}`
+        : '';
+
+      const testCase: IndividualTestCase = {
+        name: testName,
+        file: filePath,
+        line: parseInt(lineNumber, 10) || 0,
+        parentTarget,
+        status: 'FAIL',
+        errorMessage: (messagePart + extraMessage).trim(),
+        frameworkId: 'doctest_cpp'
+      };
+
+      testCases.push(testCase);
+      totalTests++;
+      failedTests++;
+      if (extraMessage) {
+        i++;
       }
       continue;
     }
@@ -68,11 +163,12 @@ export const extractTestCasesFromOutput = (
 
       const file = groups.file > 0 ? match[groups.file] : '';
       const lineStr = groups.line > 0 ? match[groups.line] : '0';
-      const testName = match[groups.testName] || '';
       const rawStatus = pattern.fixedStatus ?? (groups.status > 0 ? match[groups.status] : 'FAIL');
       const errorMessage = groups.message && groups.message > 0 ? match[groups.message] : undefined;
       const suite = groups.suite && groups.suite > 0 ? match[groups.suite] : undefined;
       const className = groups.class && groups.class > 0 ? match[groups.class] : undefined;
+      const rawName = groups.testName > 0 ? match[groups.testName] : '';
+      const testName = rawName || suite || className || buildFallbackName(file, lineStr);
 
       const status = normalizeStatus(rawStatus);
       if (!testName) {
@@ -115,6 +211,7 @@ export const extractTestCasesFromOutput = (
       }
     }
   }
+  flushUnittestCase();
 
   // second pass to capture rust assertion messages
   for (let i = 0; i < lines.length; i++) {
@@ -153,6 +250,9 @@ export const extractTestCasesFromOutput = (
   }
 
   const summaryPattern = /(\d+)\s+Tests?\s+(\d+)\s+Failures?\s+(\d+)\s+Ignored/;
+  const doctestSummaryPattern = /\[doctest\]\s+test cases:\s+(\d+)\s+\|\s+(\d+)\s+passed\s+\|\s+(\d+)\s+failed\s+\|\s+(\d+)\s+skipped/i;
+  let unittestTotal: number | undefined;
+  let unittestFailures: number | undefined;
   for (const line of lines) {
     const summaryMatch = line.match(summaryPattern);
     if (summaryMatch) {
@@ -162,6 +262,40 @@ export const extractTestCasesFromOutput = (
       passedTests = totalTests - failedTests - ignoredTests;
       break;
     }
+
+    const doctestSummaryMatch = line.match(doctestSummaryPattern);
+    if (doctestSummaryMatch) {
+      totalTests = parseInt(doctestSummaryMatch[1], 10);
+      passedTests = parseInt(doctestSummaryMatch[2], 10);
+      failedTests = parseInt(doctestSummaryMatch[3], 10);
+      ignoredTests = parseInt(doctestSummaryMatch[4], 10);
+      break;
+    }
+
+    const unittestRanMatch = line.match(/^Ran\s+(\d+)\s+tests?/i);
+    if (unittestRanMatch) {
+      unittestTotal = parseInt(unittestRanMatch[1], 10);
+      continue;
+    }
+    const unittestFailMatch = line.match(/^FAILED\s+\((?:failures=(\d+))(?:,\s*errors=(\d+))?.*\)/i);
+    if (unittestFailMatch) {
+      const failures = parseInt(unittestFailMatch[1] ?? '0', 10);
+      const errors = parseInt(unittestFailMatch[2] ?? '0', 10);
+      unittestFailures = failures + errors;
+      continue;
+    }
+    const unittestOkMatch = line.match(/^OK\b/i);
+    if (unittestOkMatch) {
+      unittestTotal = unittestTotal ?? testCases.length;
+      unittestFailures = 0;
+      continue;
+    }
+  }
+
+  if (typeof unittestTotal === 'number') {
+    totalTests = unittestTotal;
+    failedTests = typeof unittestFailures === 'number' ? unittestFailures : failedTests;
+    passedTests = totalTests - failedTests - ignoredTests;
   }
 
   logWithTimestamp(`Parsed ${testCases.length} individual test cases from ${parentTarget}`);
@@ -184,4 +318,17 @@ function findLatestTestCase(testCases: IndividualTestCase[], name: string): Indi
     }
   }
   return undefined;
+}
+
+function buildFallbackName(file: string, lineNumber: string): string {
+  if (!file) {
+    return `line_${lineNumber || '0'}`;
+  }
+  return `${file}:${lineNumber || '0'}`;
+}
+
+const ANSI_COLOR_PATTERN = /\x1B\[[0-9;]*m/g;
+
+function stripAnsi(input: string): string {
+  return input.replace(ANSI_COLOR_PATTERN, '');
 }

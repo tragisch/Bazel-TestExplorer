@@ -11,12 +11,16 @@
  */
 
 import * as vscode from 'vscode';
+import * as path from 'path';
+import * as fs from 'fs';
 import { finishTest, publishOutput } from '../explorer/testEventBus';
 import { runBazelCommand } from './process';
 import { logWithTimestamp, measure, formatError } from '../logging';
 import { ConfigurationService } from '../configuration';
 import { analyzeTestFailures } from './parseFailures';
 import { TestFramework } from './testFilterStrategies';
+import { parseUnifiedTestResult, UnifiedTestResult } from './testcase/testResultParser';
+import { IndividualTestCase } from './types';
 
 // ───────────────────────────────────────────────────────────────
 // Bazel Test Configuration
@@ -30,6 +34,12 @@ const DEFAULT_BAZEL_TEST_FLAGS = [
   '--test_summary=detailed',
   '--test_verbose_timeout_warnings'
 ] as const;
+
+const EMPTY_UNIFIED_RESULT: UnifiedTestResult = {
+  testCases: [],
+  summary: { total: 0, passed: 0, failed: 0, ignored: 0 },
+  source: 'none'
+};
 
 /**
  * Merge flag arrays with override semantics: later arrays override earlier ones
@@ -165,15 +175,27 @@ export const executeBazelTest = async (
     //clear testresult window
 
 
+
+    const shouldParseStructured = code === 0 || code === 3 || code === 4;
+    const unifiedResult = shouldParseStructured
+      ? await parseUnifiedTestResult({
+          targetLabel: testItem.id,
+          workspacePath,
+          bazelPath: config.bazelPath,
+        })
+      : null;
+
     const { input: testLog } = parseBazelOutput(stdout);
     const { input: bazelLog } = parseBazelOutput(stderr);
+    const relevantCases = unifiedResult ? filterTestCasesForItem(testItem, unifiedResult.testCases) : [];
+    const displayTestLog = filterLogLinesForItem(testItem, relevantCases, testLog);
 
       if (code === 0) {
-      if (testLog.length > 0) {
+      if (displayTestLog.length > 0) {
         const outputBlock = [
           getStatusHeader(code, testItem.id),
           '----- BEGIN OUTPUT -----',
-          ...testLog,
+          ...displayTestLog,
           '------ END OUTPUT ------'
         ].join("\n");
 
@@ -184,7 +206,16 @@ export const executeBazelTest = async (
       run.passed(testItem);
       try { finishTest(testItem.id, 'passed'); } catch {}
     } else if (code === 3) {
-      handleTestResult(run, testItem, code, bazelLog, testLog, workspacePath);
+      handleTestResult(
+        run,
+        testItem,
+        code,
+        bazelLog,
+        displayTestLog,
+        workspacePath,
+        unifiedResult ?? EMPTY_UNIFIED_RESULT,
+        relevantCases
+      );
     } else if (code === 4) {
       run.skipped(testItem);
       vscode.window.showWarningMessage(`⚠️ Flaky tests: ${testItem.id}`);
@@ -306,12 +337,18 @@ function handleTestResult(
   code: number,
   bazelLog: string[],
   testLog: string[],
-  workspacePath: string
+  workspacePath: string,
+  parsedResult: UnifiedTestResult,
+  scopedCases: IndividualTestCase[]
 ) {
   if (code === 0) {
     run.passed(testItem); // just to be sure
   } else {
-    const messages = analyzeTestFailures(testLog, workspacePath, testItem);
+    const casesForMessages = scopedCases.length > 0 ? scopedCases : parsedResult.testCases;
+    const structuredMessages = buildMessagesFromTestCases(casesForMessages, workspacePath);
+    const messages = structuredMessages.length > 0
+      ? structuredMessages
+      : analyzeTestFailures(testLog, workspacePath, testItem);
     logWithTimestamp(`Analyzed test failures for ${testItem.id}: ${messages.length} messages found.`);
     if (messages.length > 0) {
       run.failed(testItem, messages);
@@ -339,6 +376,116 @@ function handleTestResult(
       try { finishTest(testItem.id, 'failed', fallbackOutput); } catch {}
     }
   }
+}
+
+function buildMessagesFromTestCases(testCases: IndividualTestCase[], workspacePath: string): vscode.TestMessage[] {
+  const failing = testCases.filter(tc => tc.status === 'FAIL' || tc.status === 'TIMEOUT');
+  return failing.map(testCase => {
+    const scope = testCase.suite || testCase.className;
+    const displayName = scope ? `${scope}::${testCase.name}` : testCase.name;
+    const statusLabel = testCase.status === 'TIMEOUT' ? 'Timeout' : 'Failed';
+    const segments = [`${displayName} (${statusLabel})`];
+    if (testCase.errorMessage) {
+      segments.push(testCase.errorMessage);
+    }
+    const message = new vscode.TestMessage(segments.join('\n\n'));
+    const location = resolveLocationFromTestCase(testCase, workspacePath);
+    if (location) {
+      message.location = location;
+    }
+    return message;
+  });
+}
+
+function filterTestCasesForItem(testItem: vscode.TestItem, cases: IndividualTestCase[]): IndividualTestCase[] {
+  if (!testItem.id.includes('::')) {
+    return cases;
+  }
+
+  const targetCaseName = testItem.id.split('::').slice(1).join('::').toLowerCase();
+  const directMatches = cases.filter(tc => tc.name.toLowerCase() === targetCaseName);
+  if (directMatches.length > 0) {
+    return directMatches;
+  }
+
+  const scopedMatches = cases.filter(tc => {
+    const scope = (tc.suite || tc.className || '').toLowerCase();
+    const combined = scope ? `${scope}::${tc.name.toLowerCase()}` : tc.name.toLowerCase();
+    return combined === targetCaseName;
+  });
+
+  return scopedMatches.length > 0 ? scopedMatches : cases;
+}
+
+function filterLogLinesForItem(
+  testItem: vscode.TestItem,
+  cases: IndividualTestCase[],
+  logLines: string[]
+): string[] {
+  if (!testItem.id.includes('::')) {
+    return logLines;
+  }
+
+  const needles = new Set<string>();
+  for (const testCase of cases) {
+    needles.add(testCase.name.toLowerCase());
+    if (testCase.suite) {
+      needles.add(testCase.suite.toLowerCase());
+    }
+    if (testCase.className) {
+      needles.add(testCase.className.toLowerCase());
+    }
+  }
+
+  const targetName = testItem.id.split('::').slice(1).join('::').toLowerCase();
+  if (targetName) {
+    needles.add(targetName);
+  }
+
+  const terms = Array.from(needles).filter(term => term.length > 0);
+  if (terms.length === 0) {
+    return logLines;
+  }
+
+  const filtered = logLines.filter(line => {
+    const lower = line.toLowerCase();
+    return terms.some(needle => lower.includes(needle));
+  });
+
+  return filtered.length > 0 ? filtered : logLines;
+}
+
+function resolveLocationFromTestCase(
+  testCase: IndividualTestCase,
+  workspacePath: string
+): vscode.Location | undefined {
+  if (!testCase.file || testCase.file.trim().length === 0) {
+    return undefined;
+  }
+
+  const normalizedPath = path.normalize(testCase.file);
+
+  // Make extraction after the `_main` separator robust by working with path segments
+  const pathSegments = normalizedPath.split(path.sep).filter(segment => segment.length > 0);
+  const mainIndex = pathSegments.lastIndexOf('_main');
+
+  const trimmedPath =
+    mainIndex !== -1 && mainIndex < pathSegments.length - 1
+      ? path.join(...pathSegments.slice(mainIndex + 1))
+      : normalizedPath;
+  const absolutePath = path.isAbsolute(trimmedPath)
+    ? trimmedPath
+    : path.join(workspacePath, trimmedPath);
+
+  if (!fs.existsSync(absolutePath)) {
+    return undefined;
+  }
+
+  const zeroBasedLine = Math.max(0, (testCase.line || 1) - 1);
+  return new vscode.Location(
+    vscode.Uri.file(absolutePath),
+    new vscode.Position(zeroBasedLine, 0)
+  );
 }
 
 // analyzeTestFailures is now imported from parseFailures.ts

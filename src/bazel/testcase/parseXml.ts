@@ -69,6 +69,7 @@ export function parseStructuredTestXml(
   const normalizedXml = xmlContent.replace(/\r\n/g, '\n');
   const testCases: IndividualTestCase[] = [];
   const systemOutSections = collectSystemOutSections(normalizedXml);
+  const targetPackagePath = extractPackagePath(parentTarget);
 
   const suiteRegex = /<testsuite\b([^>]*)>([\s\S]*?)<\/testsuite>/gi;
   let suiteMatch: RegExpExecArray | null;
@@ -79,22 +80,24 @@ export function parseStructuredTestXml(
     const suiteAttrs = parseAttributes(suiteMatch[1] ?? '');
     const suiteName = decodeXmlEntities(suiteAttrs.name ?? '');
     const suiteBody = suiteMatch[2] ?? '';
-    extractTestCasesFromSuiteBody(suiteBody, suiteName, parentTarget, testCases);
+    extractTestCasesFromSuiteBody(suiteBody, suiteName, parentTarget, testCases, targetPackagePath);
   }
 
   if (!matchedSuite) {
-    extractTestCasesFromSuiteBody(normalizedXml, undefined, parentTarget, testCases);
+    extractTestCasesFromSuiteBody(normalizedXml, undefined, parentTarget, testCases, targetPackagePath);
   }
 
   let finalTestCases = testCases;
+  let detectedFramework: string | undefined;
 
   if (systemOutSections.length > 0) {
     const combinedOut = systemOutSections.join('\n').trim();
     if (combinedOut.length > 0) {
+      detectedFramework = detectFrameworkFromSystemOut(combinedOut);
       const fallback = extractTestCasesFromOutput(
         combinedOut,
         parentTarget,
-        options?.allowedPatternIds
+        options?.allowedPatternIds ?? resolveFallbackPatterns(detectedFramework)
       );
       finalTestCases = mergeStructuredWithSystemOut(testCases, fallback.testCases);
     }
@@ -111,7 +114,8 @@ function extractTestCasesFromSuiteBody(
   suiteBody: string,
   suiteName: string | undefined,
   parentTarget: string,
-  collector: IndividualTestCase[]
+  collector: IndividualTestCase[],
+  packagePath?: string
 ): void {
   const casePattern = /<testcase\b([^>]*)\s*(?:\/>|>([\s\S]*?)<\/testcase>)/gi;
   let caseMatch: RegExpExecArray | null;
@@ -166,6 +170,19 @@ function extractTestCasesFromSuiteBody(
       className: className || undefined,
       frameworkId: FRAMEWORK_ID
     };
+
+    if (testCase.errorMessage) {
+      const loc = extractLocationFromMessage(testCase.errorMessage, packagePath);
+      if (loc) {
+        if (!testCase.file || testCase.file.trim().length === 0) {
+          testCase.file = loc.file;
+        }
+        if (!testCase.line || testCase.line <= 0) {
+          testCase.line = loc.line;
+        }
+      }
+      testCase.errorMessage = cleanFailureMessage(testCase.errorMessage);
+    }
 
     collector.push(testCase);
   }
@@ -339,4 +356,74 @@ function hasLocation(testCase: IndividualTestCase): boolean {
 function buildCaseKey(testCase: IndividualTestCase): string {
   const scope = (testCase.suite || testCase.className || '').toLowerCase();
   return `${scope}::${testCase.name.toLowerCase()}`;
+}
+
+function extractLocationFromMessage(message: string, packagePath?: string): { file: string; line: number } | undefined {
+  const matcher = message.matchAll(/([^\s():]+\.\w+):(\d+)/g);
+  const candidates = Array.from(matcher);
+  if (candidates.length === 0) {
+    return undefined;
+  }
+
+  const preferPackage = packagePath
+    ? candidates.find(match => match[1].includes(packagePath))
+    : undefined;
+  const preferred = preferPackage
+    ?? candidates.find(match => isLikelyUserCode(match[1]))
+    ?? candidates[candidates.length - 1];
+
+  return {
+    file: preferred[1],
+    line: parseInt(preferred[2], 10) || 0
+  };
+}
+
+function getBasename(file: string): string {
+  return file.replace(/^.*[\\/]/, '');
+}
+
+function isLikelyUserCode(file: string): boolean {
+  const lower = file.toLowerCase();
+  const base = getBasename(file).toLowerCase();
+  if (lower.includes('/org/junit') || lower.includes('\\org\\junit')) {
+    return false;
+  }
+  if (base.startsWith('assert.') || base.endsWith('runner.java')) {
+    return false;
+  }
+  return true;
+}
+
+function cleanFailureMessage(message: string): string {
+  return message
+    .replace(/--- FAIL: .*?\(\d+(?:\.\d+)?s\)\s*/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function extractPackagePath(targetLabel: string): string | undefined {
+  const match = targetLabel.match(/^\/\/(.+):/);
+  return match ? match[1] : undefined;
+}
+
+function detectFrameworkFromSystemOut(log: string): string | undefined {
+  if (/pytest-[\d.]+/i.test(log)) {
+    return 'pytest';
+  }
+  if (/unittest/.test(log)) {
+    return 'unittest';
+  }
+  return undefined;
+}
+
+function resolveFallbackPatterns(framework?: string): string[] | undefined {
+  if (!framework) {
+    return undefined;
+  }
+  switch (framework) {
+    case 'pytest':
+      return ['pytest_python', 'pytest_assertion_line'];
+    default:
+      return undefined;
+  }
 }

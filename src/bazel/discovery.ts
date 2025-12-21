@@ -10,11 +10,12 @@
 import { createHash } from 'crypto';
 import { callRunBazelCommandForTest } from './runner';
 import { logWithTimestamp, formatError } from '../logging';
-import { IndividualTestCase, TestCaseParseResult, BazelTestTarget } from './types';
-import { readStructuredTestXmlResult } from './testcase/parseXml';
-import { extractTestCasesFromOutput } from './testcase/parseOutput';
+import { TestCaseParseResult, BazelTestTarget } from './types';
 import { PATTERN_IDS_BY_TEST_TYPE } from './testPatterns';
 import { getTestTargetById } from './queries';
+import { parseUnifiedTestResult } from './testcase/testResultParser';
+
+export { setTestXmlLoader, getTestXmlLoader } from './testcase/testResultParser';
 
 interface CacheEntry { result: TestCaseParseResult; stdoutHash: string; timestamp: number; }
 
@@ -77,14 +78,6 @@ class CryptoHashService implements IHashService {
 const discoveryCache = new Map<string, CacheEntry>();
 let configService: IConfigService = new VSCodeConfigService();
 let hashService: IHashService = new CryptoHashService();
-type TestXmlLoader = (
-  targetLabel: string,
-  workspacePath: string,
-  bazelPath: string,
-  allowedPatternIds?: string[]
-) => Promise<TestCaseParseResult | null>;
-let xmlLoader: TestXmlLoader = readStructuredTestXmlResult;
-
 // Export for testing: allow dependency injection
 export function setConfigService(service: IConfigService): void {
   configService = service;
@@ -101,14 +94,6 @@ export function getConfigService(): IConfigService {
 
 export function getHashService(): IHashService {
   return hashService;
-}
-
-export function setTestXmlLoader(loader: TestXmlLoader): void {
-  xmlLoader = loader;
-}
-
-export function getTestXmlLoader(): TestXmlLoader {
-  return xmlLoader;
 }
 
 export const discoverIndividualTestCases = async (
@@ -143,11 +128,14 @@ export const discoverIndividualTestCases = async (
 
     const bazelPath = configService.getBazelPath();
     const allowedPatterns = resolveAllowedPatterns(testTarget, testType);
-    const xmlResult = await xmlLoader(testTarget, workspacePath, bazelPath, allowedPatterns);
-    const fallbackResult = extractTestCasesFromOutput(combinedOutput, testTarget, allowedPatterns);
-    const finalResult = selectFinalResult(xmlResult, fallbackResult);
+    const finalResult = await parseUnifiedTestResult({
+      targetLabel: testTarget,
+      workspacePath,
+      bazelPath,
+      allowedPatternIds: allowedPatterns
+    });
 
-    if (finalResult && finalResult.testCases.length > 0) {
+    if (finalResult.testCases.length > 0) {
       const entry: CacheEntry = {
         result: finalResult,
         stdoutHash: hashService.sha1(combinedOutput),
@@ -194,83 +182,6 @@ export function getDiscoveryCacheStats(): { size: number; entries: string[] } {
   };
 }
 
-function selectFinalResult(
-  xmlResult: TestCaseParseResult | null,
-  fallbackResult: TestCaseParseResult
-): TestCaseParseResult | null {
-  if (xmlResult && xmlResult.testCases.length > 0) {
-    if (needsAugmentation(xmlResult.testCases) && fallbackResult.testCases.length > 0) {
-      logWithTimestamp('Structured XML missing source info; augmenting with fallback output parser.');
-      return augmentStructuredResult(xmlResult, fallbackResult.testCases);
-    }
-    return xmlResult;
-  }
-
-  if (fallbackResult.testCases.length > 0) {
-    logWithTimestamp('Structured XML not available; using fallback output parser.');
-    return fallbackResult;
-  }
-
-  return null;
-}
-
-function needsAugmentation(testCases: IndividualTestCase[]): boolean {
-  return testCases.some(tc => !tc.file || tc.file.trim().length === 0 || !tc.line || tc.line <= 0);
-}
-
-function augmentStructuredResult(
-  structured: TestCaseParseResult,
-  fallbackCases: IndividualTestCase[]
-): TestCaseParseResult {
-  if (fallbackCases.length === 0) {
-    return structured;
-  }
-
-  const fallbackMap = new Map<string, IndividualTestCase>();
-  for (const fallback of fallbackCases) {
-    fallbackMap.set(buildCaseKey(fallback), fallback);
-  }
-
-  const enriched = structured.testCases.map(caseItem => {
-    const key = buildCaseKey(caseItem);
-    const fallback = fallbackMap.get(key);
-    if (!fallback) {
-      return caseItem;
-    }
-
-    const updated: IndividualTestCase = { ...caseItem };
-    if ((!updated.file || updated.file.trim().length === 0) && fallback.file) {
-      updated.file = fallback.file;
-    }
-    if ((!updated.line || updated.line <= 0) && fallback.line) {
-      updated.line = fallback.line;
-    }
-    if (!updated.frameworkId && fallback.frameworkId) {
-      updated.frameworkId = fallback.frameworkId;
-    }
-    if (!updated.errorMessage && fallback.errorMessage) {
-      updated.errorMessage = fallback.errorMessage;
-    }
-    if (!updated.suite && fallback.suite) {
-      updated.suite = fallback.suite;
-    }
-    if (!updated.className && fallback.className) {
-      updated.className = fallback.className;
-    }
-    return updated;
-  });
-
-  return {
-    testCases: enriched,
-    summary: structured.summary
-  };
-}
-
-function buildCaseKey(testCase: IndividualTestCase): string {
-  const scope = (testCase.suite || testCase.className || '').toLowerCase();
-  return `${scope}::${testCase.name.toLowerCase()}`;
-}
-
 function resolveAllowedPatterns(testTarget: string, testType?: string): string[] | undefined {
   const metadata = getTestTargetById(testTarget);
   const detectedFrameworks = detectFrameworks(metadata);
@@ -294,12 +205,12 @@ function resolveAllowedPatterns(testTarget: string, testType?: string): string[]
 
 const FRAMEWORK_PATTERNS: Record<string, string[]> = {
   rust: ['rust_test'],
-  pytest: ['pytest_python'],
+  pytest: ['pytest_python', 'pytest_assertion_line'],
   unity: ['unity_c_standard', 'unity_c_with_message'],
   doctest: ['doctest_cpp', 'doctest_subcase'],
   catch2: ['catch2_cpp', 'catch2_passed', 'catch2_summary'],
   gtest: ['gtest_cpp'],
-  check: ['parentheses_format'],
+  check: ['parentheses_format', 'check_framework'],
   ctest: ['ctest_output', 'ctest_verbose'],
   go: ['go_test'],
   junit: ['junit_java']

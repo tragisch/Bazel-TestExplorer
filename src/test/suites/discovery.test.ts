@@ -219,18 +219,17 @@ apps/tests/test_main.c:12:test_two:FAIL`;
     }
   });
 
-  test('should fall back to output parser when XML missing', async () => {
+  test('should return empty result when XML missing', async () => {
     const target = '//test:needs_fallback';
     xmlResults.set(target, null);
 
     const result = await discoverIndividualTestCases(target, mockWorkspacePath, 'py_test');
 
-    assert.ok(result.testCases.length >= 2);
-    const testOne = result.testCases.find(tc => tc.name === 'test_one');
-    assert.strictEqual(testOne?.file, 'tests/test_example.py');
+    assert.strictEqual(result.testCases.length, 0);
+    assert.strictEqual(result.summary.total, 0);
   });
 
-  test('should augment structured XML data when file information missing', async () => {
+  test('should keep structured XML data when file information missing', async () => {
     const target = '//test:augment';
     xmlResults.set(target, {
       testCases: [
@@ -246,8 +245,8 @@ apps/tests/test_main.c:12:test_two:FAIL`;
     });
 
     const result = await discoverIndividualTestCases(target, mockWorkspacePath, 'cc_test');
-    assert.strictEqual(result.testCases[0].file, 'apps/tests/test_main.c');
-    assert.ok(result.testCases[0].line > 0);
+    assert.strictEqual(result.testCases[0].file, '');
+    assert.strictEqual(result.testCases[0].line, 0);
   });
 
   test('should implement caching mechanism', async () => {

@@ -100,6 +100,22 @@ export const BUILTIN_TEST_PATTERNS: TestCasePattern[] = [
         filterTemplate: '${file}::${name}'
     },
     {
+        id: "pytest_assertion_line",
+        framework: "PyTest (Python)",
+        pattern: /^\s*(.+?\.py):(\d+):\s*(AssertionError(?:.*)?)$/,
+        groups: {
+            file: 1,
+            line: 2,
+            testName: 0,
+            status: 0,
+            message: 3
+        },
+        description: "PyTest traceback line (file:line: AssertionError...) used to capture source locations",
+        example: "apps/tests/test_math.py:7: AssertionError",
+        supportsIndividual: false,
+        fixedStatus: 'FAIL'
+    },
+    {
         id: "go_test",
         framework: "Go Test",
         pattern: /^\s*=== (RUN|PASS|FAIL|SKIP)\s+(.+?)$/,
@@ -244,6 +260,24 @@ export const BUILTIN_TEST_PATTERNS: TestCasePattern[] = [
         supportsIndividual: false
     },
     {
+        id: "check_framework",
+        framework: "Check (C)",
+        pattern: /^(.+?):(\d+):F:([^:]+):([^:]+):\d+:\s*(.+)$/,
+        groups: {
+            file: 1,
+            line: 2,
+            suite: 3,
+            testName: 4,
+            status: 0,
+            message: 5
+        },
+        description: "Check unit test framework failure output",
+        example: "apps/tests/mathlib_buggy_test.c:44:F:Multiply:test_multiply_zero:0: Assertion failed",
+        supportsIndividual: true,
+        filterTemplate: '${suite}.${name}',
+        fixedStatus: 'FAIL'
+    },
+    {
         id: "ctest_output",
         framework: "CTest (CMake/Bazel)",
         pattern: /^\s*(\d+)\/(\d+)\s+Test\s+#\d+:\s+(.+?)\s+\.+\s*(Passed|Failed|\*\*\*Failed|\*\*\*Timeout)/,
@@ -295,7 +329,7 @@ export const PATTERN_IDS_BY_TEST_TYPE: Record<string, string[]> = {
         "ctest_verbose",
         "parentheses_format"
     ],
-    py_test: ["pytest_python"],
+    py_test: ["pytest_python", "pytest_assertion_line"],
     rust_test: ["rust_test"],
     go_test: ["go_test"],
     java_test: ["junit_java"],

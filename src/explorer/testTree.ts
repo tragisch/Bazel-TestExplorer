@@ -452,9 +452,8 @@ export const resolveTestCaseChildren = async (
         const testCaseId = `${testItem.id}::${testCase.name}`;
         const existing = testItem.children.get(testCaseId);
         const resolvedFile = selectFilePath(testCase.file, fallbackLocation?.file);
-        const uri = resolvedFile
-          ? vscode.Uri.file(toAbsolutePath(resolvedFile, workspacePath))
-          : undefined;
+        const absolutePath = resolvedFile ? toAbsolutePath(resolvedFile, workspacePath) : undefined;
+        const uri = absolutePath ? vscode.Uri.file(absolutePath) : undefined;
         const resolvedLine = testCase.line && testCase.line > 0
           ? testCase.line
           : fallbackLocation?.line;
@@ -464,6 +463,13 @@ export const resolveTestCaseChildren = async (
               new vscode.Position(Math.max(0, resolvedLine - 1), 0)
             )
           : undefined;
+
+        if (absolutePath) {
+          testCase.file = absolutePath;
+        }
+        if (resolvedLine && resolvedLine > 0 && resolvedLine !== testCase.line) {
+          testCase.line = resolvedLine;
+        }
 
         if (!existing) {
           const statusIcon = '🧪';
@@ -505,9 +511,21 @@ export const resolveTestCaseChildren = async (
 };
 
 function selectFilePath(primary?: string, fallback?: string): string | undefined {
-  return primary && primary.trim().length > 0
-    ? primary
-    : fallback;
+  if (primary && primary.trim().length > 0) {
+    const normalized = primary.trim();
+    const hasSeparator = normalized.includes('/') || normalized.includes(path.sep);
+    if (hasSeparator || !fallback) {
+      return normalized;
+    }
+    const fallbackDir = fallback.includes('/') || fallback.includes(path.sep)
+      ? path.posix.dirname(fallback).replace(/\\/g, '/')
+      : '';
+    if (fallbackDir) {
+      return path.posix.join(fallbackDir, normalized);
+    }
+    return normalized;
+  }
+  return fallback;
 }
 
 function toAbsolutePath(filePath: string, workspacePath: string): string {
