@@ -21,8 +21,8 @@ import { ErrorHandler } from '../errors/errorHandler';
 import { logWithTimestamp } from '../logging';
 
 /**
- * Zentrale Fassade für alle Bazel-Operationen.
- * Kapselt queries.ts, runner.ts und process.ts mit Caching und Error-Handling.
+ * Central facade for all Bazel operations.
+ * Encapsulates queries.ts, runner.ts, and process.ts with caching and error handling.
  */
 export class BazelClient {
   private cache: QueryCache;
@@ -37,7 +37,7 @@ export class BazelClient {
   }
 
   /**
-   * Query alle Test-Targets mit Pattern (Cache-aware)
+   * Queries all test targets with pattern (cache-aware)
    */
   async queryTests(): Promise<BazelTestTarget[]> {
     try {
@@ -58,7 +58,7 @@ export class BazelClient {
       const labels = await queryBazelTestLabelsOnly(this.workspaceRoot, this.config);
       const targets = await queryBazelTestMetadata(labels, this.workspaceRoot, this.config);
       
-      // Im Cache speichern
+      // Store in cache
       this.cache.set(cacheKey, targets);
       
       return targets;
@@ -87,7 +87,7 @@ export class BazelClient {
   }
 
   /**
-   * Holt Metadata für ein Target
+   * Retrieves metadata for a target
    * @param targetId Target ID/Label
    */
   getTargetMetadata(targetId: string): BazelTestTarget | undefined {
@@ -95,7 +95,7 @@ export class BazelClient {
   }
 
   /**
-   * Validiert Bazel-Installation mit Error-Handling
+   * Validates Bazel installation with error handling
    */
   async validate(): Promise<{ valid: boolean; version?: string; error?: string }> {
     try {
@@ -129,7 +129,7 @@ export class BazelClient {
   }
 
   /**
-   * Löscht den Query-Cache (z.B. bei BUILD-Datei-Änderungen)
+   * Clears the query cache (e.g., on BUILD file changes)
    */
   clearCache(pattern?: string): void {
     this.cache.clear(pattern);
@@ -137,21 +137,21 @@ export class BazelClient {
   }
 
   /**
-   * Gibt Cache-Statistiken zurück
+   * Returns cache statistics
    */
   getCacheStats(): { size: number; keys: string[] } {
     return this.cache.getStats();
   }
 
   /**
-   * Getter für Workspace-Root
+   * Getter for workspace root
    */
   get workspace(): string {
     return this.workspaceRoot;
   }
 
   /**
-   * Getter für Bazel-Pfad
+   * Getter for Bazel path
    */
   get bazel(): string {
     return this.config.bazelPath;

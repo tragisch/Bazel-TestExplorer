@@ -1,6 +1,9 @@
 /*
- * Copyright (c) 2025 @tragisch
+ * Copyright (c) 2025 @tragisch <https://github.com/tragisch>
  * SPDX-License-Identifier: MIT
+ * 
+ * This file is part of a project licensed under the MIT License.
+ * See the LICENSE file in the root directory for details.
  */
 
 /**
@@ -36,7 +39,7 @@ export async function getBazelTestLogsDirectory(
       bazelPath
     );
 
-    // Neue Abschluss-Logzeile
+    // New completion log line
     logWithTimestamp(`Finished running Bazel: bazel info bazel-testlogs (code ${code})`, 'info');
 
     if (code !== 0) {

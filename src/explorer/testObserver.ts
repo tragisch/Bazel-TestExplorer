@@ -1,4 +1,12 @@
 /*
+ * Copyright (c) 2025 @tragisch <https://github.com/tragisch>
+ * SPDX-License-Identifier: MIT
+ * 
+ * This file is part of a project licensed under the MIT License.
+ * See the LICENSE file in the root directory for details.
+ */
+
+/*
  * TestObserver
  * - subscribes to test lifecycle events published on the event bus
  * - collects a small in-memory history of recent runs

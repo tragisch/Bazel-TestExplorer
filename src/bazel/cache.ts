@@ -15,7 +15,7 @@ import { logWithTimestamp } from '../logging';
 import * as crypto from 'crypto';
 
 /**
- * Gecachtes Query-Resultat
+ * cached query result
  */
 interface CacheEntry<T> {
   data: T;
@@ -24,14 +24,14 @@ interface CacheEntry<T> {
 }
 
 /**
- * Query-Cache mit TTL (Time-To-Live) für Bazel-Query-Resultate
+ * query-cache with TTL (time-to-live) for Bazel query results
  */
 export class QueryCache {
   private cache = new Map<string, CacheEntry<BazelTestTarget[]>>();
   private readonly defaultTtlMs = 5 * 60 * 1000; // 5 Minuten
 
   /**
-   * Holt einen Wert aus dem Cache, falls vorhanden und nicht abgelaufen
+   * Retrieves a value from the cache if present and not expired
    */
   get(key: string): BazelTestTarget[] | null {
     const entry = this.cache.get(key);
@@ -52,7 +52,7 @@ export class QueryCache {
   }
 
   /**
-   * Speichert einen Wert im Cache
+   * Stores a value in the cache
    */
   set(key: string, data: BazelTestTarget[], ttlMs?: number): void {
     this.cache.set(key, {
@@ -64,7 +64,7 @@ export class QueryCache {
   }
 
   /**
-   * Löscht einen spezifischen Cache-Eintrag
+   * Deletes a specific cache entry
    */
   delete(key: string): boolean {
     const deleted = this.cache.delete(key);
@@ -75,7 +75,7 @@ export class QueryCache {
   }
 
   /**
-   * Löscht alle Cache-Einträge (optional: nur für bestimmtes Pattern)
+   * Clears all cache entries (optionally only for a specific pattern)
    */
   clear(pattern?: string): void {
     if (!pattern) {
@@ -96,7 +96,7 @@ export class QueryCache {
   }
 
   /**
-   * Invalidiert abgelaufene Einträge
+   * Invalidates expired entries
    */
   invalidateExpired(): number {
     let count = 0;
@@ -114,7 +114,7 @@ export class QueryCache {
   }
 
   /**
-   * Gibt Cache-Statistiken zurück
+   * Returns cache statistics
    */
   getStats(): { size: number; keys: string[] } {
     return {
@@ -124,7 +124,7 @@ export class QueryCache {
   }
 
   /**
-   * Erstellt einen Cache-Key aus Query-Parametern
+   * Creates a cache key from query parameters
    */
   static createKey(queryPaths: string[], testTypes: string[]): string {
     const sortedPaths = queryPaths.sort().join('|');

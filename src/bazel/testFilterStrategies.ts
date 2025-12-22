@@ -1,15 +1,13 @@
 /*
- * Copyright (c) 2025 @tragisch
+ * Copyright (c) 2025 @tragisch <https://github.com/tragisch>
  * SPDX-License-Identifier: MIT
+ * 
+ * This file is part of a project licensed under the MIT License.
+ * See the LICENSE file in the root directory for details.
  */
 
 /**
  * Test filter strategies - framework-specific test filtering using native Bazel/framework features
- * 
- * Bazel-First-Prinzip:
- * - Nutze native Bazel/Framework Features wo vorhanden
- * - Fallback auf ganzes Target wenn nicht unterstützt
- * - Keine Nachbauten von Bazel-Features
  */
 
 export type TestFramework = 
@@ -17,11 +15,11 @@ export type TestFramework =
   | 'rust' | 'go' | 'java' | 'other';
 
 interface FilterStrategy {
-  /** Ob dieses Framework Filter-Parameter unterstützt */
+  /** Whether this framework supports filter parameters */
   supportsFilter: boolean;
-  /** Parameter zum Ausführen eines spezifischen Tests */
+  /** Parameters to run a specific test */
   getFilterArgs: (testName: string) => string[];
-  /** Beschreibung für Logging */
+  /** Description for logging */
   description: string;
 }
 
@@ -47,35 +45,35 @@ const strategies: Record<TestFramework, FilterStrategy> = {
     description: 'doctest (Python) - unterstützt --test_filter'
   },
   
-  // Frameworks ohne nativen Filter - Fallback auf ganzes Target
+  // Frameworks without native filter - fallback to whole target
   rust: {
     supportsFilter: false,
     getFilterArgs: () => [],
-    description: 'Rust (native) - kein Filter, führt ganzes Target aus'
+    description: 'Rust (native) - no filter, runs whole target'
   },
   go: {
     supportsFilter: false,
     getFilterArgs: () => [],
-    description: 'Go - kein Filter, führt ganzes Target aus'
+    description: 'Go - no filter, runs whole target'
   },
   java: {
     supportsFilter: false,
     getFilterArgs: () => [],
-    description: 'Java/JUnit - kein Filter, führt ganzes Target aus'
+    description: 'Java/JUnit - no filter, runs whole target'
   },
   other: {
     supportsFilter: false,
     getFilterArgs: () => [],
-    description: 'Unbekanntes Framework - konservativ ganzes Target'
+    description: 'Unknown framework - conservatively runs whole target'
   }
 };
 
 /**
- * Bestimme Bazel-Argumente für Test-Filterung
+ * Determine Bazel arguments for test filtering
  * 
- * @param testName Name des spezifischen Tests (z.B. "test_multiply")
- * @param framework Test-Framework (z.B. "gtest")
- * @returns Array von Bazel-Argumenten, leer wenn nicht unterstützt
+ * @param testName Name of the specific test (e.g., "test_multiply")
+ * @param framework Test framework (e.g., "gtest")
+ * @returns Array of Bazel arguments, empty if not supported
  */
 export function getTestFilterArgs(
   testName: string,
@@ -86,7 +84,7 @@ export function getTestFilterArgs(
 }
 
 /**
- * Prüfe ob ein Framework Test-Filterung unterstützt
+ * Check if a framework supports test filtering
  */
 export function supportsTestFilter(framework: TestFramework = 'other'): boolean {
   const strategy = strategies[framework] ?? strategies.other;
@@ -94,7 +92,7 @@ export function supportsTestFilter(framework: TestFramework = 'other'): boolean 
 }
 
 /**
- * Beschreibung der Filter-Strategie (für Logging/Debugging)
+ * Description of the filter strategy (for logging/debugging)
  */
 export function getStrategyDescription(framework: TestFramework = 'other'): string {
   const strategy = strategies[framework] ?? strategies.other;
@@ -102,6 +100,6 @@ export function getStrategyDescription(framework: TestFramework = 'other'): stri
 }
 
 /**
- * Alle verfügbaren Frameworks
+ * All supported frameworks
  */
 export const SUPPORTED_FRAMEWORKS: TestFramework[] = Object.keys(strategies) as TestFramework[];

@@ -6,6 +6,14 @@
  * See the LICENSE file in the root directory for details.
  */
 
+/*
+ * Copyright (c) 2025 @tragisch <https://github.com/tragisch>
+ * SPDX-License-Identifier: MIT
+ * 
+ * This file is part of a project licensed under the MIT License.
+ * See the LICENSE file in the root directory for details.
+ */
+
 /**
  * Test controller manager - orchestrates VS Code test discovery, execution, and UI integration
  */
