@@ -14,7 +14,7 @@ import * as vscode from 'vscode';
 import { BazelClient } from '../bazel/client';
 import { ConfigurationService } from '../configuration';
 import { discoverAndDisplayTests, resolveTestCaseChildren } from './testTree';
-import { showTestMetadataById } from './testInfoPanel';
+import { showCombinedTestPanel } from './combinedTestPanel';
 import { logWithTimestamp, formatError } from '../logging';
 import { startTest, finishTest } from './testEventBus';
 import { TestCaseAnnotations } from './testCaseAnnotations';
@@ -111,16 +111,7 @@ export class TestControllerManager {
         }
       }),
 
-      vscode.commands.registerCommand('bazelTestExplorer.showSelectedTestMetadata', () => {
-        vscode.window.showInformationMessage(
-          "Automatic selection detection not implemented. Please right-click a test and use 'Show Metadata'."
-        );
-      }),
-
-      vscode.commands.registerCommand('bazelTestExplorer.showTestMetadata', (testItem: vscode.TestItem) => {
-        vscode.window.showInformationMessage(`Clicked on test: ${testItem?.id}`);
-        showTestMetadataById(testItem?.id, this.bazelClient);
-      })
+      // legacy metadata commands removed; use 'bazelTestExplorer.showTestDetails' instead
     );
   }
 

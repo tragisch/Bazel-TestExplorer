@@ -31,14 +31,6 @@
         "title": "Bazel-TestExplorer: Reload Tests"
       },
       {
-        "command": "bazelTestExplorer.showTestMetadata",
-        "title": "Bazel-TestExplorer: Show Metadata for Test Target"
-      },
-      {
-        "command": "bazelTestExplorer.showSelectedTestMetadata",
-        "title": "Bazel-TestExplorer: Show Selected Test Metadata"
-      },
-      {
         "command": "bazelTestExplorer.openHistoryItem",
         "title": "Bazel-TestExplorer: Open Test History Item"
       },
@@ -54,14 +46,9 @@
     "menus": {
       "testing/item/context": [
         {
-          "command": "bazelTestExplorer.showTestMetadata",
-          "when": "view == workbench.view.testing",
-          "group": "navigation@2"
-        },
-        {
           "command": "bazelTestExplorer.showTestDetails",
           "when": "view == workbench.view.testing",
-          "group": "navigation@3"
+          "group": "navigation@2"
         }
       ]
     },

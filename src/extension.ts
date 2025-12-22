@@ -24,7 +24,7 @@ import TestSettingsView from './explorer/testSettingsView';
 import { onDidTestEvent } from './explorer/testEventBus';
 import { TestCaseAnnotations, TestCaseCodeLensProvider, TestCaseHoverProvider } from './explorer/testCaseAnnotations';
 import { TestCaseInsights } from './explorer/testCaseInsights';
-import { showTestDetailsById } from './explorer/testDetailsPanel';
+import { showCombinedTestPanel } from './explorer/combinedTestPanel';
 
 export async function activate(context: vscode.ExtensionContext) {
 	initializeLogger();
@@ -215,7 +215,7 @@ export async function activate(context: vscode.ExtensionContext) {
 				void vscode.window.showInformationMessage('Please select a test item in the Testing view.');
 				return;
 			}
-			showTestDetailsById(testItem.id, bazelClient, testCaseInsights);
+			await showCombinedTestPanel(testItem.id, bazelClient, testCaseInsights, context);
 		})
 	);
 
