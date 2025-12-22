@@ -366,8 +366,22 @@ export const initiateBazelTest = async (
 
   const args = ['test', effectiveTestId, ...mergedFlags];
 
-  // No sharding support configured (removed shared shard settings)
-  const env: NodeJS.ProcessEnv | undefined = undefined;
+  // Configure shard-related environment variables to avoid framework warnings
+  // If the target defines sharding via `shard_count` we reflect that total, but
+  // we run a single shard (index 0) by default when invoked from the extension.
+  // This prevents frameworks from emitting warnings when they expect
+  // TEST_SHARD_INDEX/TEST_TOTAL_SHARDS/TEST_SHARD_STATUS_FILE to exist.
+  const targetMeta = getTestTargetById(effectiveTestId);
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  const totalShards = targetMeta && targetMeta.shard_count && targetMeta.shard_count > 0
+    ? String(targetMeta.shard_count)
+    : '1';
+
+  // Only set vars if they are not already provided in the environment
+  if (!env.TEST_TOTAL_SHARDS) env.TEST_TOTAL_SHARDS = totalShards;
+  if (!env.TEST_SHARD_INDEX) env.TEST_SHARD_INDEX = '0';
+  if (!env.TEST_SHARD_STATUS_FILE) env.TEST_SHARD_STATUS_FILE = path.join(cwd, '.vscode_bazel_shard_status');
+  logWithTimestamp(`Shard env: TEST_SHARD_INDEX=${env.TEST_SHARD_INDEX}, TEST_TOTAL_SHARDS=${env.TEST_TOTAL_SHARDS}`);
 
   return runBazelCommand(
     args,
