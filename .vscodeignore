@@ -2,7 +2,6 @@
 .vscode-test/**
 src/**
 out/
-doc/**
 node_modules/
 .gitignore
 .yarnrc
@@ -19,3 +18,15 @@ esbuild.js
 .gitignore
 .DS_Store
 Thumbs.db
+
+# Tests und temporäre Artefakte ausschließen
+test/**
+test_temp/**
+
+# Bilder: Alles ausschließen außer dem Extension-Icon
+images/**
+!images/icon_Bazel_TestExplorer.png
+
+# Sonstige Projekt-Dokumente, nicht zur Laufzeit benötigt
+architecture.md
+SUPPORT.md
