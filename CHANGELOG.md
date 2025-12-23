@@ -5,9 +5,10 @@ All notable changes to the "bazel-unity-test" extension will be documented here.
 ## [Unreleased]
 
 ### Added
-- **Test Case Discovery**: Performance Optimisation
-- **Multi-Framework Support**: Extended test pattern recognition new frameworks
-- **Enhanced Failure Analysis**: Improved error parsing and location detection
+- **Coverage Integration**: Bazel coverage runs via Testing UI, Coverage tab in Test Details
+- **Coverage Artifacts**: LCOV/LLVM detection with fallback to llvm-cov export
+- **Cancel All Runs**: Stop all running Bazel processes from Testing view
+- **Coverage Filters**: Default `--instrumentation_filter=.*` and configurable coverage args
 
 
 ## [0.1.14]
