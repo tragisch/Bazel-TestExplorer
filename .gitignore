@@ -7,3 +7,4 @@ node_modules
 .archiv/
 .vscode/
 .DS_Store
+.github/agents/

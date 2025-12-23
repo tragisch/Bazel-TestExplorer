@@ -143,6 +143,158 @@ export function computePerTargetFlags(targetId: string): string[] {
 }
 
 // ───────────────────────────────────────────────────────────────
+// Suite Results Parsing
+// ───────────────────────────────────────────────────────────────
+
+type TestStatus = 'PASSED' | 'FAILED' | 'TIMEOUT' | 'FLAKY';
+
+/**
+ * Parses and reports test suite results
+ */
+function parseSuiteResults(
+  testItem: vscode.TestItem,
+  run: vscode.TestRun,
+  code: number,
+  stdout: string
+): void {
+  const resultLines = stdout.split(/\r?\n/).filter(line => line.match(/^\/\/.* (PASSED|FAILED|TIMEOUT|FLAKY)/));
+
+  let passed = 0;
+  let failed = 0;
+
+  const rows = resultLines.map(line => {
+    const parts = line.trim().split(/\s+/);
+
+    let target: string;
+    let status: TestStatus | string;
+    let isCached: string;
+    let testTime: string;
+
+    if (parts.length === 5) {
+      target = parts[0];
+      isCached = parts[1];
+      status = parts[2];
+      testTime = parts[4];
+    } else {
+      target = parts[0];
+      status = parts[1];
+      isCached = "";
+      testTime = parts[3];
+    }
+
+    const symbolMap: Record<TestStatus, string> = {
+      PASSED: "✅ Passed",
+      FAILED: "❌ Failed",
+      TIMEOUT: "⏱ Timeout",
+      FLAKY: "⚠️ Flaky",
+    };
+    const symbol = symbolMap[status as TestStatus] ?? `${status}`;
+
+    if (status === "PASSED") passed++;
+    else if (status === "FAILED") failed++;
+
+    return `${target}  : ${symbol} (${isCached ? "cached, " : ""}${testTime})`;
+  });
+
+  const summaryHeader = `🧰 Test-Suite: ${testItem.id} : ${passed} Passed / ${failed} Failed`;
+  const resultBlock = [summaryHeader, "────────────────────────────────────────────", ...rows].join("\n");
+
+  const statusMessage = new vscode.TestMessage(`🧪 Suite Result:\n\n${resultBlock}`);
+  if (code === 0) {
+    run.passed(testItem);
+    try { finishTest(testItem.id, 'passed'); } catch {}
+  } else {
+    run.failed(testItem, statusMessage);
+    try { finishTest(testItem.id, 'failed', statusMessage.message); } catch {}
+  }
+  const suiteOutput = resultBlock.replace(/\r?\n/g, '\r\n') + '\r\n';
+  run.appendOutput(suiteOutput, undefined, testItem);
+  try { publishOutput(testItem.id, suiteOutput); } catch {}
+}
+
+// ───────────────────────────────────────────────────────────────
+// Public API
+// ───────────────────────────────────────────────────────────────
+
+/**
+ * Processes successful test execution (exit code 0)
+ */
+function processSuccessfulTest(
+  run: vscode.TestRun,
+  testItem: vscode.TestItem,
+  code: number,
+  displayLog: string[]
+): void {
+  if (displayLog.length > 0) {
+    const outputBlock = [
+      getStatusHeader(code, testItem.id),
+      '----- BEGIN OUTPUT -----',
+      ...displayLog,
+      '------ END OUTPUT ------'
+    ].join("\n");
+
+    const out = outputBlock.replace(/\r?\n/g, '\r\n') + '\r\n';
+    run.appendOutput(out, undefined, testItem);
+    try { publishOutput(testItem.id, out); } catch {}
+  }
+  run.passed(testItem);
+  try { finishTest(testItem.id, 'passed'); } catch {}
+}
+
+/**
+ * Processes failed or flaky test execution (exit codes 3, 4, other)
+ */
+function processFailedTest(
+  run: vscode.TestRun,
+  testItem: vscode.TestItem,
+  code: number,
+  bazelLog: string[],
+  testLog: string[],
+  workspacePath: string,
+  unifiedResult: UnifiedTestResult,
+  scopedCases: IndividualTestCase[]
+): void {
+  if (code === 4) {
+    // Bazel Test Encyclopedia: exit code 4 indicates tests passed only after retries (flaky)
+    const cleaned = bazelLog.filter(line => line.trim() !== "").join("\n");
+    const cleaned_with_Header = getStatusHeader(code, testItem.id) + cleaned;
+    vscode.window.showWarningMessage(`⚠️ Flaky tests detected; run marked unsuccessful: ${testItem.id}`);
+    run.failed(
+      testItem,
+      new vscode.TestMessage(
+        `⚠️ Flaky tests: passed after retries. Treating as failure (Code ${code}).\n\n${cleaned_with_Header}`
+      )
+    );
+    try { finishTest(testItem.id, 'failed', cleaned_with_Header); } catch {}
+  } else if (code === 3) {
+    handleTestResult(
+      run,
+      testItem,
+      code,
+      bazelLog,
+      testLog,
+      workspacePath,
+      unifiedResult,
+      scopedCases
+    );
+  } else {
+    const cleaned = bazelLog.filter(line => line.trim() !== "").join("\n");
+    const cleaned_with_Header = getStatusHeader(code, testItem.id) + cleaned;
+    run.failed(testItem, new vscode.TestMessage(`🧨 Errors during tests (Code ${code}):\n\n${cleaned_with_Header}`));
+    try { finishTest(testItem.id, 'failed', cleaned_with_Header); } catch {}
+    const outputBlock = [
+      getStatusHeader(code, testItem.id),
+      '----- BEGIN OUTPUT -----',
+      ...bazelLog,
+      '------ END OUTPUT ------'
+    ].join("\n");
+    const out = outputBlock.replace(/\r?\n/g, '\r\n') + '\r\n';
+    run.appendOutput(out, undefined, testItem);
+    try { publishOutput(testItem.id, out); } catch {}
+  }
+}
+
+// ───────────────────────────────────────────────────────────────
 // Public API
 // ───────────────────────────────────────────────────────────────
 
@@ -163,65 +315,9 @@ export const executeBazelTest = async (
     );
 
     if (isSuite) {
-      const resultLines = stdout.split(/\r?\n/).filter(line => line.match(/^\/\/.* (PASSED|FAILED|TIMEOUT|FLAKY)/));
-
-      let passed = 0;
-      let failed = 0;
-
-      const rows = resultLines.map(line => {
-        const parts = line.trim().split(/\s+/);
-
-        let target: string;
-        let status: "PASSED" | "FAILED" | "TIMEOUT" | "FLAKY" | string;
-        let isCached: string;
-        let testTime: string;
-
-        if (parts.length === 5) {
-          target = parts[0];
-          isCached = parts[1];
-          status = parts[2];
-          testTime = parts[4];
-        } else {
-          target = parts[0];
-          status = parts[1];
-          isCached = "";
-          testTime = parts[3];
-        }
-
-        const symbolMap: Record<string, string> = {
-          PASSED: "✅ Passed",
-          FAILED: "❌ Failed",
-          TIMEOUT: "⏱ Timeout",
-          FLAKY: "⚠️ Flaky",
-        };
-        const symbol = symbolMap[status] ?? `${status}`;
-
-        if (status === "PASSED") passed++;
-        else if (status === "FAILED") failed++;
-
-        return `${target}  : ${symbol} (${isCached ? "cached, " : ""}${testTime})`;
-      });
-
-      const summaryHeader = `🧰 Test-Suite: ${testItem.id} : ${passed} Passed / ${failed} Failed`;
-      const resultBlock = [summaryHeader, "────────────────────────────────────────────", ...rows].join("\n");
-
-      const statusMessage = new vscode.TestMessage(`🧪 Suite Result:\n\n${resultBlock}`);
-      if (code === 0) {
-        run.passed(testItem);
-        try { finishTest(testItem.id, 'passed'); } catch {}
-      } else {
-        run.failed(testItem, statusMessage);
-        try { finishTest(testItem.id, 'failed', statusMessage.message); } catch {}
-      }
-      const suiteOutput = resultBlock.replace(/\r?\n/g, '\r\n') + '\r\n';
-      run.appendOutput(suiteOutput, undefined, testItem);
-      try { publishOutput(testItem.id, suiteOutput); } catch {}
+      parseSuiteResults(testItem, run, code, stdout);
       return;
     }
-
-    //clear testresult window
-
-
 
     const shouldParseStructured = code === 0 || code === 3 || code === 4;
     const unifiedResult = shouldParseStructured
@@ -236,27 +332,14 @@ export const executeBazelTest = async (
     const { input: bazelLog } = parseBazelOutput(stderr);
     const baseDisplayLog = filterLogLinesForItem(testItem, undefined, testLog);
 
-      if (code === 0) {
-      if (baseDisplayLog.length > 0) {
-        const outputBlock = [
-          getStatusHeader(code, testItem.id),
-          '----- BEGIN OUTPUT -----',
-          ...baseDisplayLog,
-          '------ END OUTPUT ------'
-        ].join("\n");
-
-        const out = outputBlock.replace(/\r?\n/g, '\r\n') + '\r\n';
-        run.appendOutput(out, undefined, testItem);
-        try { publishOutput(testItem.id, out); } catch {}
-      }
-      run.passed(testItem);
-      try { finishTest(testItem.id, 'passed'); } catch {}
-    } else if (code === 3) {
+    if (code === 0) {
+      processSuccessfulTest(run, testItem, code, baseDisplayLog);
+    } else {
       const relevantCases = unifiedResult ? filterTestCasesForItem(testItem, unifiedResult.testCases) : [];
       const scopedDisplayLog = relevantCases.length > 0
         ? filterLogLinesForItem(testItem, relevantCases, testLog)
         : baseDisplayLog;
-      handleTestResult(
+      processFailedTest(
         run,
         testItem,
         code,
@@ -266,39 +349,12 @@ export const executeBazelTest = async (
         unifiedResult ?? EMPTY_UNIFIED_RESULT,
         relevantCases
       );
-    } else if (code === 4) {
-      // Bazel Test Encyclopedia: exit code 4 indicates tests passed only after retries (flaky)
-      // and the overall command should be treated as unsuccessful.
-      const cleaned = bazelLog.filter(line => line.trim() !== "").join("\n");
-      const cleaned_with_Header = getStatusHeader(code, testItem.id) + cleaned;
-      vscode.window.showWarningMessage(`⚠️ Flaky tests detected; run marked unsuccessful: ${testItem.id}`);
-      run.failed(
-        testItem,
-        new vscode.TestMessage(
-          `⚠️ Flaky tests: passed after retries. Treating as failure (Code ${code}).\n\n${cleaned_with_Header}`
-        )
-      );
-      try { finishTest(testItem.id, 'failed', cleaned_with_Header); } catch {}
-    } else {
-      const cleaned = bazelLog.filter(line => line.trim() !== "").join("\n");
-      const cleaned_with_Header = getStatusHeader(code, testItem.id) + cleaned;
-      run.failed(testItem, new vscode.TestMessage(`🧨 Errors during tests (Code ${code}):\n\n${cleaned_with_Header}`));
-      try { finishTest(testItem.id, 'failed', cleaned_with_Header); } catch {}
-      const outputBlock = [
-        getStatusHeader(code, testItem.id),
-        '----- BEGIN OUTPUT -----',
-        ...bazelLog,
-        '------ END OUTPUT ------'
-      ].join("\n");
-      const out = outputBlock.replace(/\r?\n/g, '\r\n') + '\r\n';
-      run.appendOutput(out, undefined, testItem);
-      try { publishOutput(testItem.id, out); } catch {}
     }
   } catch (error) {
     const message = formatError(error);
     logWithTimestamp(`Error executing test ${testItem.id}: ${message}`, "error");
-      run.failed(testItem, new vscode.TestMessage(message));
-      try { finishTest(testItem.id, 'failed', message); } catch {}
+    run.failed(testItem, new vscode.TestMessage(message));
+    try { finishTest(testItem.id, 'failed', message); } catch {}
   }
 };
 

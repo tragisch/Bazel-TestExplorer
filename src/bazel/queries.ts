@@ -15,6 +15,22 @@ import { logWithTimestamp, measure } from '../logging';
 import { runBazelCommand } from '../infrastructure/process';
 import { ConfigurationService } from '../configuration';
 
+// Query configuration constants
+const MIN_CHUNK_SIZE = 50;
+const MAX_CHUNK_SIZE = 2000;
+const DEFAULT_CHUNK_SIZE = 500;
+
+const MIN_PARALLEL_QUERIES = 1;
+const MAX_PARALLEL_QUERIES = 64;
+const DEFAULT_PARALLEL_QUERIES = 4;
+
+/**
+ * Clamps a value between min and max
+ */
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, Math.floor(value)));
+}
+
 const testMap: Map<string, BazelTestTarget> = new Map();
 
 export const queryBazelTestTargets = async (
@@ -101,8 +117,8 @@ export const queryBazelTestMetadata = async (
   
   const rawChunkSize = (config as any).metadataChunkSize;
   const chunkSize = typeof rawChunkSize === 'number' && rawChunkSize >= 1
-    ? Math.min(2000, Math.max(50, Math.floor(rawChunkSize)))
-    : 500;
+    ? clamp(rawChunkSize, MIN_CHUNK_SIZE, MAX_CHUNK_SIZE)
+    : DEFAULT_CHUNK_SIZE;
   const chunks: string[][] = [];
   
   for (let i = 0; i < labels.length; i += chunkSize) {
@@ -114,8 +130,8 @@ export const queryBazelTestMetadata = async (
   // Process chunks with parallelism limit
   const rawLimit = (config as any).maxParallelQueries;
   const limit = typeof rawLimit === 'number' && rawLimit >= 1
-    ? Math.min(64, Math.floor(rawLimit))
-    : 4;
+    ? clamp(rawLimit, MIN_PARALLEL_QUERIES, MAX_PARALLEL_QUERIES)
+    : DEFAULT_PARALLEL_QUERIES;
   let chunkIndex = 0;
   const workers: Promise<void>[] = [];
   
@@ -124,12 +140,22 @@ export const queryBazelTestMetadata = async (
       while (chunkIndex < chunks.length) {
         const myIndex = chunkIndex++;
         const chunk = chunks[myIndex];
-        await queryMetadataChunk(chunk, workspacePath, config);
+        try {
+          await queryMetadataChunk(chunk, workspacePath, config);
+        } catch (error) {
+          logWithTimestamp(`Failed to query metadata chunk ${myIndex}: ${error}`, 'error');
+          // Continue with other chunks even if one fails
+        }
       }
     })());
   }
   
-  await Promise.all(workers);
+  // Use allSettled to ensure all workers complete even if some fail
+  const results = await Promise.allSettled(workers);
+  const failedWorkers = results.filter(r => r.status === 'rejected');
+  if (failedWorkers.length > 0) {
+    logWithTimestamp(`${failedWorkers.length} metadata workers failed`, 'warn');
+  }
   
   logWithTimestamp(`Phase 2 complete: Retrieved metadata for ${testMap.size} targets`);
   return Array.from(testMap.values());
@@ -154,8 +180,41 @@ export const getTestTargetById = (target: string): BazelTestTarget | undefined =
   return testMap.get(target);
 };
 
+/**
+ * Validates a single Bazel query path
+ */
+function isValidBazelPath(path: string): boolean {
+  // Bazel paths must start with // or be relative patterns
+  if (!path.startsWith('//') && !path.startsWith('...')) {
+    return false;
+  }
+  
+  // Check for suspicious characters that could indicate injection
+  if (path.includes(';') || path.includes('|') || path.includes('&')) {
+    return false;
+  }
+  
+  return true;
+}
+
 function sanitizeQueryPaths(queryPaths: string[]): string[] {
-  return queryPaths.length > 0 ? queryPaths.filter(p => p.trim() !== "") : ["//"];
+  if (queryPaths.length === 0) {
+    return ['//'];
+  }
+  
+  const validPaths = queryPaths
+    .filter(p => p.trim() !== '')
+    .filter(p => {
+      const trimmed = p.trim();
+      if (!isValidBazelPath(trimmed)) {
+        logWithTimestamp(`Invalid Bazel query path ignored: ${trimmed}`, 'warn');
+        return false;
+      }
+      return true;
+    });
+  
+  // If no valid paths remain, fall back to root
+  return validPaths.length > 0 ? validPaths : ['//'];
 }
 
 function buildBazelQueries(paths: string[], testTypes: string[]): string[] {
@@ -166,9 +225,11 @@ function buildBazelQueries(paths: string[], testTypes: string[]): string[] {
 }
 
 async function executeBazelQueries(queries: string[], workspacePath: string, config: ConfigurationService): Promise<void> {
-  // Use configured limit when available; fall back to 4 for mocks
+  // Use configured limit when available; fall back to default for mocks
   const rawLimit = (config as any).maxParallelQueries;
-  const limit = typeof rawLimit === 'number' && rawLimit >= 1 ? Math.min(64, Math.floor(rawLimit)) : 4;
+  const limit = typeof rawLimit === 'number' && rawLimit >= 1 
+    ? clamp(rawLimit, MIN_PARALLEL_QUERIES, MAX_PARALLEL_QUERIES) 
+    : DEFAULT_PARALLEL_QUERIES;
   // Simple concurrency pool without external deps
   let index = 0;
   const workers: Promise<void>[] = [];
@@ -177,11 +238,21 @@ async function executeBazelQueries(queries: string[], workspacePath: string, con
       while (index < queries.length) {
         const myIndex = index++;
         const q = queries[myIndex];
-        await executeSingleBazelQuery(q, workspacePath, config);
+        try {
+          await executeSingleBazelQuery(q, workspacePath, config);
+        } catch (error) {
+          logWithTimestamp(`Query ${myIndex} failed: ${error}`, 'error');
+          // Continue with other queries
+        }
       }
     })());
   }
-  await Promise.all(workers);
+  
+  const results = await Promise.allSettled(workers);
+  const failedWorkers = results.filter(r => r.status === 'rejected');
+  if (failedWorkers.length > 0) {
+    logWithTimestamp(`${failedWorkers.length} query workers failed, but continuing with available results`, 'warn');
+  }
 }
 
 async function executeSingleBazelQuery(query: string, workspacePath: string, config: ConfigurationService): Promise<void> {

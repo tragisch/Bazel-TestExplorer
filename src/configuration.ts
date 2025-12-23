@@ -12,6 +12,22 @@
 
 import * as vscode from 'vscode';
 
+// Configuration constants
+const MIN_PARALLEL_QUERIES = 1;
+const MAX_PARALLEL_QUERIES = 64;
+const DEFAULT_PARALLEL_QUERIES = 4;
+
+const MIN_CHUNK_SIZE = 50;
+const MAX_CHUNK_SIZE = 2000;
+const DEFAULT_CHUNK_SIZE = 500;
+
+/**
+ * Clamps a value between min and max
+ */
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, Math.floor(value)));
+}
+
 /**
  * Centralizes Bazel test settings with type-safe getters and sensible defaults.
  * Restores the `ConfigurationService` API expected across the codebase while
@@ -85,19 +101,18 @@ export class ConfigurationService {
 
   // Performance tuning: cap parallel Bazel queries to avoid process oversubscription
   get maxParallelQueries(): number {
-    const value = this.config.get<number>('maxParallelQueries', 4);
-    // Ensure sane bounds [1..64]
-    const n = typeof value === 'number' ? Math.floor(value) : 4;
-    return Math.min(64, Math.max(1, n));
+    const value = this.config.get<number>('maxParallelQueries', DEFAULT_PARALLEL_QUERIES);
+    const n = typeof value === 'number' ? value : DEFAULT_PARALLEL_QUERIES;
+    return clamp(n, MIN_PARALLEL_QUERIES, MAX_PARALLEL_QUERIES);
   }
 
   get showMetadataInLabel(): boolean {
     return this.config.get<boolean>('showMetadataInLabel', false);
   }
   get metadataChunkSize(): number {
-    const value = this.config.get<number>('discovery.metadataChunkSize', 500);
-    const n = typeof value === 'number' ? Math.floor(value) : 500;
-    return Math.min(2000, Math.max(50, n));
+    const value = this.config.get<number>('discovery.metadataChunkSize', DEFAULT_CHUNK_SIZE);
+    const n = typeof value === 'number' ? value : DEFAULT_CHUNK_SIZE;
+    return clamp(n, MIN_CHUNK_SIZE, MAX_CHUNK_SIZE);
   }
 
   onDidChangeConfiguration(listener: () => void): vscode.Disposable {
