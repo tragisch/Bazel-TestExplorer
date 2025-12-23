@@ -29,6 +29,58 @@ interface CacheEntry<T> {
 export class QueryCache {
   private cache = new Map<string, CacheEntry<BazelTestTarget[]>>();
   private readonly defaultTtlMs = 5 * 60 * 1000; // 5 Minuten
+  private readonly maxCacheSize = 1000; // Maximum cache entries
+  private cleanupTimer?: NodeJS.Timeout;
+  private readonly cleanupIntervalMs = 60 * 1000; // Cleanup every minute
+
+  constructor() {
+    this.startCleanupTimer();
+  }
+
+  /**
+   * Starts automatic cleanup timer for expired entries
+   */
+  private startCleanupTimer(): void {
+    this.cleanupTimer = setInterval(() => {
+      this.invalidateExpired();
+      this.enforceSizeLimit();
+    }, this.cleanupIntervalMs);
+    // Allow Node.js to exit even if timer is active
+    this.cleanupTimer.unref();
+  }
+
+  /**
+   * Stops the cleanup timer (for proper disposal)
+   */
+  dispose(): void {
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = undefined;
+    }
+    this.cache.clear();
+  }
+
+  /**
+   * Enforces maximum cache size using LRU eviction
+   */
+  private enforceSizeLimit(): void {
+    if (this.cache.size <= this.maxCacheSize) {
+      return;
+    }
+
+    // Sort by timestamp (oldest first) and remove excess
+    const entries = Array.from(this.cache.entries())
+      .sort((a, b) => a[1].timestamp - b[1].timestamp);
+    
+    const toRemove = entries.slice(0, this.cache.size - this.maxCacheSize);
+    for (const [key] of toRemove) {
+      this.cache.delete(key);
+    }
+
+    if (toRemove.length > 0) {
+      logWithTimestamp(`Cache size limit enforced: removed ${toRemove.length} oldest entries`);
+    }
+  }
 
   /**
    * Retrieves a value from the cache if present and not expired
@@ -61,6 +113,11 @@ export class QueryCache {
       ttlMs: ttlMs ?? this.defaultTtlMs
     });
     logWithTimestamp(`Cached ${data.length} test targets for key: ${key}`);
+    
+    // Enforce size limit immediately if exceeded
+    if (this.cache.size > this.maxCacheSize) {
+      this.enforceSizeLimit();
+    }
   }
 
   /**

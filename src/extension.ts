@@ -103,6 +103,9 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	const configurationService = new ConfigurationService();
 	const bazelClient = new BazelClient(workspaceRoot, configurationService);
+	
+	// Register BazelClient for disposal to cleanup cache resources
+	context.subscriptions.push({ dispose: () => bazelClient.dispose() });
 
 	const validation = await bazelClient.validate();
 	if (!validation.valid) {

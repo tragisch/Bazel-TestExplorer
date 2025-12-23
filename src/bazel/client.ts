@@ -156,4 +156,11 @@ export class BazelClient {
   get bazel(): string {
     return this.config.bazelPath;
   }
+
+  /**
+   * Dispose resources (cleanup cache)
+   */
+  dispose(): void {
+    this.cache.dispose();
+  }
 }

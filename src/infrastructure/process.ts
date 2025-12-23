@@ -40,6 +40,22 @@ export const cancelAllBazelProcesses = (): number => {
     return count;
 };
 
+/**
+ * Validates that the bazel path is safe (no path traversal or command injection)
+ */
+function validateBazelPath(bazelPath: string): void {
+    // Check for basic command injection attempts
+    if (bazelPath.includes(';') || bazelPath.includes('&&') || bazelPath.includes('||') || bazelPath.includes('|')) {
+        throw new Error(`Invalid bazel path: potential command injection detected`);
+    }
+    
+    // Normalize and check for path traversal
+    const normalized = path.normalize(bazelPath);
+    if (normalized.includes('..')) {
+        throw new Error(`Invalid bazel path: path traversal detected`);
+    }
+}
+
 export function runBazelCommand(
     args: string[],
     cwd: string,
@@ -50,8 +66,18 @@ export function runBazelCommand(
     cancellationToken?: CancellationToken
 ): Promise<{ code: number; stdout: string; stderr: string }> {
     return new Promise((resolve, reject) => {
+        // Validate bazel path to prevent command injection
+        try {
+            validateBazelPath(bazelPath);
+        } catch (error) {
+            logWithTimestamp(`Bazel path validation failed: ${error}`, 'error');
+            reject(error);
+            return;
+        }
+
         logWithTimestamp(`Running Bazel: ${bazelPath} ${args.join(" ")}`);
-        const proc = cp.spawn(bazelPath, args, { cwd, shell: true, env: { ...process.env, ...(env || {}) } });
+        // Use shell: false to prevent command injection - bazelPath and args are now safely passed
+        const proc = cp.spawn(bazelPath, args, { cwd, shell: false, env: { ...process.env, ...(env || {}) } });
         trackBazelProcess(proc);
         let isCancelled = false;
 
@@ -82,6 +108,11 @@ export function runBazelCommand(
         proc.on('close', code => {
             cancellationDisposable?.dispose();
             untrackBazelProcess(proc);
+            
+            // Cleanup readline interfaces to prevent memory leaks
+            rl.close();
+            errorRl.close();
+            
             if (isCancelled) {
                 reject(new Error('Bazel test execution was cancelled'));
             } else {
@@ -92,6 +123,11 @@ export function runBazelCommand(
         proc.on('error', (err) => {
             cancellationDisposable?.dispose();
             untrackBazelProcess(proc);
+            
+            // Cleanup readline interfaces
+            rl.close();
+            errorRl.close();
+            
             reject(err);
         });
     });
