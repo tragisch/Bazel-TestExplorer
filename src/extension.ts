@@ -25,6 +25,8 @@ import { onDidTestEvent } from './explorer/testEventBus';
 import { TestCaseAnnotations, TestCaseCodeLensProvider, TestCaseHoverProvider } from './explorer/testCaseAnnotations';
 import { TestCaseInsights } from './explorer/testCaseInsights';
 import { showCombinedTestPanel } from './explorer/combinedTestPanel';
+import { parseLcovToFileCoverage, getCoverageDetailsForFile } from './coverageVscode';
+import { setCoverageSummary } from './coverageState';
 
 export async function activate(context: vscode.ExtensionContext) {
 	initializeLogger();
@@ -113,6 +115,19 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	const testManager = new TestControllerManager(bazelClient, configurationService, context, testCaseAnnotations, testCaseInsights);
 	testManager.initialize();
+
+	const coverageOutput = vscode.window.createOutputChannel('Coverage');
+	context.subscriptions.push(coverageOutput);
+	const applyCoverageSummary = (item: vscode.TestItem, coverages: vscode.FileCoverage[]) => {
+		let covered = 0;
+		let total = 0;
+		for (const coverage of coverages) {
+			covered += coverage.statementCoverage.covered;
+			total += coverage.statementCoverage.total;
+		}
+		const percent = total === 0 ? 0 : (covered / total) * 100;
+		item.description = `Coverage: ${percent.toFixed(2)}% (${covered}/${total} lines)`;
+	};
 
 	// Observer for collecting runtimes and small in-memory history
 	const testObserver = new TestObserver(context);
@@ -216,6 +231,38 @@ export async function activate(context: vscode.ExtensionContext) {
 				return;
 			}
 			await showCombinedTestPanel(testItem.id, bazelClient, testCaseInsights, context);
+		}),
+
+		vscode.commands.registerCommand('bazelTestExplorer.showCoverageDetails', async (testItem?: vscode.TestItem) => {
+			const targetLabel = testItem?.id ?? (typeof testItem?.label === 'string' ? testItem.label : '//demo:target');
+			coverageOutput.appendLine(`Loading coverage fixture for ${targetLabel}`);
+			const fixturePath = context.asAbsolutePath(path.join('test', 'fixtures', 'coverage', 'sample.lcov'));
+			let lcovContent = '';
+			try {
+				lcovContent = await fs.promises.readFile(fixturePath, 'utf8');
+			} catch (err) {
+				void vscode.window.showErrorMessage(`Failed to read LCOV fixture: ${formatError(err)}`);
+				coverageOutput.appendLine(`Failed to read fixture: ${formatError(err)}`);
+				return;
+			}
+
+			const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? workspaceRoot;
+			const coverages = parseLcovToFileCoverage(lcovContent, workspaceFolder, context.extensionPath);
+			coverageOutput.appendLine(`Parsed ${coverages.length} coverage file(s).`);
+			if (coverages.length === 0) {
+				void vscode.window.showWarningMessage('No coverage files found in fixture.');
+				coverageOutput.appendLine('No coverage files found in fixture.');
+				return;
+			}
+
+			const summary = testManager.publishCoverage(targetLabel, coverages, getCoverageDetailsForFile);
+			if (!summary) {
+				void vscode.window.showWarningMessage(`No matching test item found for ${targetLabel}.`);
+				coverageOutput.appendLine(`No matching test item found for ${targetLabel}.`);
+				return;
+			}
+			setCoverageSummary(targetLabel, summary);
+			coverageOutput.appendLine(`Published coverage for ${targetLabel}`);
 		})
 	);
 

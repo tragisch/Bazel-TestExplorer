@@ -99,7 +99,10 @@ export const queryBazelTestMetadata = async (
   
   testMap.clear();
   
-  const chunkSize = config.metadataChunkSize;
+  const rawChunkSize = (config as any).metadataChunkSize;
+  const chunkSize = typeof rawChunkSize === 'number' && rawChunkSize >= 1
+    ? Math.min(2000, Math.max(50, Math.floor(rawChunkSize)))
+    : 500;
   const chunks: string[][] = [];
   
   for (let i = 0; i < labels.length; i += chunkSize) {
@@ -109,7 +112,10 @@ export const queryBazelTestMetadata = async (
   logWithTimestamp(`Processing ${chunks.length} chunks (size=${chunkSize})`);
   
   // Process chunks with parallelism limit
-  const limit = config.maxParallelQueries;
+  const rawLimit = (config as any).maxParallelQueries;
+  const limit = typeof rawLimit === 'number' && rawLimit >= 1
+    ? Math.min(64, Math.floor(rawLimit))
+    : 4;
   let chunkIndex = 0;
   const workers: Promise<void>[] = [];
   

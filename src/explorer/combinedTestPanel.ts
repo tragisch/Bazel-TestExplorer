@@ -18,6 +18,7 @@ import { BazelClient } from '../bazel/client';
 import { TestCaseInsights } from './testCaseInsights';
 import { IndividualTestCase } from '../bazel/types';
 import { getBazelTestLogsDirectory, buildTestXmlPath, hasTestXmlFile } from '../bazel/testlogs';
+import { getCoverageSummary } from '../coverageState';
 
 let panel: vscode.WebviewPanel | undefined;
 let pinned = false;
@@ -192,6 +193,30 @@ function renderHtml(
     ? `<p>Total: ${summary.total}, Passed: ${summary.passed}, Failed: ${summary.failed}, Skipped: ${summary.ignored}</p>`
     : `<i>No structured test.xml data captured yet.</i>`;
 
+  const coverage = getCoverageSummary(testId);
+  const coverageRows = coverage
+    ? coverage.files.map(f => `
+        <tr>
+          <td>${escape(f.path)}</td>
+          <td>${f.percent.toFixed(2)}%</td>
+          <td>${f.covered}/${f.total}</td>
+        </tr>
+      `).join('')
+    : '';
+  const coverageSection = coverage
+    ? `
+      <p><b>Total:</b> ${coverage.percent.toFixed(2)}% (${coverage.covered}/${coverage.total} lines)</p>
+      <table>
+        <thead>
+          <tr><th>File</th><th>Coverage</th><th>Lines</th></tr>
+        </thead>
+        <tbody>
+          ${coverageRows || `<tr><td colspan="3"><i>No file coverage entries.</i></td></tr>`}
+        </tbody>
+      </table>
+    `
+    : `<i>No coverage data available for this target.</i>`;
+
   const initialRawHtml = `<pre id="rawXmlPre" style="white-space:pre-wrap;">(raw XML not loaded)</pre>`;
   // Prepare external script URI when extensionContext is available
   const scriptTag = extensionContext && panel
@@ -229,6 +254,7 @@ function renderHtml(
         <div class="tabs">
           <div class="tab active" data-tab="overview">Overview</div>
           <div class="tab" data-tab="details">Details</div>
+          <div class="tab" data-tab="coverage">Coverage</div>
           <div class="tab" data-tab="logs">Logs</div>
           <div class="tab" data-tab="raw">Raw XML</div>
         </div>
@@ -251,6 +277,11 @@ function renderHtml(
                 ${casesRows}
               </tbody>
             </table>
+          </div>
+
+          <div id="coverage" style="display:none">
+            <h3>Coverage</h3>
+            ${coverageSection}
           </div>
 
           <div id="logs" style="display:none">

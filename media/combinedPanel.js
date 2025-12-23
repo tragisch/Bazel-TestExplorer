@@ -24,6 +24,7 @@
     const tab = el.dataset ? el.dataset.tab : null;
     document.getElementById('overview').style.display = tab==='overview' ? 'block' : 'none';
     document.getElementById('details').style.display = tab==='details' ? 'block' : 'none';
+    document.getElementById('coverage').style.display = tab==='coverage' ? 'block' : 'none';
     document.getElementById('logs').style.display = tab==='logs' ? 'block' : 'none';
     document.getElementById('raw').style.display = tab==='raw' ? 'block' : 'none';
     if (tab === 'raw') {

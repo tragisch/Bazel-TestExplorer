@@ -22,7 +22,8 @@
   "activationEvents": [
     "workspaceContains:**/MODULE.bazel",
     "workspaceContains:**/WORKSPACE",
-    "onView:workbench.view.testing"
+    "onView:workbench.view.testing",
+    "onCommand:bazelTestExplorer.showCoverageDetails"
   ],
   "contributes": {
     "commands": [
@@ -41,14 +42,23 @@
       {
         "command": "bazelTestExplorer.showTestDetails",
         "title": "Bazel-TestExplorer: Show Test Details"
+      },
+      {
+        "command": "bazelTestExplorer.showCoverageDetails",
+        "title": "Bazel-TestExplorer: Show Coverage Details"
       }
     ],
     "menus": {
       "testing/item/context": [
         {
-          "command": "bazelTestExplorer.showTestDetails",
+          "command": "bazelTestExplorer.showCoverageDetails",
           "when": "view == workbench.view.testing",
           "group": "navigation@2"
+        },
+        {
+          "command": "bazelTestExplorer.showTestDetails",
+          "when": "view == workbench.view.testing",
+          "group": "navigation@3"
         }
       ]
     },

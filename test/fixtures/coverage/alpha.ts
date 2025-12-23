@@ -1,0 +1,6 @@
+export const alpha = (value: number): number => {
+	if (value > 0) {
+		return value * 2;
+	}
+	return 0;
+};

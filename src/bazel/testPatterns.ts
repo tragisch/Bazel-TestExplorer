@@ -193,6 +193,7 @@ export const BUILTIN_TEST_PATTERNS: TestCasePattern[] = [
             status: 0,  // Always FAILED for this pattern
             message: 0
         },
+        fixedStatus: 'FAIL',
         description: "Catch2 C++ test framework failure output",
         example: "tests/test_math.cpp:42: FAILED: test_addition",
         supportsIndividual: true,
@@ -209,6 +210,7 @@ export const BUILTIN_TEST_PATTERNS: TestCasePattern[] = [
             status: 0,  // Always PASSED
             message: 0
         },
+        fixedStatus: 'PASS',
         description: "Catch2 C++ test framework success output",
         example: "tests/test_math.cpp:42: PASSED: test_addition",
         supportsIndividual: true,

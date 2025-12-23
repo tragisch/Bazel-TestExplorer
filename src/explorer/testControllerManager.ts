@@ -34,6 +34,7 @@ import { TestCaseInsights } from './testCaseInsights';
  */
 export class TestControllerManager {
   private controller: vscode.TestController;
+  private coverageProfile?: vscode.TestRunProfile;
   private debounceTimer?: NodeJS.Timeout;
 
   constructor(
@@ -57,6 +58,7 @@ export class TestControllerManager {
     this.registerResolveHandler();
     this.registerCommands();
     this.registerRunProfile();
+    this.registerCoverageProfile();
     this.registerFileWatcher();
     this.registerConfigListener();
   }
@@ -257,6 +259,99 @@ export class TestControllerManager {
     );
   }
 
+  private registerCoverageProfile(): void {
+    this.coverageProfile = this.controller.createRunProfile(
+      'Bazel Coverage',
+      vscode.TestRunProfileKind.Coverage,
+      async () => undefined
+    );
+    this.coverageProfile.isDefault = false;
+  }
+
+  publishCoverage(
+    targetId: string,
+    coverages: vscode.FileCoverage[],
+    detailsProvider?: (coverage: vscode.FileCoverage) => vscode.FileCoverageDetail[]
+  ): { covered: number; total: number; percent: number; files: { path: string; covered: number; total: number; percent: number }[] } | undefined {
+    const targetItem = this.findTestItemById(targetId);
+    if (!targetItem) {
+      return undefined;
+    }
+
+    if (detailsProvider && this.coverageProfile) {
+      this.coverageProfile.loadDetailedCoverage = async (_, fileCoverage) => detailsProvider(fileCoverage);
+    }
+
+    const run = this.controller.createTestRun(
+      new vscode.TestRunRequest([targetItem], undefined, this.coverageProfile),
+      `Coverage: ${targetId}`,
+      false
+    );
+    run.started(targetItem);
+    for (const coverage of coverages) {
+      run.addCoverage(coverage);
+    }
+    run.passed(targetItem);
+    run.end();
+
+    const summary = this.computeCoverageSummary(coverages);
+    this.applyCoverageDescription(targetItem, summary);
+    return summary;
+  }
+
+  private computeCoverageSummary(coverages: vscode.FileCoverage[]): { covered: number; total: number; percent: number; files: { path: string; covered: number; total: number; percent: number }[] } {
+    let covered = 0;
+    let total = 0;
+    const files = coverages.map((coverage) => {
+      const fileCovered = coverage.statementCoverage.covered;
+      const fileTotal = coverage.statementCoverage.total;
+      const percent = fileTotal === 0 ? 0 : (fileCovered / fileTotal) * 100;
+      covered += fileCovered;
+      total += fileTotal;
+      return {
+        path: coverage.uri.fsPath,
+        covered: fileCovered,
+        total: fileTotal,
+        percent
+      };
+    });
+    const percent = total === 0 ? 0 : (covered / total) * 100;
+    return { covered, total, percent, files };
+  }
+
+  private applyCoverageDescription(
+    item: vscode.TestItem,
+    summary: { covered: number; total: number; percent: number }
+  ): void {
+    if (!this.config.showMetadataInLabel) {
+      return;
+    }
+    const covText = `cov=${summary.percent.toFixed(1)}%`;
+    const base = item.description ?? '';
+    if (base.includes('cov=')) {
+      item.description = base.replace(/cov=[^\\s]+/, covText);
+      return;
+    }
+    item.description = base ? `${base} ${covText}` : covText;
+  }
+
+  private findTestItemById(targetId: string): vscode.TestItem | undefined {
+    const visit = (item: vscode.TestItem): vscode.TestItem | undefined => {
+      if (item.id === targetId) return item;
+      for (const [, child] of item.children) {
+        const found = visit(child);
+        if (found) return found;
+      }
+      return undefined;
+    };
+
+    for (const [, item] of this.controller.items) {
+      const found = visit(item);
+      if (found) return found;
+    }
+    return undefined;
+  }
+
   /**
    * Cleanup
    */
@@ -323,20 +418,4 @@ export class TestControllerManager {
   /**
    * Find a TestItem by id recursively through the controller tree.
    */
-  private findTestItemById(id: string): vscode.TestItem | undefined {
-    for (const [, root] of this.controller.items) {
-      const found = this.searchTestItem(root, id);
-      if (found) return found;
-    }
-    return undefined;
-  }
-
-  private searchTestItem(node: vscode.TestItem, id: string): vscode.TestItem | undefined {
-    if (node.id === id) return node;
-    for (const [, child] of node.children) {
-      const found = this.searchTestItem(child, id);
-      if (found) return found;
-    }
-    return undefined;
-  }
 }

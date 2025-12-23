@@ -22,6 +22,7 @@ import { TestCaseAnnotations, AnnotationUpdate } from './testCaseAnnotations';
 import { TestCaseInsights } from './testCaseInsights';
 import { ConfigurationService } from '../configuration';
 import { expandTestSuite } from '../bazel/queries';
+import { formatCoverageShort, getCoverageSummary } from '../coverageState';
 import {
   resolveSourceUri,
   resolveSourceFromMetadata,
@@ -224,8 +225,11 @@ function createTestItem(
   // Add metadata description if enabled
   if (config.showMetadataInLabel) {
     const metadata = buildMetadataString(testTarget);
-    if (metadata) {
-      testItem.description = metadata;
+    const coverageSummary = getCoverageSummary(target);
+    const coverageShort = coverageSummary ? formatCoverageShort(coverageSummary) : '';
+    const combined = [metadata, coverageShort].filter(Boolean).join(' ');
+    if (combined) {
+      testItem.description = combined;
     }
   }
   
