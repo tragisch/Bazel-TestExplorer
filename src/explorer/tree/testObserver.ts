@@ -13,8 +13,8 @@
  */
 
 import * as vscode from 'vscode';
-import { onDidTestEvent, TestEvent } from './testEventBus';
-import { logWithTimestamp } from '../logging';
+import { onDidTestEvent, TestEvent } from '../events';
+import { logWithTimestamp } from '../../logging';
 
 export interface TestHistoryEntry {
   testId: string;

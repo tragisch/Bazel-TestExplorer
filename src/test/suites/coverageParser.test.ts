@@ -11,7 +11,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { parseLcovToFileCoverage } from '../../coverageVscode';
+import { parseLcovToFileCoverage } from '../../coverage';
 
 suite('Coverage Parser', () => {
 	test('parses LCOV into coverage model', () => {

@@ -17,18 +17,18 @@ import { initializeLogger, logWithTimestamp, measure, formatError } from './logg
 import { findBazelWorkspace } from './bazel/workspace';
 import { BazelClient } from './bazel/client';
 import { ConfigurationService } from './configuration';
-import { TestControllerManager } from './explorer/testControllerManager';
-import { TestObserver } from './explorer/testObserver';
+import { TestControllerManager } from './explorer/controller';
+import { TestObserver } from './explorer/tree';
 import TestHistoryProvider from './explorer/testHistoryProvider';
 import TestSettingsView from './explorer/testSettingsView';
-import { onDidTestEvent } from './explorer/testEventBus';
-import { TestCaseAnnotations, TestCaseCodeLensProvider, TestCaseHoverProvider } from './explorer/testCaseAnnotations';
-import { TestCaseInsights } from './explorer/testCaseInsights';
-import { showCombinedTestPanel } from './explorer/combinedTestPanel';
-import { parseLcovToFileCoverage, getCoverageDetailsForFile, demangleCoverageDetails } from './coverageVscode';
-import { initializeCoverageState, setCoverageSummary } from './coverageState';
-import { BazelCoverageRunner, resolveBazelInfo, findCoverageArtifacts, loadFirstValidLcov, extractLcovPathFromOutput, extractBazelBinExecPath, convertProfrawToLcov } from './bazelCoverage';
-import { cancelAllBazelProcesses } from './bazel/process';
+import { onDidTestEvent } from './explorer/events';
+import { TestCaseAnnotations, TestCaseCodeLensProvider, TestCaseHoverProvider } from './explorer/annotations';
+import { TestCaseInsights } from './explorer/panel';
+import { showCombinedTestPanel } from './explorer/panel';
+import { parseLcovToFileCoverage, getCoverageDetailsForFile, demangleCoverageDetails } from './coverage/vscode';
+import { initializeCoverageState, setCoverageSummary } from './coverage/state';
+import { BazelCoverageRunner, resolveBazelInfo, findCoverageArtifacts, loadFirstValidLcov, extractLcovPathFromOutput, extractBazelBinExecPath, convertProfrawToLcov } from './bazel/coverage/artifacts';
+import { cancelAllBazelProcesses } from './infrastructure/process';
 
 export async function activate(context: vscode.ExtensionContext) {
 	initializeLogger();

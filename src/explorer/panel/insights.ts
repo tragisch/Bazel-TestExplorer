@@ -12,7 +12,7 @@
  * - Enables commands/UI to display aggregated information
  */
 
-import { TestCaseParseResult } from '../bazel/types';
+import { TestCaseParseResult } from '../../bazel/types';
 
 export class TestCaseInsights {
   private readonly results = new Map<string, TestCaseParseResult>();

@@ -14,7 +14,7 @@ import { TestRun, CancellationToken } from 'vscode';
 import { BazelTestTarget } from './types';
 import { queryBazelTestTargets, queryBazelTestLabelsOnly, queryBazelTestMetadata, getTestTargetById } from './queries';
 import { executeBazelTest } from './runner';
-import { runBazelCommand } from './process';
+import { runBazelCommand } from '../infrastructure/process';
 import { ConfigurationService } from '../configuration';
 import { QueryCache } from './cache';
 import { ErrorHandler } from '../errors/errorHandler';

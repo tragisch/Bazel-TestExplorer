@@ -8,7 +8,7 @@
 
 /// <reference types="mocha" />
 import * as assert from 'assert';
-import { formatPackageLabel, parseTargetLabel, removeStaleItems, sortTestEntries } from '../../explorer/testTree';
+import { formatPackageLabel, parseTargetLabel, removeStaleItems, sortTestEntries } from '../../explorer/tree';
 import { getExtensionsByType, guessSourceUri } from '../../explorer/sourceUtils';
 
 /**

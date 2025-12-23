@@ -11,7 +11,7 @@ import * as assert from 'assert';
 import { BazelTestTarget } from '../../bazel/types';
 import { MockConfigurationService, MockBazelClient } from '../mocks';
 import { BazelClient } from '../../bazel/client';
-import * as processModule from '../../bazel/process';
+import * as processModule from '../../infrastructure/process';
 
 suite('BazelClient', () => {
   let mockClient: MockBazelClient;

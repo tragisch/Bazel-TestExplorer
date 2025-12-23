@@ -9,7 +9,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { demangleSymbols } from './demangler';
-import { resolveCoverageFilePath } from './coverageParser';
+import { resolveCoverageFilePath } from './parser';
 
 const coverageDetailsByUri = new Map<string, vscode.FileCoverageDetail[]>();
 

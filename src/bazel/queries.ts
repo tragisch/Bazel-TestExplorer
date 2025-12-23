@@ -12,7 +12,7 @@
 
 import { BazelTestTarget } from './types';
 import { logWithTimestamp, measure } from '../logging';
-import { runBazelCommand } from './process';
+import { runBazelCommand } from '../infrastructure/process';
 import { ConfigurationService } from '../configuration';
 
 const testMap: Map<string, BazelTestTarget> = new Map();

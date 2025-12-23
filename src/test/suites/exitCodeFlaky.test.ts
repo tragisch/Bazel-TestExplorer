@@ -5,7 +5,7 @@
 /// <reference types="mocha" />
 import * as assert from 'assert';
 import * as vscode from 'vscode';
-import * as processModule from '../../bazel/process';
+import * as processModule from '../../infrastructure/process';
 import { executeBazelTest } from '../../bazel/runner';
 import { MockTestItem, MockTestRun } from '../mocks';
 import { ConfigurationService } from '../../configuration';

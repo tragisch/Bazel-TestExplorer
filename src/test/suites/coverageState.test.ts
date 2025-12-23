@@ -8,7 +8,7 @@
 
 /// <reference types="mocha" />
 import * as assert from 'assert';
-import { formatCoverageShort, getCoverageRuns, getCoverageSummary, setCoverageSummary } from '../../coverageState';
+import { formatCoverageShort, getCoverageRuns, getCoverageSummary, setCoverageSummary } from '../../coverage';
 
 suite('Coverage State', () => {
 	test('stores latest summary and exposes runs', () => {

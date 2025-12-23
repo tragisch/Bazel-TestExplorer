@@ -19,14 +19,14 @@
  */
 
 import * as vscode from 'vscode';
-import { BazelClient } from '../bazel/client';
-import { ConfigurationService } from '../configuration';
-import { discoverAndDisplayTests, resolveTestCaseChildren } from './testTree';
-import { showCombinedTestPanel } from './combinedTestPanel';
-import { logWithTimestamp, formatError } from '../logging';
-import { startTest, finishTest } from './testEventBus';
-import { TestCaseAnnotations } from './testCaseAnnotations';
-import { TestCaseInsights } from './testCaseInsights';
+import { BazelClient } from '../../bazel/client';
+import { ConfigurationService } from '../../configuration';
+import { discoverAndDisplayTests, resolveTestCaseChildren } from '../tree';
+import { showCombinedTestPanel } from '../panel';
+import { logWithTimestamp, formatError } from '../../logging';
+import { startTest, finishTest } from '../events';
+import { TestCaseAnnotations } from '../annotations';
+import { TestCaseInsights } from '../panel';
 
 /**
  * Manages VS Code TestController and orchestrates test discovery,

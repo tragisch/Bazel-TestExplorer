@@ -11,7 +11,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { pickLatestArtifact } from '../../bazelCoverage';
+import { pickLatestArtifact } from '../../bazel/coverage/artifacts';
 
 suite('Bazel Coverage Utilities', () => {
 	test('pickLatestArtifact returns newest file', async () => {

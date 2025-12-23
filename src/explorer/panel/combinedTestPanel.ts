@@ -14,11 +14,11 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { BazelClient } from '../bazel/client';
-import { TestCaseInsights } from './testCaseInsights';
-import { IndividualTestCase } from '../bazel/types';
-import { getBazelTestLogsDirectory, buildTestXmlPath, hasTestXmlFile } from '../bazel/testlogs';
-import { getCoverageSummary } from '../coverageState';
+import { BazelClient } from '../../bazel/client';
+import { TestCaseInsights } from './insights';
+import { IndividualTestCase } from '../../bazel/types';
+import { getBazelTestLogsDirectory, buildTestXmlPath, hasTestXmlFile } from '../../bazel/testlogs';
+import { getCoverageSummary } from '../../coverage';
 
 let panel: vscode.WebviewPanel | undefined;
 let pinned = false;

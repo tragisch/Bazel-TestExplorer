@@ -13,8 +13,8 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { finishTest, publishOutput } from '../explorer/testEventBus';
-import { runBazelCommand } from './process';
+import { finishTest, publishOutput } from '../explorer/events';
+import { runBazelCommand } from '../infrastructure/process';
 import { logWithTimestamp, measure, formatError } from '../logging';
 import { ConfigurationService } from '../configuration';
 import { analyzeTestFailures } from './parseFailures';

@@ -8,7 +8,7 @@
 
 /// <reference types="mocha" />
 import * as assert from 'assert';
-import { demangleSymbols } from '../../demangler';
+import { demangleSymbols } from '../../coverage';
 
 suite('Demangler', () => {
 	test('returns original symbols when tool is missing', async () => {

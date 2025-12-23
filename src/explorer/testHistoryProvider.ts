@@ -10,7 +10,7 @@
  * TestHistoryProvider - TreeDataProvider for TestObserver history
  */
 import * as vscode from 'vscode';
-import { TestObserver, TestHistoryEntry } from './testObserver';
+import { TestObserver, TestHistoryEntry } from './tree';
 
 export class TestHistoryProvider implements vscode.TreeDataProvider<TestHistoryEntry> {
   private readonly _onDidChangeTreeData = new vscode.EventEmitter<TestHistoryEntry | void>();

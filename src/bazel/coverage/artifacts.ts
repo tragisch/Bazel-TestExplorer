@@ -11,8 +11,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { logWithTimestamp } from './logging';
-import { trackBazelProcess, untrackBazelProcess } from './bazel/process';
+import { logWithTimestamp } from '../../logging';
+import { trackBazelProcess, untrackBazelProcess } from '../../infrastructure/process';
 
 export interface CoverageRunConfig {
 	bazelBinary: string;

@@ -13,22 +13,22 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { BazelClient } from '../bazel/client';
-import { BazelTestTarget, IndividualTestCase } from '../bazel/types';
-import { logWithTimestamp, measure, formatError } from '../logging';
-import { discoverIndividualTestCases } from '../bazel/discovery';
-import { findBazelWorkspace } from '../bazel/workspace';
-import { TestCaseAnnotations, AnnotationUpdate } from './testCaseAnnotations';
-import { TestCaseInsights } from './testCaseInsights';
-import { ConfigurationService } from '../configuration';
-import { expandTestSuite } from '../bazel/queries';
-import { formatCoverageShort, getCoverageSummary } from '../coverageState';
+import { BazelClient } from '../../bazel/client';
+import { BazelTestTarget, IndividualTestCase } from '../../bazel/types';
+import { logWithTimestamp, measure, formatError } from '../../logging';
+import { discoverIndividualTestCases } from '../../bazel/discovery';
+import { findBazelWorkspace } from '../../bazel/workspace';
+import { TestCaseAnnotations, AnnotationUpdate } from '../annotations';
+import { TestCaseInsights } from '../panel';
+import { ConfigurationService } from '../../configuration';
+import { expandTestSuite } from '../../bazel/queries';
+import { formatCoverageShort, getCoverageSummary } from '../../coverage';
 import {
   resolveSourceUri,
   resolveSourceFromMetadata,
   selectFilePath,
   toAbsolutePath
-} from './sourceUtils';
+} from '../sourceUtils';
 
 let isDiscoveringTests = false;
 

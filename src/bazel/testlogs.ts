@@ -13,7 +13,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { logWithTimestamp, formatError } from '../logging';
-import { runBazelCommand } from './process';
+import { runBazelCommand } from '../infrastructure/process';
 
 const testLogsCache = new Map<string, string>();
 

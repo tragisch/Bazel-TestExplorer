@@ -11,14 +11,14 @@
  */
 
 import { createHash } from 'crypto';
-import { callRunBazelCommandForTest } from './runner';
-import { logWithTimestamp, formatError } from '../logging';
-import { TestCaseParseResult, BazelTestTarget } from './types';
-import { PATTERN_IDS_BY_TEST_TYPE } from './testPatterns';
-import { getTestTargetById } from './queries';
-import { parseUnifiedTestResult } from './testcase/testResultParser';
+import { callRunBazelCommandForTest } from '../runner';
+import { logWithTimestamp, formatError } from '../../logging';
+import { TestCaseParseResult, BazelTestTarget } from '../types';
+import { PATTERN_IDS_BY_TEST_TYPE } from './patterns';
+import { getTestTargetById } from '../queries';
+import { parseUnifiedTestResult } from '../testcase/testResultParser';
 
-export { setTestXmlLoader, getTestXmlLoader } from './testcase/testResultParser';
+export { setTestXmlLoader, getTestXmlLoader } from '../testcase/testResultParser';
 
 interface CacheEntry { result: TestCaseParseResult; stdoutHash: string; timestamp: number; }
 

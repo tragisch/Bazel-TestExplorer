@@ -11,7 +11,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { findCoverageArtifacts } from '../../bazelCoverage';
+import { findCoverageArtifacts } from '../../bazel/coverage/artifacts';
 
 suite('Coverage Artifacts', () => {
 	test('finds coverage artifacts under a root', async () => {

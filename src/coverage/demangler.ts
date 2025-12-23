@@ -8,7 +8,7 @@
 
 import * as cp from 'child_process';
 import * as fs from 'fs';
-import { logWithTimestamp } from './logging';
+import { logWithTimestamp } from '../logging';
 
 export type DemanglerKind = 'cpp' | 'rust';
 

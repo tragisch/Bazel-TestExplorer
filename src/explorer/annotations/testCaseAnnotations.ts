@@ -13,7 +13,7 @@
  */
 
 import * as vscode from 'vscode';
-import { IndividualTestCase } from '../bazel/types';
+import { IndividualTestCase } from '../../bazel/types';
 
 export interface TestCaseAnnotationEntry {
   id: string;

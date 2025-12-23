@@ -5,7 +5,7 @@
 /// <reference types="mocha" />
 import * as assert from 'assert';
 import * as vscode from 'vscode';
-import { TestControllerManager } from '../../explorer/testControllerManager';
+import { TestControllerManager } from '../../explorer/controller';
 import { MockTestController, MockTestItem } from '../mocks';
 import { MockConfigurationService } from '../mocks';
 
