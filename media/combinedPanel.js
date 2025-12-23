@@ -14,6 +14,8 @@
     if (loadLogs) loadLogs.addEventListener('click', () => vscode.postMessage({ command: 'requestLogs' }));
     const copyBtn = document.getElementById('copyCmdBtn');
     if (copyBtn) copyBtn.addEventListener('click', () => vscode.postMessage({ command: 'copyRunCommand' }));
+    const covFilter = document.getElementById('covOnlyUncovered');
+    if (covFilter) covFilter.addEventListener('change', () => applyCoverageFilter(covFilter.checked));
   }
 
   function onTabClick(e) {
@@ -30,6 +32,15 @@
     if (tab === 'raw') {
       vscode.postMessage({ command: 'requestRawXml' });
     }
+  }
+
+  function applyCoverageFilter(onlyUncovered) {
+    const rows = document.querySelectorAll('#coverage tbody tr[data-percent]');
+    rows.forEach(row => {
+      const percent = parseFloat(row.getAttribute('data-percent') || '0');
+      const hidden = onlyUncovered && percent >= 100;
+      row.style.display = hidden ? 'none' : '';
+    });
   }
 
   function findClosestTab(node) {

@@ -263,7 +263,40 @@ export class TestControllerManager {
     this.coverageProfile = this.controller.createRunProfile(
       'Bazel Coverage',
       vscode.TestRunProfileKind.Coverage,
-      async () => undefined
+      async (request) => {
+        const collectLeafTests = (item: vscode.TestItem): vscode.TestItem[] => {
+          const collected: vscode.TestItem[] = [];
+          const visit = (node: vscode.TestItem) => {
+            if (node.children.size === 0) {
+              collected.push(node);
+              return;
+            }
+            node.children.forEach(visit);
+          };
+          visit(item);
+          return collected;
+        };
+
+        const targets = request.include && request.include.length > 0
+          ? request.include
+          : await vscode.window.withProgress(
+              {
+                location: vscode.ProgressLocation.Window,
+                title: 'Collecting Bazel coverage targets...',
+                cancellable: false
+              },
+              async () => {
+                return Array.from(this.controller.items).flatMap(([, item]) => collectLeafTests(item));
+              }
+            );
+
+        if (targets.length === 0) {
+          void vscode.window.showInformationMessage('No test targets available for coverage.');
+          return;
+        }
+
+        await vscode.commands.executeCommand('bazelTestExplorer.showCoverageDetails', targets);
+      }
     );
     this.coverageProfile.isDefault = false;
   }
@@ -271,8 +304,10 @@ export class TestControllerManager {
   publishCoverage(
     targetId: string,
     coverages: vscode.FileCoverage[],
-    detailsProvider?: (coverage: vscode.FileCoverage) => vscode.FileCoverageDetail[]
-  ): { covered: number; total: number; percent: number; files: { path: string; covered: number; total: number; percent: number }[] } | undefined {
+    detailsProvider?: (coverage: vscode.FileCoverage) => vscode.FileCoverageDetail[],
+    kind?: string,
+    artifacts?: { lcov?: string[]; profraw?: string[]; profdata?: string[]; testlogs?: string[] }
+  ): { kind?: string; covered: number; total: number; percent: number; files: { path: string; covered: number; total: number; percent: number }[]; artifacts?: { lcov?: string[]; profraw?: string[]; profdata?: string[]; testlogs?: string[] } } | undefined {
     const targetItem = this.findTestItemById(targetId);
     if (!targetItem) {
       return undefined;
@@ -294,12 +329,16 @@ export class TestControllerManager {
     run.passed(targetItem);
     run.end();
 
-    const summary = this.computeCoverageSummary(coverages);
+    const summary = this.computeCoverageSummary(coverages, kind, artifacts);
     this.applyCoverageDescription(targetItem, summary);
     return summary;
   }
 
-  private computeCoverageSummary(coverages: vscode.FileCoverage[]): { covered: number; total: number; percent: number; files: { path: string; covered: number; total: number; percent: number }[] } {
+  private computeCoverageSummary(
+    coverages: vscode.FileCoverage[],
+    kind?: string,
+    artifacts?: { lcov?: string[]; profraw?: string[]; profdata?: string[]; testlogs?: string[] }
+  ): { kind?: string; covered: number; total: number; percent: number; files: { path: string; covered: number; total: number; percent: number }[]; artifacts?: { lcov?: string[]; profraw?: string[]; profdata?: string[]; testlogs?: string[] } } {
     let covered = 0;
     let total = 0;
     const files = coverages.map((coverage) => {
@@ -316,7 +355,7 @@ export class TestControllerManager {
       };
     });
     const percent = total === 0 ? 0 : (covered / total) * 100;
-    return { covered, total, percent, files };
+    return { kind, covered, total, percent, files, artifacts };
   }
 
   private applyCoverageDescription(

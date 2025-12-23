@@ -17,16 +17,23 @@ const defaultTools: Record<DemanglerKind, string> = {
 	rust: 'rustfilt'
 };
 
+const disabledDemanglers = new Set<DemanglerKind>();
+
 export const demangleSymbols = async (
 	symbols: string[],
 	kind: DemanglerKind,
 	toolPath?: string
 ): Promise<string[]> => {
 	if (symbols.length === 0) return symbols;
+	if (disabledDemanglers.has(kind)) return symbols;
 
 	const tool = toolPath || defaultTools[kind];
 	if (toolPath && !fs.existsSync(toolPath)) {
-		logWithTimestamp(`Demangler not found at ${toolPath}. Returning original symbols.`, 'warn');
+		logWithTimestamp(
+			`Demangler not found at ${toolPath}. Configure a valid path or ensure it is on PATH (or via the Bazel extension). Returning original symbols.`,
+			'warn'
+		);
+		disabledDemanglers.add(kind);
 		return symbols;
 	}
 
@@ -36,7 +43,16 @@ export const demangleSymbols = async (
 
 		const child = cp.spawn(tool, [], { stdio: 'pipe' });
 		child.on('error', (err) => {
-			logWithTimestamp(`Demangler failed (${tool}): ${String(err)}. Returning original symbols.`, 'warn');
+			const code = (err as NodeJS.ErrnoException).code;
+			if (code === 'ENOENT') {
+				logWithTimestamp(
+					`Demangler '${tool}' not found. Install it, ensure it is on PATH, or configure it via the Bazel extension. Demangling disabled.`,
+					'warn'
+				);
+				disabledDemanglers.add(kind);
+			} else {
+				logWithTimestamp(`Demangler failed (${tool}): ${String(err)}. Returning original symbols.`, 'warn');
+			}
 			resolve(symbols);
 		});
 		child.stdout.on('data', (data) => {

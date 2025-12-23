@@ -194,18 +194,56 @@ function renderHtml(
     : `<i>No structured test.xml data captured yet.</i>`;
 
   const coverage = getCoverageSummary(testId);
+  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  const shortenPath = (filePath: string) => {
+    if (workspaceRoot && filePath.startsWith(workspaceRoot)) {
+      return path.relative(workspaceRoot, filePath) || path.basename(filePath);
+    }
+    return filePath;
+  };
+  const coverageType = coverage?.kind ?? 'line';
   const coverageRows = coverage
-    ? coverage.files.map(f => `
-        <tr>
-          <td>${escape(f.path)}</td>
+    ? coverage.files
+      .slice()
+      .sort((a, b) => {
+        if (a.percent !== b.percent) return a.percent - b.percent;
+        return a.path.localeCompare(b.path);
+      })
+      .map(f => `
+        <tr data-percent="${f.percent.toFixed(2)}">
+          <td class="path" title="${escape(f.path)}">${escape(shortenPath(f.path))}</td>
           <td>${f.percent.toFixed(2)}%</td>
           <td>${f.covered}/${f.total}</td>
         </tr>
       `).join('')
     : '';
+  const uncoveredTop = coverage
+    ? coverage.files
+      .filter(f => f.percent < 100)
+      .slice()
+      .sort((a, b) => {
+        if (a.percent !== b.percent) return a.percent - b.percent;
+        return a.path.localeCompare(b.path);
+      })
+      .slice(0, 5)
+    : [];
+  const uncoveredSection = uncoveredTop.length > 0
+    ? `
+      <h4>Top uncovered</h4>
+      <ul>
+        ${uncoveredTop.map(f => `<li>${escape(shortenPath(f.path))} — ${f.percent.toFixed(2)}% (${f.covered}/${f.total})</li>`).join('')}
+      </ul>
+    `
+    : '';
   const coverageSection = coverage
     ? `
       <p><b>Total:</b> ${coverage.percent.toFixed(2)}% (${coverage.covered}/${coverage.total} lines)</p>
+      <p><b>Artifacts:</b>
+        ${coverage.artifacts?.lcov?.length ? `LCOV: ${coverage.artifacts.lcov.length}` : 'LCOV: 0'}
+        • ${coverage.artifacts?.profraw?.length ? `profraw: ${coverage.artifacts.profraw.length}` : 'profraw: 0'}
+        • ${coverage.artifacts?.profdata?.length ? `profdata: ${coverage.artifacts.profdata.length}` : 'profdata: 0'}
+        • ${coverage.artifacts?.testlogs?.length ? `testlogs: ${coverage.artifacts.testlogs.length}` : 'testlogs: 0'}
+      </p>
       <table>
         <thead>
           <tr><th>File</th><th>Coverage</th><th>Lines</th></tr>
@@ -281,7 +319,10 @@ function renderHtml(
 
           <div id="coverage" style="display:none">
             <h3>Coverage</h3>
+            <p><b>Type:</b> ${escape(coverageType)}</p>
+            <label style="font-size:12px;"><input id="covOnlyUncovered" type="checkbox"> only uncovered</label>
             ${coverageSection}
+            ${uncoveredSection}
           </div>
 
           <div id="logs" style="display:none">

@@ -26,10 +26,13 @@ import { TestCaseAnnotations, TestCaseCodeLensProvider, TestCaseHoverProvider } 
 import { TestCaseInsights } from './explorer/testCaseInsights';
 import { showCombinedTestPanel } from './explorer/combinedTestPanel';
 import { parseLcovToFileCoverage, getCoverageDetailsForFile } from './coverageVscode';
-import { setCoverageSummary } from './coverageState';
+import { initializeCoverageState, setCoverageSummary } from './coverageState';
+import { resolveBazelInfo, findCoverageArtifacts } from './bazelCoverage';
+import { cancelAllBazelProcesses } from './bazel/process';
 
 export async function activate(context: vscode.ExtensionContext) {
 	initializeLogger();
+	initializeCoverageState(context.workspaceState);
 
 	const extensionVersion = vscode.extensions.getExtension("tragisch.bazel-testexplorer")?.packageJSON.version;
 	logWithTimestamp(`Bazel Test Explorer v${extensionVersion} aktiviert.`);
@@ -233,12 +236,22 @@ export async function activate(context: vscode.ExtensionContext) {
 			await showCombinedTestPanel(testItem.id, bazelClient, testCaseInsights, context);
 		}),
 
-		vscode.commands.registerCommand('bazelTestExplorer.showCoverageDetails', async (testItem?: vscode.TestItem) => {
-			const targetLabel = testItem?.id ?? (typeof testItem?.label === 'string' ? testItem.label : '//demo:target');
-			coverageOutput.appendLine(`Loading coverage fixture for ${targetLabel}`);
+		vscode.commands.registerCommand('bazelTestExplorer.showCoverageDetails', async (items?: vscode.TestItem | vscode.TestItem[]) => {
+			const selectedItems = Array.isArray(items)
+				? items
+				: items
+					? [items]
+					: [];
+			const targetLabels = selectedItems.length > 0
+				? selectedItems.map(item => item.id ?? item.label)
+				: ['//demo:target'];
+
+			coverageOutput.show(true);
 			const fixturePath = context.asAbsolutePath(path.join('test', 'fixtures', 'coverage', 'sample.lcov'));
+			coverageOutput.appendLine(`[coverage] targets=${targetLabels.length}`);
 			let lcovContent = '';
 			try {
+				coverageOutput.appendLine(`[coverage] reading fixture: ${fixturePath}`);
 				lcovContent = await fs.promises.readFile(fixturePath, 'utf8');
 			} catch (err) {
 				void vscode.window.showErrorMessage(`Failed to read LCOV fixture: ${formatError(err)}`);
@@ -247,22 +260,50 @@ export async function activate(context: vscode.ExtensionContext) {
 			}
 
 			const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? workspaceRoot;
+			coverageOutput.appendLine(`[coverage] workspace: ${workspaceFolder}`);
 			const coverages = parseLcovToFileCoverage(lcovContent, workspaceFolder, context.extensionPath);
-			coverageOutput.appendLine(`Parsed ${coverages.length} coverage file(s).`);
+			coverageOutput.appendLine(`[coverage] parsed files=${coverages.length}`);
 			if (coverages.length === 0) {
 				void vscode.window.showWarningMessage('No coverage files found in fixture.');
 				coverageOutput.appendLine('No coverage files found in fixture.');
 				return;
 			}
 
-			const summary = testManager.publishCoverage(targetLabel, coverages, getCoverageDetailsForFile);
-			if (!summary) {
-				void vscode.window.showWarningMessage(`No matching test item found for ${targetLabel}.`);
-				coverageOutput.appendLine(`No matching test item found for ${targetLabel}.`);
-				return;
+			coverageOutput.appendLine('[coverage] locating artifacts');
+			const execroot = await resolveBazelInfo(configurationService.bazelPath, workspaceRoot, 'execution_root');
+			const artifacts = await findCoverageArtifacts(
+				[execroot, workspaceRoot].filter(Boolean) as string[]
+			);
+			coverageOutput.appendLine(`[coverage] artifacts lcov=${artifacts.lcov.length} profraw=${artifacts.profraw.length} profdata=${artifacts.profdata.length}`);
+
+			for (const targetLabel of targetLabels) {
+				coverageOutput.appendLine(`[coverage] publish target=${targetLabel}`);
+				const summary = testManager.publishCoverage(targetLabel, coverages, getCoverageDetailsForFile, 'line', {
+					lcov: artifacts.lcov,
+					profraw: artifacts.profraw,
+					profdata: artifacts.profdata,
+					testlogs: artifacts.testlogs
+				});
+				if (!summary) {
+					void vscode.window.showWarningMessage(`No matching test item found for ${targetLabel}.`);
+					coverageOutput.appendLine(`No matching test item found for ${targetLabel}.`);
+					continue;
+				}
+				setCoverageSummary(targetLabel, summary);
+				coverageOutput.appendLine(`[coverage] published ${targetLabel} ${summary.covered}/${summary.total} (${summary.percent.toFixed(2)}%)`);
 			}
-			setCoverageSummary(targetLabel, summary);
-			coverageOutput.appendLine(`Published coverage for ${targetLabel}`);
+		})
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand('bazelTestExplorer.cancelAllRuns', async () => {
+			const killed = cancelAllBazelProcesses();
+			if (killed > 0) {
+				logWithTimestamp(`Cancelled ${killed} Bazel process(es) by user request.`);
+				void vscode.window.showInformationMessage(`Stopped ${killed} Bazel process(es).`);
+			} else {
+				void vscode.window.showInformationMessage('No running Bazel processes to stop.');
+			}
 		})
 	);
 

@@ -17,6 +17,29 @@ import * as path from 'path';
 import { CancellationToken } from 'vscode';
 import { logWithTimestamp } from '../logging';
 
+const runningBazelProcesses = new Set<cp.ChildProcess>();
+
+export const trackBazelProcess = (proc: cp.ChildProcess): void => {
+    runningBazelProcesses.add(proc);
+};
+
+export const untrackBazelProcess = (proc: cp.ChildProcess): void => {
+    runningBazelProcesses.delete(proc);
+};
+
+export const cancelAllBazelProcesses = (): number => {
+    let count = 0;
+    for (const proc of runningBazelProcesses) {
+        try {
+            proc.kill('SIGTERM');
+            count += 1;
+        } catch {
+            // ignore
+        }
+    }
+    return count;
+};
+
 export function runBazelCommand(
     args: string[],
     cwd: string,
@@ -29,6 +52,7 @@ export function runBazelCommand(
     return new Promise((resolve, reject) => {
         logWithTimestamp(`Running Bazel: ${bazelPath} ${args.join(" ")}`);
         const proc = cp.spawn(bazelPath, args, { cwd, shell: true, env: { ...process.env, ...(env || {}) } });
+        trackBazelProcess(proc);
         let isCancelled = false;
 
         let stdout = '';
@@ -38,7 +62,7 @@ export function runBazelCommand(
         const cancellationDisposable = cancellationToken?.onCancellationRequested(() => {
             isCancelled = true;
             logWithTimestamp(`Cancellation requested for Bazel process: ${bazelPath} ${args.join(" ")}`);
-            proc.kill();
+            proc.kill('SIGTERM');
         });
 
         const rl = readline.createInterface({ input: proc.stdout });
@@ -57,6 +81,7 @@ export function runBazelCommand(
 
         proc.on('close', code => {
             cancellationDisposable?.dispose();
+            untrackBazelProcess(proc);
             if (isCancelled) {
                 reject(new Error('Bazel test execution was cancelled'));
             } else {
@@ -66,6 +91,7 @@ export function runBazelCommand(
 
         proc.on('error', (err) => {
             cancellationDisposable?.dispose();
+            untrackBazelProcess(proc);
             reject(err);
         });
     });

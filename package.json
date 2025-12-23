@@ -46,6 +46,11 @@
       {
         "command": "bazelTestExplorer.showCoverageDetails",
         "title": "Bazel-TestExplorer: Show Coverage Details"
+      },
+      {
+        "command": "bazelTestExplorer.cancelAllRuns",
+        "title": "Bazel-TestExplorer: Cancel All Runs",
+        "icon": "$(stop-circle)"
       }
     ],
     "menus": {
@@ -59,6 +64,13 @@
           "command": "bazelTestExplorer.showTestDetails",
           "when": "view == workbench.view.testing",
           "group": "navigation@3"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "bazelTestExplorer.cancelAllRuns",
+          "when": "view == workbench.view.testing",
+          "group": "navigation@9"
         }
       ]
     },
