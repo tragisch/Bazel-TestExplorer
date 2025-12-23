@@ -211,6 +211,7 @@
         {
           "id": "bazelTestExplorer.history",
           "name": "Bazel Test History",
+          "contextualTitle": "Bazel Test History",
           "icon": "images/icon_Bazel_TestExplorer.png"
         }
       ]

@@ -138,16 +138,13 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	// Tree view for history (Testing + Explorer fallback)
 	const historyProvider = new TestHistoryProvider(testObserver);
-	const historyViewIds = ['bazelTestExplorer.history', 'bazelTestExplorer.history.explorer'];
-	for (const viewId of historyViewIds) {
-		try {
-			const tree = vscode.window.createTreeView(viewId, { treeDataProvider: historyProvider });
-			context.subscriptions.push(tree);
-			logWithTimestamp(`Registered tree view: ${viewId}`);
-		} catch (err) {
-			logWithTimestamp(`Failed to create tree view '${viewId}': ${formatError(err)}`, 'error');
-			vscode.window.showErrorMessage("Failed to initialize Bazel Test History view. See 'Bazel-Test-Logs' output for details.");
-		}
+	try {
+		const tree = vscode.window.createTreeView('bazelTestExplorer.history', { treeDataProvider: historyProvider });
+		context.subscriptions.push(tree);
+		logWithTimestamp('Registered tree view: bazelTestExplorer.history');
+	} catch (err) {
+		logWithTimestamp(`Failed to create tree view 'bazelTestExplorer.history': ${formatError(err)}`, 'error');
+		vscode.window.showErrorMessage("Failed to initialize Bazel Test History view. See 'Bazel-Test-Logs' output for details.");
 	}
 
 	// Settings view in the Testing sidebar (Webview) + Explorer fallback
