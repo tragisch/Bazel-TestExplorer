@@ -8,6 +8,7 @@
     if (pin) pin.addEventListener('change', (ev) => {
       vscode.postMessage({ command: 'togglePin', value: ev.target.checked });
     });
+    document.addEventListener('click', onFileClick);
     const rerun = document.getElementById('rerunBtn');
     if (rerun) rerun.addEventListener('click', () => vscode.postMessage({ command: 'rerun' }));
     const loadLogs = document.getElementById('loadLogsBtn');
@@ -31,6 +32,15 @@
     document.getElementById('raw').style.display = tab==='raw' ? 'block' : 'none';
     if (tab === 'raw') {
       vscode.postMessage({ command: 'requestRawXml' });
+    }
+  }
+
+  function onFileClick(e) {
+    const link = e.target.closest ? e.target.closest('.file-link') : null;
+    if (!link) return;
+    const path = link.getAttribute('data-path');
+    if (path) {
+      vscode.postMessage({ command: 'openCoverageFile', path });
     }
   }
 

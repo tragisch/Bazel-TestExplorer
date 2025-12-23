@@ -56,11 +56,6 @@
     "menus": {
       "testing/item/context": [
         {
-          "command": "bazelTestExplorer.showCoverageDetails",
-          "when": "view == workbench.view.testing",
-          "group": "navigation@2"
-        },
-        {
           "command": "bazelTestExplorer.showTestDetails",
           "when": "view == workbench.view.testing",
           "group": "navigation@3"
@@ -109,6 +104,16 @@
           "type": "array",
           "description": "Additional command line arguments to pass to 'bazel test'. Example: ['--config=ci', '--build_tests_only', '--runs_per_test=2', etc.]",
           "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "bazelTestExplorer.coverageArgs": {
+          "type": "array",
+          "description": "Additional command line arguments to pass to 'bazel coverage'. Example: ['--instrumentation_filter=.*', '--experimental_split_coverage_postprocessing']",
+          "default": [
+            "--instrumentation_filter=.*"
+          ],
           "items": {
             "type": "string"
           }

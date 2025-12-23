@@ -306,8 +306,10 @@ export class TestControllerManager {
     coverages: vscode.FileCoverage[],
     detailsProvider?: (coverage: vscode.FileCoverage) => vscode.FileCoverageDetail[],
     kind?: string,
-    artifacts?: { lcov?: string[]; profraw?: string[]; profdata?: string[]; testlogs?: string[] }
-  ): { kind?: string; covered: number; total: number; percent: number; files: { path: string; covered: number; total: number; percent: number }[]; artifacts?: { lcov?: string[]; profraw?: string[]; profdata?: string[]; testlogs?: string[] } } | undefined {
+    artifacts?: { lcov?: string[]; profraw?: string[]; profdata?: string[]; testlogs?: string[] },
+    coverageArgs?: string[],
+    generated?: boolean
+  ): { kind?: string; covered: number; total: number; percent: number; files: { path: string; covered: number; total: number; percent: number }[]; artifacts?: { lcov?: string[]; profraw?: string[]; profdata?: string[]; testlogs?: string[] }; coverageArgs?: string[]; generated?: boolean } | undefined {
     const targetItem = this.findTestItemById(targetId);
     if (!targetItem) {
       return undefined;
@@ -329,7 +331,7 @@ export class TestControllerManager {
     run.passed(targetItem);
     run.end();
 
-    const summary = this.computeCoverageSummary(coverages, kind, artifacts);
+    const summary = this.computeCoverageSummary(coverages, kind, artifacts, coverageArgs, generated);
     this.applyCoverageDescription(targetItem, summary);
     return summary;
   }
@@ -337,8 +339,10 @@ export class TestControllerManager {
   private computeCoverageSummary(
     coverages: vscode.FileCoverage[],
     kind?: string,
-    artifacts?: { lcov?: string[]; profraw?: string[]; profdata?: string[]; testlogs?: string[] }
-  ): { kind?: string; covered: number; total: number; percent: number; files: { path: string; covered: number; total: number; percent: number }[]; artifacts?: { lcov?: string[]; profraw?: string[]; profdata?: string[]; testlogs?: string[] } } {
+    artifacts?: { lcov?: string[]; profraw?: string[]; profdata?: string[]; testlogs?: string[] },
+    coverageArgs?: string[],
+    generated?: boolean
+  ): { kind?: string; covered: number; total: number; percent: number; files: { path: string; covered: number; total: number; percent: number }[]; artifacts?: { lcov?: string[]; profraw?: string[]; profdata?: string[]; testlogs?: string[] }; coverageArgs?: string[]; generated?: boolean } {
     let covered = 0;
     let total = 0;
     const files = coverages.map((coverage) => {
@@ -355,7 +359,15 @@ export class TestControllerManager {
       };
     });
     const percent = total === 0 ? 0 : (covered / total) * 100;
-    return { kind, covered, total, percent, files, artifacts };
+    const normalizedArtifacts = artifacts
+      ? {
+          lcov: artifacts.lcov?.filter(p => p !== '<llvm-cov export>'),
+          profraw: artifacts.profraw,
+          profdata: artifacts.profdata,
+          testlogs: artifacts.testlogs
+        }
+      : undefined;
+    return { kind, covered, total, percent, files, artifacts: normalizedArtifacts, coverageArgs, generated };
   }
 
   private applyCoverageDescription(

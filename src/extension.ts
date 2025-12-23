@@ -25,9 +25,9 @@ import { onDidTestEvent } from './explorer/testEventBus';
 import { TestCaseAnnotations, TestCaseCodeLensProvider, TestCaseHoverProvider } from './explorer/testCaseAnnotations';
 import { TestCaseInsights } from './explorer/testCaseInsights';
 import { showCombinedTestPanel } from './explorer/combinedTestPanel';
-import { parseLcovToFileCoverage, getCoverageDetailsForFile } from './coverageVscode';
+import { parseLcovToFileCoverage, getCoverageDetailsForFile, demangleCoverageDetails } from './coverageVscode';
 import { initializeCoverageState, setCoverageSummary } from './coverageState';
-import { resolveBazelInfo, findCoverageArtifacts } from './bazelCoverage';
+import { BazelCoverageRunner, resolveBazelInfo, findCoverageArtifacts, loadFirstValidLcov, extractLcovPathFromOutput, extractBazelBinExecPath, convertProfrawToLcov } from './bazelCoverage';
 import { cancelAllBazelProcesses } from './bazel/process';
 
 export async function activate(context: vscode.ExtensionContext) {
@@ -247,51 +247,172 @@ export async function activate(context: vscode.ExtensionContext) {
 				: ['//demo:target'];
 
 			coverageOutput.show(true);
-			const fixturePath = context.asAbsolutePath(path.join('test', 'fixtures', 'coverage', 'sample.lcov'));
 			coverageOutput.appendLine(`[coverage] targets=${targetLabels.length}`);
-			let lcovContent = '';
-			try {
-				coverageOutput.appendLine(`[coverage] reading fixture: ${fixturePath}`);
-				lcovContent = await fs.promises.readFile(fixturePath, 'utf8');
-			} catch (err) {
-				void vscode.window.showErrorMessage(`Failed to read LCOV fixture: ${formatError(err)}`);
-				coverageOutput.appendLine(`Failed to read fixture: ${formatError(err)}`);
-				return;
-			}
-
 			const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? workspaceRoot;
-			coverageOutput.appendLine(`[coverage] workspace: ${workspaceFolder}`);
-			const coverages = parseLcovToFileCoverage(lcovContent, workspaceFolder, context.extensionPath);
-			coverageOutput.appendLine(`[coverage] parsed files=${coverages.length}`);
-			if (coverages.length === 0) {
-				void vscode.window.showWarningMessage('No coverage files found in fixture.');
-				coverageOutput.appendLine('No coverage files found in fixture.');
-				return;
-			}
+			const runner = new BazelCoverageRunner(coverageOutput);
 
-			coverageOutput.appendLine('[coverage] locating artifacts');
-			const execroot = await resolveBazelInfo(configurationService.bazelPath, workspaceRoot, 'execution_root');
-			const artifacts = await findCoverageArtifacts(
-				[execroot, workspaceRoot].filter(Boolean) as string[]
-			);
-			coverageOutput.appendLine(`[coverage] artifacts lcov=${artifacts.lcov.length} profraw=${artifacts.profraw.length} profdata=${artifacts.profdata.length}`);
+			await vscode.window.withProgress(
+				{
+					location: vscode.ProgressLocation.Notification,
+					title: 'Bazel Coverage',
+					cancellable: true
+				},
+				async (progress, token) => {
+					const tryConvertLlvm = async (stdout: string, stderr: string, artifacts: { profraw: string[]; profdata: string[]; lcov: string[]; testlogs: string[] }, execrootPath?: string) => {
+						if (artifacts.profraw.length === 0 && artifacts.profdata.length === 0) {
+							return undefined;
+						}
+						const execPath = extractBazelBinExecPath(stdout + stderr);
+						const bazelBin = await resolveBazelInfo(configurationService.bazelPath, workspaceRoot, 'bazel-bin', token);
+						const binaryPath = execPath && bazelBin ? path.join(bazelBin, execPath.replace(/^bazel-bin\//, '')) : undefined;
+						if (binaryPath && fs.existsSync(binaryPath)) {
+							coverageOutput.appendLine(`[coverage] converting LLVM profile using ${binaryPath}`);
+							const converted = await convertProfrawToLcov(artifacts.profraw, binaryPath, token);
+							if (converted) {
+								coverageOutput.appendLine(`[coverage] using llvm lcov=${converted.path}`);
+								const convertedCoverages = parseLcovToFileCoverage(converted.content, workspaceFolder, context.extensionPath, execrootPath);
+								if (convertedCoverages.length === 0) {
+									coverageOutput.appendLine('[coverage] llvm lcov contained no files');
+									return undefined;
+								}
+								await demangleCoverageDetails(configurationService.cppDemanglerPath, configurationService.rustDemanglerPath);
+								return {
+									coverages: convertedCoverages,
+									artifacts: { ...artifacts, lcov: [...artifacts.lcov, converted.path] }
+								};
+							}
+						} else {
+							coverageOutput.appendLine('[coverage] LLVM profiles detected; llvm-cov/llvm-profdata may be missing or binary not found.');
+						}
+						return undefined;
+					};
+					for (const targetLabel of targetLabels) {
+						if (token.isCancellationRequested) {
+							coverageOutput.appendLine('[coverage] cancelled');
+							break;
+						}
+						progress.report({ message: `Running coverage for ${targetLabel}` });
+						coverageOutput.appendLine(`[coverage] run target=${targetLabel}`);
+						const args = ['coverage', ...configurationService.coverageArgs, targetLabel];
+						const result = await runner.runCoverage(
+							{ bazelBinary: configurationService.bazelPath, args, workspaceRoot },
+							token
+						);
+						if (result.code !== 0) {
+							coverageOutput.appendLine(`[coverage] bazel coverage failed (code=${result.code}) for ${targetLabel}`);
+							continue;
+						}
 
-			for (const targetLabel of targetLabels) {
-				coverageOutput.appendLine(`[coverage] publish target=${targetLabel}`);
-				const summary = testManager.publishCoverage(targetLabel, coverages, getCoverageDetailsForFile, 'line', {
-					lcov: artifacts.lcov,
-					profraw: artifacts.profraw,
-					profdata: artifacts.profdata,
-					testlogs: artifacts.testlogs
-				});
-				if (!summary) {
-					void vscode.window.showWarningMessage(`No matching test item found for ${targetLabel}.`);
-					coverageOutput.appendLine(`No matching test item found for ${targetLabel}.`);
-					continue;
+						coverageOutput.appendLine('[coverage] locating artifacts');
+						const execroot = await resolveBazelInfo(configurationService.bazelPath, workspaceRoot, 'execution_root', token);
+						const testlogs = await resolveBazelInfo(configurationService.bazelPath, workspaceRoot, 'bazel-testlogs', token);
+						const artifacts = await findCoverageArtifacts(
+							[execroot, testlogs, workspaceRoot].filter(Boolean) as string[],
+							token
+						);
+						coverageOutput.appendLine(
+							`[coverage] artifacts lcov=${artifacts.lcov.length} profraw=${artifacts.profraw.length} profdata=${artifacts.profdata.length}`
+						);
+
+						const reportedLcov = extractLcovPathFromOutput(result.stdout + result.stderr);
+						if (reportedLcov) {
+							coverageOutput.appendLine(`[coverage] reported lcov=${reportedLcov}`);
+						}
+						const targetPath = targetLabel.replace(/^\/\//, '').replace(':', path.sep);
+						const preferredRoot = testlogs ? path.join(testlogs, targetPath) : undefined;
+						const preferredLcov = preferredRoot
+							? artifacts.lcov.filter(file => file.startsWith(preferredRoot))
+							: [];
+						const lcovCandidates = reportedLcov
+							? [reportedLcov, ...preferredLcov, ...artifacts.lcov]
+							: (preferredLcov.length > 0 ? preferredLcov : artifacts.lcov);
+						if (preferredLcov.length === 0) {
+							coverageOutput.appendLine('[coverage] no target-specific LCOV found; falling back to latest valid LCOV.');
+						}
+						const lcovResult = await loadFirstValidLcov(lcovCandidates, token);
+						if (!lcovResult) {
+							const converted = await tryConvertLlvm(result.stdout, result.stderr, artifacts, execroot);
+							if (converted) {
+								const summary = testManager.publishCoverage(
+									targetLabel,
+									converted.coverages,
+									getCoverageDetailsForFile,
+									'line',
+									{
+										lcov: converted.artifacts.lcov,
+										profraw: converted.artifacts.profraw,
+										profdata: converted.artifacts.profdata,
+										testlogs: converted.artifacts.testlogs
+									},
+									configurationService.coverageArgs,
+									true
+								);
+								if (summary) {
+									setCoverageSummary(targetLabel, summary);
+									coverageOutput.appendLine(
+										`[coverage] published ${targetLabel} ${summary.covered}/${summary.total} (${summary.percent.toFixed(2)}%)`
+									);
+									continue;
+								}
+							}
+							coverageOutput.appendLine(`[coverage] no usable LCOV found for ${targetLabel}`);
+							if (lcovCandidates.length > 0) {
+								coverageOutput.appendLine(`[coverage] lcov candidates: ${lcovCandidates.slice(0, 5).join(', ')}`);
+							}
+							continue;
+						}
+						coverageOutput.appendLine(`[coverage] using lcov=${lcovResult.path}`);
+
+						let coverages = parseLcovToFileCoverage(lcovResult.content, workspaceFolder, context.extensionPath, execroot);
+						await demangleCoverageDetails(configurationService.cppDemanglerPath, configurationService.rustDemanglerPath);
+						coverageOutput.appendLine(`[coverage] parsed files=${coverages.length}`);
+						const totalLines = coverages.reduce((sum, entry) => sum + entry.statementCoverage.total, 0);
+						if (coverages.length === 0 || totalLines === 0) {
+							coverageOutput.appendLine('[coverage] LCOV has no line data; trying LLVM profiles');
+							const converted = await tryConvertLlvm(result.stdout, result.stderr, artifacts, execroot);
+							if (converted) {
+								coverages = converted.coverages;
+								await demangleCoverageDetails(configurationService.cppDemanglerPath, configurationService.rustDemanglerPath);
+							} else {
+								continue;
+							}
+						}
+
+						const summary = testManager.publishCoverage(
+							targetLabel,
+							coverages,
+							getCoverageDetailsForFile,
+							'line',
+							{
+								lcov: artifacts.lcov,
+								profraw: artifacts.profraw,
+								profdata: artifacts.profdata,
+								testlogs: artifacts.testlogs
+							},
+							configurationService.coverageArgs,
+							false
+						);
+						if (!summary) {
+							void vscode.window.showWarningMessage(`No matching test item found for ${targetLabel}.`);
+							coverageOutput.appendLine(`No matching test item found for ${targetLabel}.`);
+							continue;
+						}
+						setCoverageSummary(targetLabel, summary);
+						coverageOutput.appendLine(
+							`[coverage] published ${targetLabel} ${summary.covered}/${summary.total} (${summary.percent.toFixed(2)}%)`
+						);
+						const action = await vscode.window.showInformationMessage('Coverage updated.', 'Open Coverage');
+						if (action === 'Open Coverage') {
+							try {
+								await vscode.commands.executeCommand('workbench.view.testing');
+								await vscode.commands.executeCommand('testing.coverage.open');
+							} catch (err) {
+								coverageOutput.appendLine(`[coverage] failed to open coverage view: ${formatError(err)}`);
+							}
+						}
+					}
 				}
-				setCoverageSummary(targetLabel, summary);
-				coverageOutput.appendLine(`[coverage] published ${targetLabel} ${summary.covered}/${summary.total} (${summary.percent.toFixed(2)}%)`);
-			}
+			);
 		})
 	);
 

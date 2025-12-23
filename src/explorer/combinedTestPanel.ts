@@ -111,6 +111,30 @@ export async function showCombinedTestPanel(testId: string, bazelClient: BazelCl
         return;
       }
 
+      if (msg.command === 'openCoverageFile') {
+        try {
+          let resolved = msg.path as string;
+          const sandboxIndex = resolved.indexOf('/sandbox/');
+          if (sandboxIndex !== -1) {
+            const execIndex = resolved.indexOf('/execroot/');
+            if (execIndex !== -1) {
+              const execSuffix = resolved.slice(execIndex);
+              const outputBase = await getBazelTestLogsDirectory(bazelClient.workspace, bazelClient.bazel);
+              if (outputBase) {
+                const base = outputBase.replace(/\/bazel-testlogs\/?$/, '');
+                resolved = base + execSuffix;
+              }
+            }
+          }
+          const uri = vscode.Uri.file(resolved);
+          const doc = await vscode.workspace.openTextDocument(uri);
+          await vscode.window.showTextDocument(doc, { preview: true, viewColumn: vscode.ViewColumn.Beside });
+        } catch (e) {
+          void vscode.window.showWarningMessage(`Failed to open coverage file: ${String(e)}`);
+        }
+        return;
+      }
+
       if (msg.command === 'copyRunCommand') {
         const cmd = `bazel test ${activeId}`;
         try {
@@ -202,6 +226,15 @@ function renderHtml(
     return filePath;
   };
   const coverageType = coverage?.kind ?? 'line';
+  const coverageSource = coverage?.generated ? 'generated (llvm-cov)' : 'direct';
+  const coverageArgs = coverage?.coverageArgs ?? [];
+  const instrumentationFilter = (() => {
+    const withEquals = coverageArgs.find(arg => arg.startsWith('--instrumentation_filter='));
+    if (withEquals) return withEquals.split('=')[1];
+    const flagIndex = coverageArgs.findIndex(arg => arg === '--instrumentation_filter');
+    if (flagIndex >= 0 && coverageArgs[flagIndex + 1]) return coverageArgs[flagIndex + 1];
+    return undefined;
+  })();
   const coverageRows = coverage
     ? coverage.files
       .slice()
@@ -211,7 +244,7 @@ function renderHtml(
       })
       .map(f => `
         <tr data-percent="${f.percent.toFixed(2)}">
-          <td class="path" title="${escape(f.path)}">${escape(shortenPath(f.path))}</td>
+          <td class="path"><a class="file-link" data-path="${escape(f.path)}" title="${escape(f.path)}">${escape(shortenPath(f.path))}</a></td>
           <td>${f.percent.toFixed(2)}%</td>
           <td>${f.covered}/${f.total}</td>
         </tr>
@@ -280,6 +313,7 @@ function renderHtml(
           .status.pass { color:#22863a; }
           .status.fail { color:#b31d28; }
           .status.timeout { color:#d35400; }
+          .file-link { color: #0a5bd8; text-decoration: underline; cursor: pointer; }
         </style>
       </head>
       <body>
@@ -320,6 +354,8 @@ function renderHtml(
           <div id="coverage" style="display:none">
             <h3>Coverage</h3>
             <p><b>Type:</b> ${escape(coverageType)}</p>
+            <p><b>Source:</b> ${escape(coverageSource)}</p>
+            <p><b>Instrumentation filter:</b> ${escape(instrumentationFilter ?? 'n/a')}</p>
             <label style="font-size:12px;"><input id="covOnlyUncovered" type="checkbox"> only uncovered</label>
             ${coverageSection}
             ${uncoveredSection}

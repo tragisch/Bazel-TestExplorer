@@ -44,6 +44,20 @@ export class ConfigurationService {
     return this.normalizeStringArray(this.config.get<string[]>('testArgs', []));
   }
 
+  get coverageArgs(): string[] {
+    return this.normalizeStringArray(this.config.get<string[]>('coverageArgs', ['--instrumentation_filter=.*']));
+  }
+
+  get cppDemanglerPath(): string | undefined {
+    const value = this.config.get<string>('demangler.cpp', '').trim();
+    return value.length > 0 ? value : undefined;
+  }
+
+  get rustDemanglerPath(): string | undefined {
+    const value = this.config.get<string>('demangler.rust', '').trim();
+    return value.length > 0 ? value : undefined;
+  }
+
   get buildTestsOnly(): boolean {
     return this.config.get<boolean>('buildTestsOnly', false);
   }

@@ -20,6 +20,8 @@ export interface CoverageSummary {
 	percent: number;
 	files: CoverageFileSummary[];
 	artifacts?: CoverageArtifacts;
+	coverageArgs?: string[];
+	generated?: boolean;
 }
 
 export interface CoverageArtifacts {

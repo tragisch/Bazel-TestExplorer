@@ -37,6 +37,7 @@ It uses 'bazel query' to identify test-cases and 'bazel test' to perform them.
 - `bazelTestExplorer.queryPaths`: Relative Bazel paths where tests should be queried (default: `[]` = entire workspace)
 - `bazelTestExplorer.testArgs`: Additional command line arguments to pass to `bazel test`
 - `bazelTestExplorer.maxParallelQueries`: Maximum concurrent Bazel queries during discovery (default: 4)
+- `bazelTestExplorer.coverageArgs`: Additional command line arguments to pass to `bazel coverage` (default includes `--instrumentation_filter=.*`)
 
 ### Performance Features
 
@@ -93,4 +94,3 @@ These flags are applied automatically based on target metadata, no manual config
 
 ## License
 MIT License
-
