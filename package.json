@@ -21,9 +21,7 @@
   "main": "./dist/extension.js",
   "activationEvents": [
     "workspaceContains:**/MODULE.bazel",
-    "workspaceContains:**/WORKSPACE",
-    "onView:workbench.view.testing",
-    "onCommand:bazelTestExplorer.showCoverageDetails"
+    "workspaceContains:**/WORKSPACE"
   ],
   "contributes": {
     "commands": [
@@ -114,6 +112,19 @@
           "default": [
             "--instrumentation_filter=.*"
           ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "bazelTestExplorer.ignoreRcFiles": {
+          "type": "boolean",
+          "description": "Ignore system/user/workspace .bazelrc files and use only the .bazelrc entries provided in settings.",
+          "default": false
+        },
+        "bazelTestExplorer.bazelrcFiles": {
+          "type": "array",
+          "description": "Optional list of .bazelrc files to load when ignoreRcFiles is true. Passed to Bazel in order via --bazelrc.",
+          "default": [],
           "items": {
             "type": "string"
           }
