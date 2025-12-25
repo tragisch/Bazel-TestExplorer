@@ -20,6 +20,7 @@ import { ConfigurationService } from '../configuration';
 import { analyzeTestFailures } from './parseFailures';
 import { TestFramework } from './testFilterStrategies';
 import { parseUnifiedTestResult, UnifiedTestResult } from './testcase/testResultParser';
+import { stripAnsi } from './testcase/parseOutput';
 import { IndividualTestCase } from './types';
 import { getTestTargetById } from './queries';
 
@@ -518,7 +519,17 @@ export const initiateBazelTest = async (
     filterArgs
   );
 
-  const args = ['test', effectiveTestId, ...mergedFlags];
+  // Respect ignoreRcFiles setting: when enabled, instruct Bazel to ignore
+  // system/user/workspace .bazelrc files and only apply explicit ones.
+  let args: string[];
+  if (config.ignoreRcFiles) {
+    const filteredFlags = mergedFlags.filter(a => !a.startsWith('--bazelrc') && !a.startsWith('--ignore_all_rc_files'));
+    const explicitBazelrc = config.bazelrcFiles.map(p => `--bazelrc=${p}`);
+    // Startup options must precede the command (test)
+    args = ['--ignore_all_rc_files', ...explicitBazelrc, 'test', effectiveTestId, ...filteredFlags];
+  } else {
+    args = ['test', effectiveTestId, ...mergedFlags];
+  }
 
   // Configure shard-related environment variables to avoid framework warnings
   // If the target defines sharding via `shard_count` we reflect that total, but
@@ -554,7 +565,7 @@ export const parseBazelOutput = (stdout: string): { input: string[] } => {
   const input: string[] = [];
   stdout.split(/\r?\n/).forEach(line => {
     input.push(
-      line
+      stripAnsi(line)
     );
   });
   return { input };

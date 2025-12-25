@@ -64,6 +64,14 @@ export class ConfigurationService {
     return this.normalizeStringArray(this.config.get<string[]>('coverageArgs', ['--instrumentation_filter=.*']));
   }
 
+  get ignoreRcFiles(): boolean {
+    return this.config.get<boolean>('ignoreRcFiles', false) ?? false;
+  }
+
+  get bazelrcFiles(): string[] {
+    return this.normalizeStringArray(this.config.get<string[]>('bazelrcFiles', []));
+  }
+
   get cppDemanglerPath(): string | undefined {
     const value = this.config.get<string>('demangler.cpp', '').trim();
     return value.length > 0 ? value : undefined;

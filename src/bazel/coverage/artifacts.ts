@@ -13,6 +13,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { logWithTimestamp } from '../../logging';
 import { trackBazelProcess, untrackBazelProcess } from '../../infrastructure/process';
+import { stripAnsi } from '../testcase/parseOutput';
 
 export interface CoverageRunConfig {
 	bazelBinary: string;
@@ -44,12 +45,12 @@ export class BazelCoverageRunner {
 			child.stdout.on('data', (data) => {
 				const text = data.toString();
 				stdout += text;
-				this.outputChannel.append(text);
+				this.outputChannel.append(stripAnsi(text));
 			});
 			child.stderr.on('data', (data) => {
 				const text = data.toString();
 				stderr += text;
-				this.outputChannel.append(text);
+				this.outputChannel.append(stripAnsi(text));
 			});
 
 			cancellationToken?.onCancellationRequested(() => {

@@ -293,7 +293,18 @@ export async function activate(context: vscode.ExtensionContext) {
 						}
 						progress.report({ message: `Running coverage for ${targetLabel}` });
 						coverageOutput.appendLine(`[coverage] run target=${targetLabel}`);
-						const args = ['coverage', ...configurationService.coverageArgs, targetLabel];
+												// Respect ignoreRcFiles setting: when enabled, instruct Bazel to
+												// ignore system/user/workspace .bazelrc files and only apply any
+												// explicit bazelrc files provided via settings.
+												let args: string[];
+												if (configurationService.ignoreRcFiles) {
+													const filtered = configurationService.coverageArgs.filter(a => !a.startsWith('--bazelrc') && !a.startsWith('--ignore_all_rc_files'));
+													const explicitBazelrc = configurationService.bazelrcFiles.map(p => `--bazelrc=${p}`);
+													// Startup options must precede the command (coverage)
+													args = ['--ignore_all_rc_files', ...explicitBazelrc, 'coverage', ...filtered, targetLabel];
+												} else {
+													args = ['coverage', ...configurationService.coverageArgs, targetLabel];
+												}
 						const result = await runner.runCoverage(
 							{ bazelBinary: configurationService.bazelPath, args, workspaceRoot },
 							token

@@ -336,9 +336,9 @@ function buildFallbackName(file: string, lineNumber: string): string {
   return `${file}:${lineNumber || '0'}`;
 }
 
-const ANSI_COLOR_PATTERN = /\x1B\[[0-9;]*m/g;
+const ANSI_COLOR_PATTERN = /\x1B\[[0-9;]*[a-zA-Z]/g;
 
-function stripAnsi(input: string): string {
+export function stripAnsi(input: string): string {
   return input.replace(ANSI_COLOR_PATTERN, '');
 }
 
