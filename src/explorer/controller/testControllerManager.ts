@@ -139,11 +139,19 @@ export class TestControllerManager {
         const collectAllTests = (item: vscode.TestItem): vscode.TestItem[] => {
           const collected: vscode.TestItem[] = [];
           const visit = (node: vscode.TestItem) => {
+            // If this is a Bazel target (id has ':' but not '::'), run it as a unit
+            const isTarget = node.id.includes(':') && !node.id.includes('::');
+            if (isTarget) {
+              collected.push(node);
+              return; // do not expand to children; target run should be single Bazel invocation
+            }
+
             if (node.children.size === 0) {
               collected.push(node);
-            } else {
-              node.children.forEach(visit);
+              return;
             }
+
+            node.children.forEach(visit);
           };
           visit(item);
           return collected;

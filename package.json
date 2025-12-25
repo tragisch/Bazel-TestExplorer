@@ -2,7 +2,7 @@
   "name": "bazel-testexplorer",
   "displayName": "Bazel-TestExplorer",
   "description": "A VS Code extension to run and manage Bazel tests.",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "icon": "images/icon_Bazel_TestExplorer.png",
   "engines": {
     "vscode": "^1.99.0"
@@ -182,7 +182,7 @@
         "bazelTestExplorer.maxParallelQueries": {
           "type": "number",
           "description": "Maximum number of concurrent Bazel queries during discovery. Lower this in very large monorepos to reduce load.",
-          "default": 4,
+          "default": 12,
           "minimum": 1
         },
         "bazelTestExplorer.showMetadataInLabel": {
@@ -193,7 +193,7 @@
         "bazelTestExplorer.discovery.metadataChunkSize": {
           "type": "number",
           "description": "Chunk size for two-phase metadata queries. Higher values may be faster but use more memory.",
-          "default": 500,
+          "default": 150,
           "minimum": 50,
           "maximum": 2000
         }

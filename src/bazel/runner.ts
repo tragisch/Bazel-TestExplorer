@@ -237,8 +237,51 @@ function processSuccessfulTest(
     run.appendOutput(out, undefined, testItem);
     try { publishOutput(testItem.id, out); } catch {}
   }
+
+  // Only mark the parent test item as passed here.
+  // Child test items should be marked based on their own execution results,
+  // to avoid incorrectly treating unexecuted children as having passed.
   run.passed(testItem);
   try { finishTest(testItem.id, 'passed'); } catch {}
+}
+
+/**
+ * Processes failure of an individual test case (when running a specific test case from children)
+ */
+function processIndividualTestCaseFailure(
+  run: vscode.TestRun,
+  testItem: vscode.TestItem,
+  testCase: IndividualTestCase,
+  displayLog: string[],
+  workspacePath: string
+): void {
+  const statusLabel = testCase.status === 'TIMEOUT' ? 'Timeout' : 'Failed';
+  const segments = [`${testCase.name} (${statusLabel})`];
+  if (testCase.errorMessage) {
+    segments.push(testCase.errorMessage);
+  }
+  const message = new vscode.TestMessage(segments.join('\n\n'));
+  const location = resolveLocationFromTestCase(testCase, workspacePath);
+  if (location) {
+    message.location = location;
+  }
+  
+  run.failed(testItem, message);
+  
+  if (displayLog.length > 0) {
+    const outputBlock = [
+      `❌ Test Failed: ${testItem.id}`,
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+      '----- BEGIN OUTPUT -----',
+      ...displayLog,
+      '------ END OUTPUT ------'
+    ].join("\n");
+    const out = outputBlock.replace(/\r?\n/g, '\r\n') + '\r\n';
+    run.appendOutput(out, undefined, testItem);
+    try { publishOutput(testItem.id, out); } catch {}
+  }
+  
+  try { finishTest(testItem.id, 'failed', segments.join('\n\n')); } catch {}
 }
 
 /**
@@ -309,8 +352,9 @@ export const executeBazelTest = async (
     const typeMatch = testItem.label.match(/\[(.*?)\]/);
     const testType = typeMatch?.[1] ?? "";
     const isSuite = testType === "test_suite";
+    const isIndividualTestCase = testItem.id.includes('::');
 
-    const { code, stdout, stderr } = await measure(`Execute test: ${testItem.id}`, () =>
+    const { code, stdout, stderr, filterSupported, filterUsed } = await measure(`Execute test: ${testItem.id}`, () =>
       initiateBazelTest(testItem.id, workspacePath, run, testItem, config, cancellationToken)
     );
 
@@ -320,9 +364,10 @@ export const executeBazelTest = async (
     }
 
     const shouldParseStructured = code === 0 || code === 3 || code === 4;
+    const baseTargetId = isIndividualTestCase ? testItem.id.split('::')[0] : testItem.id;
     const unifiedResult = shouldParseStructured
       ? await parseUnifiedTestResult({
-          targetLabel: testItem.id,
+          targetLabel: baseTargetId,
           workspacePath,
           bazelPath: config.bazelPath,
         })
@@ -330,12 +375,61 @@ export const executeBazelTest = async (
 
     const { input: testLog } = parseBazelOutput(stdout);
     const { input: bazelLog } = parseBazelOutput(stderr);
-    const baseDisplayLog = filterLogLinesForItem(testItem, undefined, testLog);
+    const relevantCases = unifiedResult ? filterTestCasesForItem(testItem, unifiedResult.testCases) : [];
+    const baseDisplayLog = filterLogLinesForItem(testItem, relevantCases.length > 0 ? relevantCases : undefined, testLog);
 
-    if (code === 0) {
+    const noFilterNote = isIndividualTestCase && !filterSupported
+      ? '⚠️ Framework does not support test_filter; entire target was executed. Output may include other tests.'
+      : undefined;
+    // For unsupported filter on individual case, show full test log to avoid hiding relevant lines
+    const caseDisplayLog = isIndividualTestCase && !filterSupported ? testLog : baseDisplayLog;
+    const logWithNote = noFilterNote ? [noFilterNote, ...caseDisplayLog] : caseDisplayLog;
+
+    // For individual test cases, determine status from parsed result, not exit code
+    // because Bazel returns code 3 if ANY test in the target fails, not just this specific case
+    if (isIndividualTestCase) {
+      if (!unifiedResult || relevantCases.length === 0) {
+        const warningText = noFilterNote
+          ? `${noFilterNote}\nNo structured test results found for this test case.`
+          : 'No structured test results found for this test case.';
+        const warningMsg = new vscode.TestMessage(warningText);
+        if (code === 0) {
+          run.passed(testItem);
+          try { finishTest(testItem.id, 'passed'); } catch {}
+        } else {
+          run.failed(testItem, warningMsg);
+          try { finishTest(testItem.id, 'failed', warningText); } catch {}
+        }
+        if (logWithNote.length > 0) {
+          const outputBlock = [
+            getStatusHeader(code, testItem.id),
+            '----- BEGIN OUTPUT -----',
+            ...logWithNote,
+            '------ END OUTPUT ------'
+          ].join("\n");
+          const out = outputBlock.replace(/\r?\n/g, '\r\n') + '\r\n';
+          run.appendOutput(out, undefined, testItem);
+          try { publishOutput(testItem.id, out); } catch {}
+        }
+        return;
+      }
+
+      if (relevantCases.length > 1) {
+        logWithTimestamp(`Multiple parsed cases matched ${testItem.id}; using first match.`, 'warn');
+      }
+
+      const testCase = relevantCases[0];
+      const testPassed = testCase.status === 'PASS';
+      
+      if (testPassed) {
+        processSuccessfulTest(run, testItem, 0, logWithNote);
+      } else {
+        // Test case failed - use parsed result to report the failure
+        processIndividualTestCaseFailure(run, testItem, testCase, logWithNote, workspacePath);
+      }
+    } else if (code === 0) {
       processSuccessfulTest(run, testItem, code, baseDisplayLog);
     } else {
-      const relevantCases = unifiedResult ? filterTestCasesForItem(testItem, unifiedResult.testCases) : [];
       const scopedDisplayLog = relevantCases.length > 0
         ? filterLogLinesForItem(testItem, relevantCases, testLog)
         : baseDisplayLog;
@@ -365,9 +459,11 @@ export const initiateBazelTest = async (
   testItem: vscode.TestItem,
   config: ConfigurationService,
   cancellationToken?: vscode.CancellationToken
-): Promise<{ code: number; stdout: string; stderr: string }> => {
+): Promise<{ code: number; stdout: string; stderr: string; filterSupported: boolean; filterUsed: boolean }> => {
   let effectiveTestId = testId;
   let filterArgs: string[] = [];
+  let filterSupported = false;
+  let filterUsed = false;
 
   // Check if this is an individual test case (contains ::)
   if (testId.includes('::')) {
@@ -382,9 +478,11 @@ export const initiateBazelTest = async (
     // Import and use test filter strategies
     const { getTestFilterArgs, supportsTestFilter } = require('./testFilterStrategies');
     const framework = mapTestTypeToFramework(testType);
+    filterSupported = supportsTestFilter(framework);
     
-    if (supportsTestFilter(framework)) {
+    if (filterSupported) {
       filterArgs = getTestFilterArgs(testName, framework);
+      filterUsed = filterArgs.length > 0;
       logWithTimestamp(`Running individual test case: ${effectiveTestId}::${testName} [${testType}] with filter: ${filterArgs.join(' ')}`);
     } else {
       logWithTimestamp(`Running individual test case: ${effectiveTestId}::${testName} [${testType}] - no filter support, running entire target`);
@@ -439,7 +537,7 @@ export const initiateBazelTest = async (
   if (!env.TEST_SHARD_STATUS_FILE) env.TEST_SHARD_STATUS_FILE = path.join(cwd, '.vscode_bazel_shard_status');
   logWithTimestamp(`Shard env: TEST_SHARD_INDEX=${env.TEST_SHARD_INDEX}, TEST_TOTAL_SHARDS=${env.TEST_TOTAL_SHARDS}`);
 
-  return runBazelCommand(
+  const result = await runBazelCommand(
     args,
     cwd,
     undefined,
@@ -448,6 +546,8 @@ export const initiateBazelTest = async (
     env,
     cancellationToken
   );
+
+  return { ...result, filterSupported, filterUsed };
 };
 
 export const parseBazelOutput = (stdout: string): { input: string[] } => {
@@ -460,8 +560,29 @@ export const parseBazelOutput = (stdout: string): { input: string[] } => {
   return { input };
 };
 
+// ───────────────────────────────────────────────────────────────// Helper utilities
 // ───────────────────────────────────────────────────────────────
-// Analyse test results
+
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function extractTestCaseName(id: string): string {
+  return id.includes('::') ? id.split('::').slice(1).join('::') : '';
+}
+
+function matchTestCaseName(testCase: IndividualTestCase, targetLower: string): boolean {
+  const nameLower = testCase.name.toLowerCase();
+  if (nameLower === targetLower) return true;
+  const scope = (testCase.suite || testCase.className || '').toLowerCase();
+  if (scope) {
+    const combined = `${scope}::${nameLower}`;
+    if (combined === targetLower) return true;
+  }
+  return false;
+}
+
+// ───────────────────────────────────────────────────────────────// Analyse test results
 // ───────────────────────────────────────────────
 
 function handleTestResult(
@@ -474,39 +595,112 @@ function handleTestResult(
   parsedResult: UnifiedTestResult,
   scopedCases: IndividualTestCase[]
 ) {
+  // Check if this testItem has children (individual test cases)
+  const hasChildren = testItem.children.size > 0;
+
   if (code === 0) {
-    run.passed(testItem); // just to be sure
+    if (hasChildren) {
+      // Mark all children as passed
+      testItem.children.forEach(child => {
+        run.passed(child);
+        try { finishTest(child.id, 'passed'); } catch {}
+      });
+    }
+    run.passed(testItem);
   } else {
     const casesForMessages = scopedCases.length > 0 ? scopedCases : parsedResult.testCases;
-    const structuredMessages = buildMessagesFromTestCases(casesForMessages, workspacePath);
-    const messages = structuredMessages.length > 0
-      ? structuredMessages
-      : analyzeTestFailures(testLog, workspacePath, testItem);
-    logWithTimestamp(`Analyzed test failures for ${testItem.id}: ${messages.length} messages found.`);
-    if (messages.length > 0) {
-      run.failed(testItem, messages);
+
+    // If test item has children and we have parsed test cases, mark children individually
+    if (hasChildren && casesForMessages.length > 0) {
+      let passedCount = 0;
+      let failedCount = 0;
+
+      // Process each child test case
+      testItem.children.forEach(child => {
+        const testCaseName = extractTestCaseName(child.id).toLowerCase();
+        const matchingCase = casesForMessages.find(tc => matchTestCaseName(tc, testCaseName));
+
+        if (matchingCase) {
+          if (matchingCase.status === 'PASS') {
+            run.passed(child);
+            try { finishTest(child.id, 'passed'); } catch {}
+            passedCount++;
+          } else {
+            const statusLabel = matchingCase.status === 'TIMEOUT' ? 'Timeout' : 'Failed';
+            const segments = [`${matchingCase.name} (${statusLabel})`];
+            if (matchingCase.errorMessage) {
+              segments.push(matchingCase.errorMessage);
+            }
+            const message = new vscode.TestMessage(segments.join('\n\n'));
+            const location = resolveLocationFromTestCase(matchingCase, workspacePath);
+            if (location) {
+              message.location = location;
+            }
+            run.failed(child, message);
+            try { finishTest(child.id, 'failed', segments.join('\n\n')); } catch {}
+            failedCount++;
+          }
+        } else {
+          // No matching case found - mark as failed with generic message
+          run.failed(child, new vscode.TestMessage('Test result not found in output'));
+          try { finishTest(child.id, 'failed'); } catch {}
+          failedCount++;
+        }
+      });
+
+      // Set parent status based on children results
+      if (failedCount > 0) {
+        const summaryMessage = new vscode.TestMessage(
+          `${failedCount} of ${passedCount + failedCount} test(s) failed`
+        );
+        run.failed(testItem, summaryMessage);
+        try { finishTest(testItem.id, 'failed', summaryMessage.message); } catch {}
+      } else {
+        run.passed(testItem);
+        try { finishTest(testItem.id, 'passed'); } catch {}
+      }
+
+      // Append output for the target
       const outputBlock = [
         getStatusHeader(code, testItem.id),
         '----- BEGIN OUTPUT -----',
         ...testLog,
         '------ END OUTPUT ------'
       ].join("\n");
-
       run.appendOutput(outputBlock.replace(/\r?\n/g, '\r\n') + '\r\n', undefined, testItem);
       try { publishOutput(testItem.id, outputBlock.replace(/\r?\n/g, '\r\n') + '\r\n'); } catch {}
-      try { finishTest(testItem.id, 'failed', outputBlock); } catch {}
     } else {
-      const fallbackOutput = [
-        getStatusHeader(code, testItem.id),
-        '----- BEGIN OUTPUT -----',
-        ...testLog.length ? testLog : bazelLog,
-        '------ END OUTPUT ------'
-      ].join("\n");
+      // No children or no parsed cases - handle as before
+      const structuredMessages = buildMessagesFromTestCases(casesForMessages, workspacePath);
+      const messages = structuredMessages.length > 0
+        ? structuredMessages
+        : analyzeTestFailures(testLog, workspacePath, testItem);
+      logWithTimestamp(`Analyzed test failures for ${testItem.id}: ${messages.length} messages found.`);
+      if (messages.length > 0) {
+        run.failed(testItem, messages);
+        const outputBlock = [
+          getStatusHeader(code, testItem.id),
+          '----- BEGIN OUTPUT -----',
+          ...testLog,
+          '------ END OUTPUT ------'
+        ].join("\n");
 
-      run.failed(testItem, new vscode.TestMessage(fallbackOutput));
-      run.appendOutput(fallbackOutput.replace(/\r?\n/g, '\r\n') + '\r\n', undefined, testItem);
-      try { publishOutput(testItem.id, fallbackOutput.replace(/\r?\n/g, '\r\n') + '\r\n'); } catch {}
-      try { finishTest(testItem.id, 'failed', fallbackOutput); } catch {}
+        run.appendOutput(outputBlock.replace(/\r?\n/g, '\r\n') + '\r\n', undefined, testItem);
+        try { publishOutput(testItem.id, outputBlock.replace(/\r?\n/g, '\r\n') + '\r\n'); } catch {}
+        try { finishTest(testItem.id, 'failed', outputBlock); } catch {}
+      } else {
+        const fallbackOutput = [
+          getStatusHeader(code, testItem.id),
+          '----- BEGIN OUTPUT -----',
+          ...testLog.length ? testLog : bazelLog,
+          '------ END OUTPUT ------'
+        ].join("\n");
+
+        run.failed(testItem, new vscode.TestMessage(fallbackOutput));
+        run.appendOutput(fallbackOutput.replace(/\r?\n/g, '\r\n') + '\r\n', undefined, testItem);
+        try { publishOutput(testItem.id, fallbackOutput.replace(/\r?\n/g, '\r\n') + '\r\n'); } catch {}
+        try { finishTest(testItem.id, 'failed', fallbackOutput); } catch {}
+      }
     }
   }
 }
@@ -535,19 +729,9 @@ function filterTestCasesForItem(testItem: vscode.TestItem, cases: IndividualTest
     return cases;
   }
 
-  const targetCaseName = testItem.id.split('::').slice(1).join('::').toLowerCase();
-  const directMatches = cases.filter(tc => tc.name.toLowerCase() === targetCaseName);
-  if (directMatches.length > 0) {
-    return directMatches;
-  }
-
-  const scopedMatches = cases.filter(tc => {
-    const scope = (tc.suite || tc.className || '').toLowerCase();
-    const combined = scope ? `${scope}::${tc.name.toLowerCase()}` : tc.name.toLowerCase();
-    return combined === targetCaseName;
-  });
-
-  return scopedMatches.length > 0 ? scopedMatches : cases;
+  const targetCaseName = extractTestCaseName(testItem.id).toLowerCase();
+  const matched = cases.filter(tc => matchTestCaseName(tc, targetCaseName));
+  return matched.length > 0 ? matched : cases;
 }
 
 function filterLogLinesForItem(
@@ -559,30 +743,35 @@ function filterLogLinesForItem(
     return logLines;
   }
 
-  const needles = new Set<string>();
-  for (const testCase of cases ?? []) {
-    needles.add(testCase.name.toLowerCase());
-    if (testCase.suite) {
-      needles.add(testCase.suite.toLowerCase());
-    }
-    if (testCase.className) {
-      needles.add(testCase.className.toLowerCase());
-    }
-  }
-
-  const targetName = testItem.id.split('::').slice(1).join('::').toLowerCase();
-  if (targetName) {
-    needles.add(targetName);
-  }
-
-  const terms = Array.from(needles).filter(term => term.length > 0);
-  if (terms.length === 0) {
+  // Extract the test case name from the testItem ID
+  const targetName = extractTestCaseName(testItem.id).toLowerCase();
+  if (!targetName) {
     return logLines;
   }
 
+  // For Unity C tests, the format is: path/file.c:line:test_name:STATUS
+  // We want to filter for lines that contain exactly this test name
+  const unityPattern = new RegExp(`:\\d+:${escapeRegex(targetName)}:(PASS|FAIL|IGNORE)`, 'i');
+  
+  // Also collect test names from parsed cases for more flexible matching
+  const needles = new Set<string>([targetName]);
+  for (const testCase of cases ?? []) {
+    needles.add(testCase.name.toLowerCase());
+  }
+
+  // Precompile patterns for all needles for efficiency
+  const needlePatterns = Array.from(needles).map(needle => new RegExp(`\\b${escapeRegex(needle)}\\b`, 'i'));
+
   const filtered = logLines.filter(line => {
     const lower = line.toLowerCase();
-    return terms.some(needle => lower.includes(needle));
+    
+    // First priority: Unity-style exact match (most precise)
+    if (unityPattern.test(line)) {
+      return true;
+    }
+    
+    // Second priority: Line contains the exact test name
+    return needlePatterns.some(p => p.test(lower));
   });
 
   return filtered.length > 0 ? filtered : logLines;

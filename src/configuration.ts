@@ -15,11 +15,11 @@ import * as vscode from 'vscode';
 // Configuration constants
 const MIN_PARALLEL_QUERIES = 1;
 const MAX_PARALLEL_QUERIES = 64;
-const DEFAULT_PARALLEL_QUERIES = 4;
+const DEFAULT_PARALLEL_QUERIES = 12;
 
 const MIN_CHUNK_SIZE = 50;
 const MAX_CHUNK_SIZE = 2000;
-const DEFAULT_CHUNK_SIZE = 500;
+const DEFAULT_CHUNK_SIZE = 150;
 
 /**
  * Clamps a value between min and max
@@ -49,7 +49,7 @@ export class ConfigurationService {
   }
 
   get testTypes(): string[] {
-    return this.normalizeStringArray(this.config.get<string[]>('testTypes', ['cc_test', 'unity_test', 'java_test']));
+    return this.normalizeStringArray(this.config.get<string[]>('testTypes', ['cc_test', 'unity_test', 'java_test', 'rust_test']));
   }
 
   get sequentialTestTypes(): string[] {

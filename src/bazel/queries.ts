@@ -75,7 +75,7 @@ export const queryBazelTestLabelsOnly = async (
   const labels: string[] = [];
   
   for (const path of sanitizedPaths) {
-    const query = `"${allTypes.map(type => `kind(${type}, ${path}...)`).join(" union ")}"`;
+    const query = `${allTypes.map(type => `kind(${type}, ${path}...)`).join(" union ")}`;
     const bazelArgs = ['query', query, '--keep_going', '--output=label'];
     
     const { stdout } = await runBazelCommand(
@@ -166,7 +166,7 @@ async function queryMetadataChunk(
   workspacePath: string,
   config: ConfigurationService
 ): Promise<void> {
-  const query = `"${labels.join(' union ')}"`;
+  const query = `${labels.join(' union ')}`;
   const bazelArgs = ['query', query, '--keep_going', '--output=streamed_jsonproto'];
   
   await runBazelCommand(bazelArgs, workspacePath, line => {
@@ -220,7 +220,7 @@ function sanitizeQueryPaths(queryPaths: string[]): string[] {
 function buildBazelQueries(paths: string[], testTypes: string[]): string[] {
   const allTypes = [...new Set([...testTypes, "test_suite"])];
   return paths.map(path =>
-    `"${allTypes.map(type => `kind(${type}, ${path}...)`).join(" union ")}"`
+    `${allTypes.map(type => `kind(${type}, ${path}...)`).join(" union ")}`
   );
 }
 
