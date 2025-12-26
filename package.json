@@ -108,9 +108,11 @@
         },
         "bazelTestExplorer.coverageArgs": {
           "type": "array",
-          "description": "Additional command line arguments to pass to 'bazel coverage'. Example: ['--instrumentation_filter=.*', '--experimental_split_coverage_postprocessing']",
+          "description": "Additional command line arguments to pass to 'bazel coverage'. Example: ['--instrumentation_filter=.*', '--combined_report=lcov', '--nocache_test_results']",
           "default": [
-            "--instrumentation_filter=.*"
+            "--combined_report=lcov",
+            "--instrumentation_filter=.*",
+            "--experimental_generate_llvm_lcov"
           ],
           "items": {
             "type": "string"

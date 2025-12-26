@@ -61,7 +61,13 @@ export class ConfigurationService {
   }
 
   get coverageArgs(): string[] {
-    return this.normalizeStringArray(this.config.get<string[]>('coverageArgs', ['--instrumentation_filter=.*']));
+    return this.normalizeStringArray(this.config.get<string[]>('coverageArgs', [
+      '--combined_report=lcov',
+      '--instrumentation_filter=.*',
+      '--experimental_generate_llvm_lcov',
+      '--experimental_use_llvm_covmap',
+      '--experimental_split_coverage_postprocessing'
+    ]));
   }
 
   get ignoreRcFiles(): boolean {

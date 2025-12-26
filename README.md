@@ -30,7 +30,9 @@ Uses `bazel query`, `bazel test`, and `bazel coverage`, integrated with the VS C
 
 ## Remarks
 - `c++filt` / `rustfilt` should be available in `PATH` for demangled names in coverage.
-- `--instrumentation_filter=.*` can be slow in large repositories. This can be changed in settings.
+- `--instrumentation_filter=.*` can be slow in large repositories. Adjust this filter in settings to match your source paths (e.g., `--instrumentation_filter="app/*"` or `--instrumentation_filter="//src/..."`).
+- `--combined_report=lcov` creates a central `bazel-out/_coverage/_coverage_report.dat` for easier coverage aggregation. If this file is empty, check that your instrumentation filter matches your source files.
+- The extension prioritizes `coverage.dat` over `baseline_coverage.dat` (which is often empty).
 - Experimental test.xml parsing can be slow or incompatible with some frameworks.
 
 ## License

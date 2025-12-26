@@ -329,18 +329,33 @@ export async function activate(context: vscode.ExtensionContext) {
 						if (reportedLcov) {
 							coverageOutput.appendLine(`[coverage] reported lcov=${reportedLcov}`);
 						}
+						// Check for central _coverage_report.dat first (created by --combined_report=lcov)
+						const centralCoveragePaths = [
+							execroot ? path.join(execroot, 'bazel-out', '_coverage', '_coverage_report.dat') : undefined,
+							path.join(workspaceRoot, 'bazel-out', '_coverage', '_coverage_report.dat')
+						].filter(Boolean) as string[];
+						const centralCoverage = centralCoveragePaths.find(p => fs.existsSync(p));
+						if (centralCoverage) {
+							coverageOutput.appendLine(`[coverage] found central coverage report: ${centralCoverage}`);
+						}
 						const targetPath = targetLabel.replace(/^\/\//, '').replace(':', path.sep);
 						const preferredRoot = testlogs ? path.join(testlogs, targetPath) : undefined;
 						const preferredLcov = preferredRoot
 							? artifacts.lcov.filter(file => file.startsWith(preferredRoot))
 							: [];
-						const lcovCandidates = reportedLcov
-							? [reportedLcov, ...preferredLcov, ...artifacts.lcov]
-							: (preferredLcov.length > 0 ? preferredLcov : artifacts.lcov);
-						if (preferredLcov.length === 0) {
-							coverageOutput.appendLine('[coverage] no target-specific LCOV found; falling back to latest valid LCOV.');
+						const lcovCandidates = centralCoverage
+							? [centralCoverage, reportedLcov, ...preferredLcov, ...artifacts.lcov].filter(Boolean) as string[]
+							: reportedLcov
+								? [reportedLcov, ...preferredLcov, ...artifacts.lcov]
+								: (preferredLcov.length > 0 ? preferredLcov : artifacts.lcov);
+						if (preferredLcov.length === 0 && !centralCoverage) {
+							coverageOutput.appendLine('[coverage] no target-specific or central LCOV found; falling back to latest valid LCOV.');
 						}
-						const lcovResult = await loadFirstValidLcov(lcovCandidates, token);
+						const lcovResult = await loadFirstValidLcov(
+							lcovCandidates,
+							token,
+							(msg) => coverageOutput.appendLine(msg)
+						);
 						if (!lcovResult) {
 							const converted = await tryConvertLlvm(result.stdout, result.stderr, artifacts, execroot);
 							if (converted) {
@@ -369,17 +384,46 @@ export async function activate(context: vscode.ExtensionContext) {
 							coverageOutput.appendLine(`[coverage] no usable LCOV found for ${targetLabel}`);
 							if (lcovCandidates.length > 0) {
 								coverageOutput.appendLine(`[coverage] lcov candidates: ${lcovCandidates.slice(0, 5).join(', ')}`);
+								
+								// Check if we found non-empty coverage files that weren't in LCOV format
+								const nonEmptyCandidates = await Promise.all(
+									lcovCandidates.slice(0, 3).map(async (file) => {
+										try {
+											const stat = await fs.promises.stat(file);
+											return stat.size > 0 ? file : null;
+										} catch {
+											return null;
+										}
+									})
+								);
+								const hasNonEmptyFiles = nonEmptyCandidates.some(f => f !== null);
+								if (hasNonEmptyFiles) {
+									coverageOutput.appendLine('[coverage] ⚠️  Found non-empty coverage files but they are not in LCOV format.');
+									coverageOutput.appendLine('[coverage] This might happen if --combined_report=lcov is not working properly.');
+									coverageOutput.appendLine('[coverage] Try adjusting --instrumentation_filter to match your source files (e.g., --instrumentation_filter="app/.*").');
+								}
 							}
 							continue;
 						}
 						coverageOutput.appendLine(`[coverage] using lcov=${lcovResult.path}`);
+						
+						// Debug: Show LCOV content to understand what's being generated
+						coverageOutput.appendLine('[coverage] LCOV content preview:');
+						const previewLines = lcovResult.content.split('\n').slice(0, 30);
+						previewLines.forEach(line => coverageOutput.appendLine(`  ${line}`));
+						if (lcovResult.content.split('\n').length > 30) {
+							coverageOutput.appendLine(`  ... (${lcovResult.content.split('\n').length - 30} more lines)`);
+						}
 
 						let coverages = parseLcovToFileCoverage(lcovResult.content, workspaceFolder, context.extensionPath, execroot);
 						await demangleCoverageDetails(configurationService.cppDemanglerPath, configurationService.rustDemanglerPath);
 						coverageOutput.appendLine(`[coverage] parsed files=${coverages.length}`);
 						const totalLines = coverages.reduce((sum, entry) => sum + entry.statementCoverage.total, 0);
+						coverageOutput.appendLine(`[coverage] total lines=${totalLines}`);
 						if (coverages.length === 0 || totalLines === 0) {
-							coverageOutput.appendLine('[coverage] LCOV has no line data; trying LLVM profiles');
+							coverageOutput.appendLine('[coverage] ⚠️  LCOV has no line data. This means no source files were instrumented.');
+							coverageOutput.appendLine('[coverage] Check: bazel-out/darwin_arm64-fastbuild/testlogs/app/matrix/test_dm/test_dm.instrumented_files');
+							coverageOutput.appendLine('[coverage] Trying LLVM profiles as fallback...');
 							const converted = await tryConvertLlvm(result.stdout, result.stderr, artifacts, execroot);
 							if (converted) {
 								coverages = converted.coverages;

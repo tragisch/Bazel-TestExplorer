@@ -190,7 +190,8 @@ export const findCoverageArtifacts = async (
 		for (const entry of entries) {
 			if (cancellationToken?.isCancellationRequested) return;
 			if (entry.isDirectory()) {
-				if (ignoreDirs.has(entry.name)) continue;
+				// Include _coverage folder (created by --combined_report=lcov), but skip other ignored dirs
+				if (ignoreDirs.has(entry.name) && entry.name !== '_coverage') continue;
 				await walk(path.join(dir, entry.name));
 				continue;
 			}
@@ -244,18 +245,31 @@ export const pickLatestArtifact = async (files: string[]): Promise<string | unde
 
 export const loadFirstValidLcov = async (
 	files: string[],
-	cancellationToken?: vscode.CancellationToken
+	cancellationToken?: vscode.CancellationToken,
+	logFn?: (msg: string) => void
 ): Promise<{ path: string; content: string } | undefined> => {
 	const candidates = await sortByMtimeDesc(files);
-	for (const file of candidates) {
+	// Filter out baseline_coverage.dat files (usually empty) and prioritize coverage.dat
+	const prioritized = [
+		...candidates.filter(f => f.includes('coverage.dat') && !f.includes('baseline_coverage.dat')),
+		...candidates.filter(f => !f.includes('baseline_coverage.dat')),
+		...candidates.filter(f => f.includes('baseline_coverage.dat'))
+	];
+	const unique = Array.from(new Set(prioritized));
+	for (const file of unique) {
 		if (cancellationToken?.isCancellationRequested) return undefined;
 		try {
+			const stat = await fs.promises.stat(file);
 			const content = await fs.promises.readFile(file, 'utf8');
-			if (hasLcovRecords(content)) {
+			logFn?.(`[coverage] checking lcov=${file} (${stat.size} bytes)`);
+			if (hasLcovRecords(content, logFn)) {
+				logFn?.(`[coverage] valid lcov found: ${file}`);
 				return { path: file, content };
+			} else {
+				logFn?.(`[coverage] rejected ${file}: no valid LCOV records (SF:/DA:/LF: missing)`);
 			}
-		} catch {
-			// ignore unreadable file
+		} catch (err) {
+			logFn?.(`[coverage] rejected ${file}: ${String(err)}`);
 		}
 	}
 	return undefined;
@@ -277,15 +291,34 @@ const sortByMtimeDesc = async (files: string[]): Promise<string[]> => {
 		.map((entry) => entry.file);
 };
 
-const hasLcovRecords = (content: string): boolean => {
+const hasLcovRecords = (content: string, logFn?: (msg: string) => void): boolean => {
+	if (content.length === 0) {
+		logFn?.('[coverage-validator] file is empty');
+		return false;
+	}
 	let hasSource = false;
 	let hasLines = false;
-	for (const raw of content.split(/\r?\n/)) {
+	const lines = content.split(/\r?\n/);
+	const nonEmptyLines = lines.filter(l => l.trim().length > 0);
+	
+	// Check for LCOV format markers
+	for (const raw of lines) {
 		const line = raw.trim();
 		if (!line) continue;
 		if (line.startsWith('SF:')) hasSource = true;
 		if (line.startsWith('DA:') || line.startsWith('LF:')) hasLines = true;
 		if (hasSource && hasLines) return true;
+	}
+	
+	// If not LCOV, log first few lines for debugging
+	if (!hasSource || !hasLines) {
+		const preview = nonEmptyLines.slice(0, 5).map(l => l.slice(0, 80)).join(' | ');
+		logFn?.(`[coverage-validator] not LCOV format. First lines: ${preview}`);
+		
+		// Check if it might be gcov format
+		if (content.includes('GCC') || content.includes('version')) {
+			logFn?.('[coverage-validator] might be raw gcov format - needs conversion');
+		}
 	}
 	return false;
 };
