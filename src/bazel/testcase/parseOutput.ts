@@ -273,9 +273,9 @@ export const extractTestCasesFromOutput = (
       }
       totalTests++;
 
-      if (process.env.BAZEL_TESTEXPLORER_DEBUG === '1') {
-        logWithTimestamp(`Matched test case "${testName}" using pattern: ${pattern.framework} (${pattern.id})`);
-      }
+      // Previously we logged every pattern match here when
+      // `BAZEL_TESTEXPLORER_DEBUG` was set. That produced very
+      // verbose output; remove per-user request.
 
       switch (status) {
         case 'PASS':
