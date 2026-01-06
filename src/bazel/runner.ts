@@ -550,6 +550,17 @@ export const initiateBazelTest = async (
     args = ['test', effectiveTestId, ...mergedFlags];
   }
 
+  // Log whether .bazelrc files are being ignored for this invocation
+  try {
+    if (config.ignoreRcFiles) {
+      logWithTimestamp(`Bazel invocation will ignore .bazelrc files: --ignore_all_rc_files applied; explicit --bazelrc: ${config.bazelrcFiles.join(', ')}`);
+    } else {
+      logWithTimestamp('Bazel invocation will use .bazelrc files from workspace/user/home (no --ignore_all_rc_files)');
+    }
+  } catch (e) {
+    // best-effort logging
+  }
+
   // Configure shard-related environment variables to avoid framework warnings
   // If the target defines sharding via `shard_count` we reflect that total, but
   // we run a single shard (index 0) by default when invoked from the extension.
