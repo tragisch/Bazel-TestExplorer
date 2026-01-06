@@ -52,7 +52,7 @@ export const readStructuredTestXmlResult: TestXmlReader = async (
     }
 
     const parsed = parseStructuredTestXml(xmlContent, targetLabel, { allowedPatternIds });
-    if (parsed.testCases.length > 0) {
+    if (parsed.testCases.length > 0 && process.env.BAZEL_TESTEXPLORER_DEBUG === '1') {
       logWithTimestamp(`Parsed ${parsed.testCases.length} test cases from structured XML for ${targetLabel}`);
     }
     return parsed;

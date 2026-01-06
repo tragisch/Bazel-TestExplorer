@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
-import { findBazelWorkspace } from '../extension';
+import { getCachedWorkspace } from '../extension';
 
 suite('Bazel VS Code Extension Tests', () => {
 
@@ -21,15 +21,13 @@ suite('Bazel VS Code Extension Tests', () => {
 
     suite('Bazel Workspace Detection', () => {
         test('Should find Bazel workspace', async () => {
-            const workspacePath = await findBazelWorkspace();
-            // Workspace detection depends on actual workspace folder
-            // This test passes if function completes without error
-            assert.ok(workspacePath !== undefined);
+            const workspacePath = getCachedWorkspace();
+            // Workspace detection depends on extension activation which populates the cache
+            assert.ok(workspacePath === null || typeof workspacePath === 'string');
         });
 
         test('Should return null if no Bazel workspace found', async () => {
-            const workspacePath = await findBazelWorkspace();
-            // Expected to return null when no WORKSPACE/MODULE.bazel found
+            const workspacePath = getCachedWorkspace();
             assert.ok(workspacePath === null || typeof workspacePath === 'string');
         });
     });

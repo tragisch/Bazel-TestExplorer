@@ -17,6 +17,8 @@ import { TestCaseParseResult, BazelTestTarget } from '../types';
 import { PATTERN_IDS_BY_TEST_TYPE } from './patterns';
 import { getTestTargetById } from '../queries';
 import { parseUnifiedTestResult } from '../testcase/testResultParser';
+import { getAllTestPatterns } from '../testPatterns';
+import { FRAMEWORK_PATTERNS, detectFrameworks } from '../frameworkDetection';
 
 export { setTestXmlLoader, getTestXmlLoader } from '../testcase/testResultParser';
 
@@ -120,7 +122,9 @@ export const discoverIndividualTestCases = async (
       return cache.result;
     }
 
-    logWithTimestamp(`Discovering individual test cases for ${testTarget}`);
+    if (process.env.BAZEL_TESTEXPLORER_DEBUG === '1') {
+      logWithTimestamp(`Discovering individual test cases for ${testTarget}`);
+    }
 
     // Run the test to get output with individual test case results
     const { stdout, stderr } = await callRunBazelCommandForTest({
@@ -131,6 +135,32 @@ export const discoverIndividualTestCases = async (
 
     const bazelPath = configService.getBazelPath();
     const allowedPatterns = resolveAllowedPatterns(testTarget, testType);
+    // If we have a restricted set of allowed patterns and none of them
+    // support individual test case extraction, skip the expensive
+    // XML/system-out parsing. This saves time when we already know the
+    // framework doesn't produce per-test entries.
+    if (Array.isArray(allowedPatterns) && allowedPatterns.length > 0) {
+      const all = getAllTestPatterns();
+      const relevant = all.filter(p => allowedPatterns.includes(p.id));
+      const anySupports = relevant.some(p => Boolean(p.supportsIndividual));
+      if (!anySupports) {
+        if (process.env.BAZEL_TESTEXPLORER_DEBUG === '1') {
+          logWithTimestamp(`Skipping structured/system-out parsing for ${testTarget}: no allowed patterns support individual cases`);
+        }
+        const empty: TestCaseParseResult = {
+          testCases: [],
+          summary: { total: 0, passed: 0, failed: 0, ignored: 0 }
+        };
+        const entry: CacheEntry = {
+          result: empty,
+          stdoutHash: hashService.sha1(combinedOutput),
+          timestamp: Date.now()
+        };
+        discoveryCache.set(testTarget, entry);
+        return empty;
+      }
+    }
+
     const finalResult = await parseUnifiedTestResult({
       targetLabel: testTarget,
       workspacePath,
@@ -187,9 +217,9 @@ export function getDiscoveryCacheStats(): { size: number; entries: string[] } {
 
 function resolveAllowedPatterns(testTarget: string, testType?: string): string[] | undefined {
   const metadata = getTestTargetById(testTarget);
-  const detectedFrameworks = detectFrameworks(metadata);
+  const detectedFrameworks: string[] = detectFrameworks(metadata);
   if (detectedFrameworks.length > 0) {
-    const patterns = Array.from(new Set(detectedFrameworks.flatMap(framework => FRAMEWORK_PATTERNS[framework] ?? [])));
+    const patterns = Array.from(new Set(detectedFrameworks.flatMap((framework: string) => FRAMEWORK_PATTERNS[framework] ?? [])));
     if (patterns.length > 0) {
       return patterns;
     }
@@ -206,65 +236,4 @@ function resolveAllowedPatterns(testTarget: string, testType?: string): string[]
   return undefined;
 }
 
-const FRAMEWORK_PATTERNS: Record<string, string[]> = {
-  rust: ['rust_test'],
-  pytest: ['pytest_python', 'pytest_assertion_line'],
-  unity: ['unity_c_standard', 'unity_c_with_message'],
-  doctest: ['doctest_cpp', 'doctest_subcase'],
-  catch2: ['catch2_cpp', 'catch2_passed', 'catch2_summary'],
-  gtest: ['gtest_cpp'],
-  check: ['parentheses_format', 'check_framework'],
-  ctest: ['ctest_output', 'ctest_verbose'],
-  go: ['go_test'],
-  junit: ['junit_java']
-};
-
-function detectFrameworks(metadata?: BazelTestTarget): string[] {
-  if (!metadata) {
-    return [];
-  }
-  const frameworks = new Set<string>();
-  const type = metadata.type?.toLowerCase() ?? '';
-  const deps = (metadata.deps ?? []).map(dep => dep.toLowerCase());
-
-  const hasDep = (...keywords: string[]) => deps.some(dep => keywords.some(keyword => dep.includes(keyword)));
-
-  if (type.includes('rust')) {
-    frameworks.add('rust');
-  }
-
-  if (type.includes('py_test') || hasDep('pytest')) {
-    frameworks.add('pytest');
-  }
-
-  if (type.includes('go_test')) {
-    frameworks.add('go');
-  }
-
-  if (type.includes('java_test') || type.includes('junit')) {
-    frameworks.add('junit');
-  }
-
-  if (type.includes('cc_test')) {
-    if (hasDep('gtest', 'googletest')) {
-      frameworks.add('gtest');
-    }
-    if (hasDep('catch2')) {
-      frameworks.add('catch2');
-    }
-    if (hasDep('doctest')) {
-      frameworks.add('doctest');
-    }
-    if (hasDep('throw_the_switch', 'unity')) {
-      frameworks.add('unity');
-    }
-    if (hasDep('check')) {
-      frameworks.add('check');
-    }
-    if (hasDep('ctest')) {
-      frameworks.add('ctest');
-    }
-  }
-
-  return Array.from(frameworks);
-}
+// FRAMEWORK_PATTERNS and detectFrameworks moved to src/bazel/frameworkDetection.ts

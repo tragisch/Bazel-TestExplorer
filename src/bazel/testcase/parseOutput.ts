@@ -307,7 +307,9 @@ export const extractTestCasesFromOutput = (
     passedTests = totalTests - failedTests - ignoredTests;
   }
 
-  logWithTimestamp(`Parsed ${testCases.length} individual test cases from ${parentTarget}`);
+  if (process.env.BAZEL_TESTEXPLORER_DEBUG === '1') {
+    logWithTimestamp(`Parsed ${testCases.length} individual test cases from ${parentTarget}`);
+  }
 
   return {
     testCases,

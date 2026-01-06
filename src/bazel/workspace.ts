@@ -16,7 +16,18 @@ import * as path from 'path';
 import { logWithTimestamp } from '../logging';
 import * as fs from 'fs';
 
+let cachedWorkspace: string | null = null;
+let cachedViaFile: string | null = null;
+
+// Invalidate cache when workspace folders change
+vscode.workspace.onDidChangeWorkspaceFolders(() => {
+  cachedWorkspace = null;
+  cachedViaFile = null;
+});
+
 export const findBazelWorkspace = async (): Promise<string | null> => {
+  if (cachedWorkspace) return cachedWorkspace;
+
   const possibleFiles = ['MODULE.bazel', 'WORKSPACE.bazel', 'WORKSPACE'];
 
   // Prefer multi-root workspace folders when available; fallback to rootPath/DOT
@@ -38,6 +49,8 @@ export const findBazelWorkspace = async (): Promise<string | null> => {
       });
       if (matches.length > 0) {
         const workspaceDir = path.dirname(matches[0]);
+        cachedWorkspace = workspaceDir;
+        cachedViaFile = file;
         logWithTimestamp(`Detected Bazel workspace at ${workspaceDir} (via ${file})`);
         return workspaceDir;
       }
@@ -52,7 +65,18 @@ export const getWorkspaceOrShowError = async (): Promise<string | null> => {
     vscode.window.showErrorMessage("No Bazel workspace detected.");
     return null;
   }
-  logWithTimestamp(`cwd used: ${workspacePath}`);
-  logWithTimestamp(`Exists .bazelrc: ${fs.existsSync(path.join(workspacePath, ".bazelrc"))}`);
+  if (process.env.BAZEL_TESTEXPLORER_DEBUG === '1') {
+    logWithTimestamp(`cwd used: ${workspacePath}`);
+    logWithTimestamp(`Exists .bazelrc: ${fs.existsSync(path.join(workspacePath, ".bazelrc"))}`);
+  }
   return workspacePath;
+};
+
+export const invalidateWorkspaceCache = (): void => {
+  cachedWorkspace = null;
+  cachedViaFile = null;
+};
+
+export const getCachedWorkspace = (): string | null => {
+  return cachedWorkspace;
 };

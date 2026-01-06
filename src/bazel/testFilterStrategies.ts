@@ -11,7 +11,7 @@
  */
 
 export type TestFramework = 
-  | 'gtest' | 'pytest' | 'criterion' | 'doctest'
+  | 'gtest' | 'pytest' | 'criterion' | 'doctest' | 'unity'
   | 'rust' | 'go' | 'java' | 'other';
 
 interface FilterStrategy {
@@ -43,6 +43,11 @@ const strategies: Record<TestFramework, FilterStrategy> = {
     supportsFilter: true,
     getFilterArgs: (testName: string) => [`--test_filter=${testName}`],
     description: 'doctest (Python) - unterstützt --test_filter'
+  },
+  unity: {
+    supportsFilter: true,
+    getFilterArgs: (testName: string) => [`--test_filter=${testName}`],
+    description: 'Unity (C) - experimental filter via --test_filter'
   },
   
   // Frameworks without native filter - fallback to whole target

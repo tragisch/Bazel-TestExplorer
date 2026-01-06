@@ -17,7 +17,7 @@ import { BazelClient } from '../../bazel/client';
 import { BazelTestTarget, IndividualTestCase } from '../../bazel/types';
 import { logWithTimestamp, measure, formatError } from '../../logging';
 import { discoverIndividualTestCases } from '../../bazel/discovery';
-import { findBazelWorkspace } from '../../bazel/workspace';
+import { getCachedWorkspace } from '../../bazel/workspace';
 import { TestCaseAnnotations, AnnotationUpdate } from '../annotations';
 import { TestCaseInsights } from '../panel';
 import { ConfigurationService } from '../../configuration';
@@ -40,7 +40,9 @@ export const discoverAndDisplayTests = async (
   bazelClient: BazelClient
 ): Promise<void> => {
   if (isDiscoveringTests) {
-    logWithTimestamp("Already discovering tests. Skipping.");
+    if (process.env.BAZEL_TESTEXPLORER_DEBUG === '1') {
+      logWithTimestamp("Already discovering tests. Skipping.");
+    }
     return;
   }
 
@@ -340,13 +342,15 @@ export const resolveTestCaseChildren = async (
       return;
     }
 
-    const workspacePath = await findBazelWorkspace();
+    const workspacePath = getCachedWorkspace();
     if (!workspacePath) {
       logWithTimestamp(`No Bazel workspace found for resolving ${testItem.id}`);
       return;
     }
 
-    logWithTimestamp(`Discovering individual test cases for ${testItem.id}...`);
+    if (process.env.BAZEL_TESTEXPLORER_DEBUG === '1') {
+      logWithTimestamp(`Discovering individual test cases for ${testItem.id}...`);
+    }
     testItem.busy = true;
 
     try {
@@ -429,7 +433,7 @@ async function resolveTestSuiteChildren(
   config: ConfigurationService
 ): Promise<void> {
   try {
-    const workspacePath = await findBazelWorkspace();
+    const workspacePath = getCachedWorkspace();
     if (!workspacePath) {
       logWithTimestamp(`No Bazel workspace found for expanding suite ${suiteItem.id}`);
       return;

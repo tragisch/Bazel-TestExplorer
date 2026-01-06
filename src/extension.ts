@@ -14,7 +14,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { initializeLogger, logWithTimestamp, measure, formatError } from './logging';
-import { findBazelWorkspace } from './bazel/workspace';
+import { findBazelWorkspace, getCachedWorkspace } from './bazel/workspace';
 import { BazelClient } from './bazel/client';
 import { ConfigurationService } from './configuration';
 import { TestControllerManager } from './explorer/controller';
@@ -99,6 +99,17 @@ export async function activate(context: vscode.ExtensionContext) {
 		// silently stop activation in non-Bazel workspaces to avoid noisy popups
 		logWithTimestamp('No Bazel workspace detected. Extension remains idle.');
 		return;
+	}
+
+	// Log current verbose/debug settings once workspace detected
+	try {
+		const cfg = vscode.workspace.getConfiguration('bazelTestExplorer');
+		const verboseViewLogging = cfg.get('verboseViewRegistrationLogging') === true;
+		const discoveryLogging = cfg.get('enableTestCaseDiscovery') === true;
+		const envDebug = process.env.BAZEL_TESTEXPLORER_DEBUG === '1';
+		logWithTimestamp(`Logging status: verboseViewRegistrationLogging=${verboseViewLogging}, enableTestCaseDiscovery=${discoveryLogging}, BAZEL_TESTEXPLORER_DEBUG=${envDebug}`);
+	} catch (e) {
+		// ignore config read errors
 	}
 
 	const configurationService = new ConfigurationService();
@@ -503,4 +514,4 @@ export async function activate(context: vscode.ExtensionContext) {
 
 export function deactivate() { }
 
-export { findBazelWorkspace };
+export { findBazelWorkspace, getCachedWorkspace };

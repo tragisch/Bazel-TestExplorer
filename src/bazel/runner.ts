@@ -19,6 +19,7 @@ import { logWithTimestamp, measure, formatError } from '../logging';
 import { ConfigurationService } from '../configuration';
 import { analyzeTestFailures } from './parseFailures';
 import { TestFramework } from './testFilterStrategies';
+import { detectPrimaryFramework } from './frameworkDetection';
 import { parseUnifiedTestResult, UnifiedTestResult } from './testcase/testResultParser';
 import { stripAnsi } from './testcase/parseOutput';
 import { IndividualTestCase } from './types';
@@ -478,7 +479,25 @@ export const initiateBazelTest = async (
     
     // Import and use test filter strategies
     const { getTestFilterArgs, supportsTestFilter } = require('./testFilterStrategies');
-    const framework = mapTestTypeToFramework(testType);
+    // Prefer metadata-based detection (uses dependencies/type) when available
+    const targetMeta = getTestTargetById(effectiveTestId);
+    const detected = detectPrimaryFramework(targetMeta);
+    let framework: TestFramework;
+    if (detected) {
+      switch (detected) {
+        case 'gtest': framework = 'gtest'; break;
+        case 'pytest': framework = 'pytest'; break;
+        case 'criterion': framework = 'criterion'; break;
+        case 'doctest': framework = 'doctest'; break;
+        case 'unity': framework = 'unity'; break;
+        case 'rust': framework = 'rust'; break;
+        case 'go': framework = 'go'; break;
+        case 'junit': framework = 'java'; break;
+        default: framework = mapTestTypeToFramework(testType);
+      }
+    } else {
+      framework = mapTestTypeToFramework(testType);
+    }
     filterSupported = supportsTestFilter(framework);
     
     if (filterSupported) {
