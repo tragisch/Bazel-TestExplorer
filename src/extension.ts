@@ -25,7 +25,7 @@ import { onDidTestEvent } from './explorer/events';
 import { TestCaseAnnotations, TestCaseCodeLensProvider, TestCaseHoverProvider } from './explorer/annotations';
 import { TestCaseInsights } from './explorer/panel';
 import { showCombinedTestPanel } from './explorer/panel';
-import { parseLcovToFileCoverage, getCoverageDetailsForFile, demangleCoverageDetails } from './coverage/vscode';
+import { parseLcovToFileCoverage, getCoverageDetailsForFile, demangleCoverageDetails, normalizeLcovContent } from './coverage/vscode';
 import { initializeCoverageState, setCoverageSummary } from './coverage/state';
 import { BazelCoverageRunner, resolveBazelInfo, findCoverageArtifacts, loadFirstValidLcov, extractLcovPathFromOutput, extractBazelBinExecPath, convertProfrawToLcov } from './bazel/coverage/artifacts';
 import { cancelAllBazelProcesses } from './infrastructure/process';
@@ -281,7 +281,18 @@ export async function activate(context: vscode.ExtensionContext) {
 							const converted = await convertProfrawToLcov(artifacts.profraw, binaryPath, token);
 							if (converted) {
 								coverageOutput.appendLine(`[coverage] using llvm lcov=${converted.path}`);
-								const convertedCoverages = parseLcovToFileCoverage(converted.content, workspaceFolder, context.extensionPath, execrootPath);
+								const normalized = normalizeLcovContent(converted.content, {
+									workspaceRoot: workspaceFolder,
+									execRoot: execrootPath,
+									filterExternal: true,
+									filterBazelOut: true
+								});
+								if (normalized.rewritten || normalized.removedRecords > 0) {
+									coverageOutput.appendLine(
+										`[coverage] normalized llvm lcov updated=${normalized.updatedRecords} removed=${normalized.removedRecords}`
+									);
+								}
+								const convertedCoverages = parseLcovToFileCoverage(normalized.content, workspaceFolder, context.extensionPath, execrootPath);
 								if (convertedCoverages.length === 0) {
 									coverageOutput.appendLine('[coverage] llvm lcov contained no files');
 									return undefined;
@@ -310,6 +321,17 @@ export async function activate(context: vscode.ExtensionContext) {
 												let args: string[];
 												if (configurationService.ignoreRcFiles) {
 													const filtered = configurationService.coverageArgs.filter(a => !a.startsWith('--bazelrc') && !a.startsWith('--ignore_all_rc_files'));
+													// On macOS, LLVM coverage requires -fcoverage-compilation-dir=.
+													// to produce correct relative paths in the coverage mapping.
+													// When ignoreRcFiles is true the .bazelrc that normally sets
+													// this flag is skipped, so we inject it automatically.
+													if (process.platform === 'darwin') {
+														const coptFlag = '--copt=-fcoverage-compilation-dir=.';
+														if (!filtered.some(a => a.includes('-fcoverage-compilation-dir'))) {
+															filtered.push(coptFlag);
+															coverageOutput.appendLine(`[coverage] macOS detected: added ${coptFlag}`);
+														}
+													}
 													const explicitBazelrc = configurationService.bazelrcFiles.map(p => `--bazelrc=${p}`);
 													// Startup options must precede the command (coverage)
 													args = ['--ignore_all_rc_files', ...explicitBazelrc, 'coverage', ...filtered, targetLabel];
@@ -429,16 +451,37 @@ export async function activate(context: vscode.ExtensionContext) {
 							continue;
 						}
 						coverageOutput.appendLine(`[coverage] using lcov=${lcovResult.path}`);
+
+						const normalized = normalizeLcovContent(lcovResult.content, {
+							workspaceRoot: workspaceFolder,
+							execRoot: execroot,
+							filterExternal: true,
+							filterBazelOut: true
+						});
+						if (normalized.rewritten || normalized.removedRecords > 0) {
+							coverageOutput.appendLine(
+								`[coverage] normalized lcov updated=${normalized.updatedRecords} removed=${normalized.removedRecords}`
+							);
+							const normalizedReportPath = centralCoverage
+								?? path.join(workspaceRoot, 'bazel-out', '_coverage', '_coverage_report.dat');
+							try {
+								await fs.promises.mkdir(path.dirname(normalizedReportPath), { recursive: true });
+								await fs.promises.writeFile(normalizedReportPath, normalized.content, 'utf8');
+								coverageOutput.appendLine(`[coverage] wrote normalized lcov=${normalizedReportPath}`);
+							} catch (err) {
+								coverageOutput.appendLine(`[coverage] failed to write normalized lcov: ${String(err)}`);
+							}
+						}
 						
 						// Debug: Show LCOV content to understand what's being generated
 						coverageOutput.appendLine('[coverage] LCOV content preview:');
-						const previewLines = lcovResult.content.split('\n').slice(0, 30);
+						const previewLines = normalized.content.split('\n').slice(0, 30);
 						previewLines.forEach(line => coverageOutput.appendLine(`  ${line}`));
-						if (lcovResult.content.split('\n').length > 30) {
-							coverageOutput.appendLine(`  ... (${lcovResult.content.split('\n').length - 30} more lines)`);
+						if (normalized.content.split('\n').length > 30) {
+							coverageOutput.appendLine(`  ... (${normalized.content.split('\n').length - 30} more lines)`);
 						}
 
-						let coverages = parseLcovToFileCoverage(lcovResult.content, workspaceFolder, context.extensionPath, execroot);
+						let coverages = parseLcovToFileCoverage(normalized.content, workspaceFolder, context.extensionPath, execroot);
 						await demangleCoverageDetails(configurationService.cppDemanglerPath, configurationService.rustDemanglerPath);
 						coverageOutput.appendLine(`[coverage] parsed files=${coverages.length}`);
 						const totalLines = coverages.reduce((sum, entry) => sum + entry.statementCoverage.total, 0);

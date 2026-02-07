@@ -96,23 +96,139 @@ export const getCoverageDetailsForFile = (coverage: vscode.FileCoverage): vscode
 	return coverageDetailsByUri.get(coverage.uri.toString()) ?? [];
 };
 
+const toLcovPath = (filePath: string): string => filePath.replace(/\\/g, '/');
+
 const normalizeCoveragePath = (filePath: string, execRoot?: string): string => {
 	if (!execRoot) return filePath;
-	if (filePath.startsWith(execRoot)) {
-		return filePath;
+	const normalizedExecRoot = path.normalize(execRoot);
+	const normalizedPath = path.normalize(filePath);
+	if (normalizedPath.startsWith(normalizedExecRoot + path.sep)) {
+		return toLcovPath(path.relative(normalizedExecRoot, normalizedPath));
 	}
 	const execMarker = '/execroot/';
 	if (filePath.includes(execMarker)) {
 		const execMainMarker = '/execroot/_main/';
 		if (filePath.includes(execMainMarker)) {
 			const suffix = filePath.slice(filePath.indexOf(execMainMarker) + execMainMarker.length);
-			return path.join(execRoot, suffix);
+			return toLcovPath(suffix);
 		}
 		const suffix = filePath.slice(filePath.indexOf(execMarker) + execMarker.length);
-		return path.join(execRoot, suffix);
+		return toLcovPath(suffix);
 	}
 	return filePath;
 };
+
+export interface LcovNormalizeOptions {
+	workspaceRoot: string;
+	execRoot?: string;
+	filterExternal?: boolean;
+	filterBazelOut?: boolean;
+}
+
+export interface LcovNormalizeResult {
+	content: string;
+	rewritten: boolean;
+	removedRecords: number;
+	updatedRecords: number;
+}
+
+export const normalizeLcovContent = (
+	lcov: string,
+	options: LcovNormalizeOptions
+): LcovNormalizeResult => {
+	const normalizedWorkspace = path.normalize(options.workspaceRoot);
+	const normalizedExecRoot = options.execRoot ? path.normalize(options.execRoot) : undefined;
+	const lines = lcov.replace(/\r\n/g, '\n').split('\n');
+	const output: string[] = [];
+	let currentRecordFiltered = false;
+	let removedRecords = 0;
+	let updatedRecords = 0;
+	let rewritten = false;
+
+	for (const rawLine of lines) {
+		const line = rawLine.trim();
+		if (!line) {
+			if (!currentRecordFiltered) {
+				output.push(rawLine);
+			}
+			continue;
+		}
+
+		if (line.startsWith('SF:')) {
+			const originalPath = line.slice(3).trim();
+			const normalizedPath = normalizeLcovSourcePath(originalPath, normalizedWorkspace, normalizedExecRoot);
+			const shouldFilter = shouldFilterCoveragePath(normalizedPath, options);
+			if (shouldFilter) {
+				currentRecordFiltered = true;
+				removedRecords += 1;
+				continue;
+			}
+			if (normalizedPath !== originalPath) {
+				rewritten = true;
+				updatedRecords += 1;
+			}
+			currentRecordFiltered = false;
+			output.push(`SF:${normalizedPath}`);
+			continue;
+		}
+
+		if (currentRecordFiltered) {
+			if (line === 'end_of_record') {
+				currentRecordFiltered = false;
+			}
+			continue;
+		}
+
+		output.push(rawLine);
+	}
+
+	return {
+		content: output.join('\n'),
+		rewritten,
+		removedRecords,
+		updatedRecords
+	};
+};
+
+const normalizeLcovSourcePath = (
+	filePath: string,
+	workspaceRoot: string,
+	execRoot?: string
+): string => {
+	const normalizedPath = path.normalize(filePath);
+	if (execRoot && normalizedPath.startsWith(execRoot + path.sep)) {
+		return toLcovPath(path.relative(execRoot, normalizedPath));
+	}
+
+	const execMainMarker = `${path.sep}execroot${path.sep}_main${path.sep}`;
+	if (normalizedPath.includes(execMainMarker)) {
+		const suffix = normalizedPath.slice(normalizedPath.indexOf(execMainMarker) + execMainMarker.length);
+		return toLcovPath(suffix);
+	}
+
+	if (normalizedPath.startsWith(workspaceRoot + path.sep)) {
+		return toLcovPath(path.relative(workspaceRoot, normalizedPath));
+	}
+
+	return toLcovPath(filePath);
+};
+
+const shouldFilterCoveragePath = (filePath: string, options: LcovNormalizeOptions): boolean => {
+	const posixPath = toLcovPath(filePath);
+	const stripped = posixPath.replace(/^[A-Za-z]:/, '');
+	if (options.filterExternal) {
+		if (stripped.startsWith('external/') || stripped.includes('/external/')) {
+			return true;
+		}
+	}
+	if (options.filterBazelOut) {
+		if (stripped.startsWith('bazel-out/') || stripped.includes('/bazel-out/')) {
+			return true;
+		}
+	}
+	return false;
+};
+
 
 export const demangleCoverageDetails = async (
 	cppToolPath?: string,

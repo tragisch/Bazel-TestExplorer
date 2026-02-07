@@ -89,6 +89,22 @@ export function runBazelCommand(
             isCancelled = true;
             logWithTimestamp(`Cancellation requested for Bazel process: ${bazelPath} ${args.join(" ")}`);
             proc.kill('SIGTERM');
+
+            // Fallback: force-kill if SIGTERM is ignored after 5 seconds
+            const killTimer = setTimeout(() => {
+                try {
+                    if (!proc.killed) {
+                        logWithTimestamp(`Force-killing Bazel process (SIGTERM ignored): ${bazelPath} ${args.join(" ")}`);
+                        proc.kill('SIGKILL');
+                    }
+                } catch {
+                    // Process may already be gone
+                }
+            }, 5_000);
+            killTimer.unref();
+
+            // Clear the fallback timer once the process exits
+            proc.once('close', () => clearTimeout(killTimer));
         });
 
         const rl = readline.createInterface({ input: proc.stdout });

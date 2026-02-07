@@ -447,10 +447,17 @@ export const executeBazelTest = async (
       );
     }
   } catch (error) {
-    const message = formatError(error);
-    logWithTimestamp(`Error executing test ${testItem.id}: ${message}`, "error");
-    run.failed(testItem, new vscode.TestMessage(message));
-    try { finishTest(testItem.id, 'failed', message); } catch {}
+    // Distinguish cancellation from real errors
+    if (cancellationToken?.isCancellationRequested) {
+      run.skipped(testItem);
+      try { finishTest(testItem.id, 'skipped'); } catch {}
+      logWithTimestamp(`Test cancelled: ${testItem.id}`, 'info');
+    } else {
+      const message = formatError(error);
+      logWithTimestamp(`Error executing test ${testItem.id}: ${message}`, "error");
+      run.failed(testItem, new vscode.TestMessage(message));
+      try { finishTest(testItem.id, 'failed', message); } catch {}
+    }
   }
 };
 

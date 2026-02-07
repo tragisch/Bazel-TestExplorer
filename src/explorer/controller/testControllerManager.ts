@@ -201,14 +201,15 @@ export class TestControllerManager {
             }
           }
         } finally {
-          try {
-            await Promise.all(promises);
-          } catch (err) {
-            // Ensure failures in individual test promises do not prevent finalizing the run
-            logWithTimestamp(`One or more test promises rejected: ${String(err)}`, 'error');
-          } finally {
-            run.end();
+          // Use allSettled to ensure all promises are awaited even when
+          // multiple tests are cancelled simultaneously (avoids unhandled rejections)
+          const results = await Promise.allSettled(promises);
+          for (const result of results) {
+            if (result.status === 'rejected') {
+              logWithTimestamp(`Test promise rejected: ${String(result.reason)}`, 'error');
+            }
           }
+          run.end();
         }
       },
       true
@@ -446,31 +447,34 @@ export class TestControllerManager {
     };
 
     const promises: Promise<void>[] = [];
-    const token = new vscode.CancellationTokenSource().token;
-
-    for (const testItem of items) {
-      const allTests = collectAllTests(testItem);
-      for (const t of allTests) {
-        run.started(t);
-        try { startTest(t.id, t.label); } catch { }
-        const testTypeMatch = t.label.match(/^\[(.+?)\]/);
-        const testType = testTypeMatch?.[1];
-        const isSequential = sequentialTypes.includes(testType ?? '');
-        const promise = this.bazelClient.runTest(t, run, token);
-        if (isSequential) {
-          await promise;
-        } else {
-          promises.push(promise);
-        }
-      }
-    }
+    const cts = new vscode.CancellationTokenSource();
 
     try {
-      await Promise.all(promises);
-    } catch (err) {
-      logWithTimestamp(`One or more test promises rejected in runTestsByIds: ${String(err)}`, 'error');
+      for (const testItem of items) {
+        const allTests = collectAllTests(testItem);
+        for (const t of allTests) {
+          run.started(t);
+          try { startTest(t.id, t.label); } catch { }
+          const testTypeMatch = t.label.match(/^\[(.+?)\]/);
+          const testType = testTypeMatch?.[1];
+          const isSequential = sequentialTypes.includes(testType ?? '');
+          const promise = this.bazelClient.runTest(t, run, cts.token);
+          if (isSequential) {
+            await promise;
+          } else {
+            promises.push(promise);
+          }
+        }
+      }
     } finally {
+      const results = await Promise.allSettled(promises);
+      for (const result of results) {
+        if (result.status === 'rejected') {
+          logWithTimestamp(`Test promise rejected in runTestsByIds: ${String(result.reason)}`, 'error');
+        }
+      }
       run.end();
+      cts.dispose();
     }
   }
 
