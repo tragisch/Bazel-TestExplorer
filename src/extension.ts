@@ -522,18 +522,28 @@ export async function activate(context: vscode.ExtensionContext) {
 						coverageOutput.appendLine(
 							`[coverage] published ${targetLabel} ${summary.covered}/${summary.total} (${summary.percent.toFixed(2)}%)`
 						);
-						const action = await vscode.window.showInformationMessage('Coverage updated.', 'Open Coverage');
-						if (action === 'Open Coverage') {
-							try {
-								await vscode.commands.executeCommand('workbench.view.testing');
-								await vscode.commands.executeCommand('testing.coverage.open');
-							} catch (err) {
-								coverageOutput.appendLine(`[coverage] failed to open coverage view: ${formatError(err)}`);
-							}
+					}
+
+					// Show info message AFTER the progress callback ends so the
+					// progress notification dismisses immediately when work is done.
+				}
+			);
+
+			// Fire-and-forget: prompt the user to open coverage without blocking progress
+			void vscode.window.showInformationMessage('Coverage updated.', 'Open Coverage').then(async (action) => {
+				if (action === 'Open Coverage') {
+					try {
+						await vscode.commands.executeCommand('testing.openCoverage');
+					} catch {
+						// Fallback for older VS Code versions
+						try {
+							await vscode.commands.executeCommand('testing.openTesting');
+						} catch {
+							coverageOutput.appendLine('[coverage] could not open coverage view automatically');
 						}
 					}
 				}
-			);
+			});
 		})
 	);
 
