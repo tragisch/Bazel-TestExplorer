@@ -225,9 +225,10 @@ function processSuccessfulTest(
   run: vscode.TestRun,
   testItem: vscode.TestItem,
   code: number,
-  displayLog: string[]
+  displayLog: string[],
+  appendDetailedOutput: boolean
 ): void {
-  if (displayLog.length > 0) {
+  if (appendDetailedOutput && displayLog.length > 0) {
     const outputBlock = [
       getStatusHeader(code, testItem.id),
       '----- BEGIN OUTPUT -----',
@@ -255,7 +256,8 @@ function processIndividualTestCaseFailure(
   testItem: vscode.TestItem,
   testCase: IndividualTestCase,
   displayLog: string[],
-  workspacePath: string
+  workspacePath: string,
+  appendDetailedOutput: boolean
 ): void {
   const statusLabel = testCase.status === 'TIMEOUT' ? 'Timeout' : 'Failed';
   const segments = [`${testCase.name} (${statusLabel})`];
@@ -270,7 +272,7 @@ function processIndividualTestCaseFailure(
   
   run.failed(testItem, message);
   
-  if (displayLog.length > 0) {
+  if (appendDetailedOutput && displayLog.length > 0) {
     const outputBlock = [
       `❌ Test Failed: ${testItem.id}`,
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
@@ -297,7 +299,8 @@ function processFailedTest(
   testLog: string[],
   workspacePath: string,
   unifiedResult: UnifiedTestResult,
-  scopedCases: IndividualTestCase[]
+  scopedCases: IndividualTestCase[],
+  appendDetailedOutput: boolean
 ): void {
   if (code === 4) {
     // Bazel Test Encyclopedia: exit code 4 indicates tests passed only after retries (flaky)
@@ -320,22 +323,25 @@ function processFailedTest(
       testLog,
       workspacePath,
       unifiedResult,
-      scopedCases
+      scopedCases,
+      appendDetailedOutput
     );
   } else {
     const cleaned = bazelLog.filter(line => line.trim() !== "").join("\n");
     const cleaned_with_Header = getStatusHeader(code, testItem.id) + cleaned;
     run.failed(testItem, new vscode.TestMessage(`🧨 Errors during tests (Code ${code}):\n\n${cleaned_with_Header}`));
     try { finishTest(testItem.id, 'failed', cleaned_with_Header); } catch {}
-    const outputBlock = [
-      getStatusHeader(code, testItem.id),
-      '----- BEGIN OUTPUT -----',
-      ...bazelLog,
-      '------ END OUTPUT ------'
-    ].join("\n");
-    const out = outputBlock.replace(/\r?\n/g, '\r\n') + '\r\n';
-    run.appendOutput(out, undefined, testItem);
-    try { publishOutput(testItem.id, out); } catch {}
+    if (appendDetailedOutput) {
+      const outputBlock = [
+        getStatusHeader(code, testItem.id),
+        '----- BEGIN OUTPUT -----',
+        ...bazelLog,
+        '------ END OUTPUT ------'
+      ].join("\n");
+      const out = outputBlock.replace(/\r?\n/g, '\r\n') + '\r\n';
+      run.appendOutput(out, undefined, testItem);
+      try { publishOutput(testItem.id, out); } catch {}
+    }
   }
 }
 
@@ -351,13 +357,15 @@ export const executeBazelTest = async (
   cancellationToken?: vscode.CancellationToken
 ) => {
   try {
+    const streamLiveOutput = true;
+    const appendDetailedOutput = !streamLiveOutput;
     const typeMatch = testItem.label.match(/\[(.*?)\]/);
     const testType = typeMatch?.[1] ?? "";
     const isSuite = testType === "test_suite";
     const isIndividualTestCase = testItem.id.includes('::');
 
     const { code, stdout, stderr, filterSupported, filterUsed } = await measure(`Execute test: ${testItem.id}`, () =>
-      initiateBazelTest(testItem.id, workspacePath, run, testItem, config, cancellationToken)
+      initiateBazelTest(testItem.id, workspacePath, run, testItem, config, cancellationToken, streamLiveOutput)
     );
 
     if (isSuite) {
@@ -402,7 +410,7 @@ export const executeBazelTest = async (
           run.failed(testItem, warningMsg);
           try { finishTest(testItem.id, 'failed', warningText); } catch {}
         }
-        if (logWithNote.length > 0) {
+        if (appendDetailedOutput && logWithNote.length > 0) {
           const outputBlock = [
             getStatusHeader(code, testItem.id),
             '----- BEGIN OUTPUT -----',
@@ -424,13 +432,13 @@ export const executeBazelTest = async (
       const testPassed = testCase.status === 'PASS';
       
       if (testPassed) {
-        processSuccessfulTest(run, testItem, 0, logWithNote);
+        processSuccessfulTest(run, testItem, 0, logWithNote, appendDetailedOutput);
       } else {
         // Test case failed - use parsed result to report the failure
-        processIndividualTestCaseFailure(run, testItem, testCase, logWithNote, workspacePath);
+        processIndividualTestCaseFailure(run, testItem, testCase, logWithNote, workspacePath, appendDetailedOutput);
       }
     } else if (code === 0) {
-      processSuccessfulTest(run, testItem, code, baseDisplayLog);
+      processSuccessfulTest(run, testItem, code, baseDisplayLog, appendDetailedOutput);
     } else {
       const scopedDisplayLog = relevantCases.length > 0
         ? filterLogLinesForItem(testItem, relevantCases, testLog)
@@ -443,7 +451,8 @@ export const executeBazelTest = async (
         scopedDisplayLog,
         workspacePath,
         unifiedResult ?? EMPTY_UNIFIED_RESULT,
-        relevantCases
+        relevantCases,
+        appendDetailedOutput
       );
     }
   } catch (error) {
@@ -467,7 +476,8 @@ export const initiateBazelTest = async (
   run: vscode.TestRun,
   testItem: vscode.TestItem,
   config: ConfigurationService,
-  cancellationToken?: vscode.CancellationToken
+  cancellationToken?: vscode.CancellationToken,
+  streamLiveOutput: boolean = false
 ): Promise<{ code: number; stdout: string; stderr: string; filterSupported: boolean; filterUsed: boolean }> => {
   let effectiveTestId = testId;
   let filterArgs: string[] = [];
@@ -585,11 +595,21 @@ export const initiateBazelTest = async (
   if (!env.TEST_SHARD_STATUS_FILE) {env.TEST_SHARD_STATUS_FILE = path.join(cwd, '.vscode_bazel_shard_status');}
   logWithTimestamp(`Shard env: TEST_SHARD_INDEX=${env.TEST_SHARD_INDEX}, TEST_TOTAL_SHARDS=${env.TEST_TOTAL_SHARDS}`);
 
+  const appendLiveOutput = (line: string, source: 'stdout' | 'stderr'): void => {
+    if (!streamLiveOutput) {
+      return;
+    }
+    const cleaned = stripAnsi(line);
+    const prefix = source === 'stderr' ? '[stderr] ' : '';
+    const out = `${prefix}${cleaned}`.replace(/\r?\n/g, '\r\n') + '\r\n';
+    run.appendOutput(out, undefined, testItem);
+  };
+
   const result = await runBazelCommand(
     args,
     cwd,
-    undefined,
-    undefined,
+    (line) => appendLiveOutput(line, 'stdout'),
+    (line) => appendLiveOutput(line, 'stderr'),
     config.bazelPath,
     env,
     cancellationToken
@@ -641,7 +661,8 @@ function handleTestResult(
   testLog: string[],
   workspacePath: string,
   parsedResult: UnifiedTestResult,
-  scopedCases: IndividualTestCase[]
+  scopedCases: IndividualTestCase[],
+  appendDetailedOutput: boolean
 ) {
   // Check if this testItem has children (individual test cases)
   const hasChildren = testItem.children.size > 0;
@@ -709,14 +730,16 @@ function handleTestResult(
       }
 
       // Append output for the target
-      const outputBlock = [
-        getStatusHeader(code, testItem.id),
-        '----- BEGIN OUTPUT -----',
-        ...testLog,
-        '------ END OUTPUT ------'
-      ].join("\n");
-      run.appendOutput(outputBlock.replace(/\r?\n/g, '\r\n') + '\r\n', undefined, testItem);
-      try { publishOutput(testItem.id, outputBlock.replace(/\r?\n/g, '\r\n') + '\r\n'); } catch {}
+      if (appendDetailedOutput) {
+        const outputBlock = [
+          getStatusHeader(code, testItem.id),
+          '----- BEGIN OUTPUT -----',
+          ...testLog,
+          '------ END OUTPUT ------'
+        ].join("\n");
+        run.appendOutput(outputBlock.replace(/\r?\n/g, '\r\n') + '\r\n', undefined, testItem);
+        try { publishOutput(testItem.id, outputBlock.replace(/\r?\n/g, '\r\n') + '\r\n'); } catch {}
+      }
     } else {
       // No children or no parsed cases - handle as before
       const structuredMessages = buildMessagesFromTestCases(casesForMessages, workspacePath);
@@ -726,16 +749,20 @@ function handleTestResult(
       logWithTimestamp(`Analyzed test failures for ${testItem.id}: ${messages.length} messages found.`);
       if (messages.length > 0) {
         run.failed(testItem, messages);
-        const outputBlock = [
-          getStatusHeader(code, testItem.id),
-          '----- BEGIN OUTPUT -----',
-          ...testLog,
-          '------ END OUTPUT ------'
-        ].join("\n");
+        if (appendDetailedOutput) {
+          const outputBlock = [
+            getStatusHeader(code, testItem.id),
+            '----- BEGIN OUTPUT -----',
+            ...testLog,
+            '------ END OUTPUT ------'
+          ].join("\n");
 
-        run.appendOutput(outputBlock.replace(/\r?\n/g, '\r\n') + '\r\n', undefined, testItem);
-        try { publishOutput(testItem.id, outputBlock.replace(/\r?\n/g, '\r\n') + '\r\n'); } catch {}
-        try { finishTest(testItem.id, 'failed', outputBlock); } catch {}
+          run.appendOutput(outputBlock.replace(/\r?\n/g, '\r\n') + '\r\n', undefined, testItem);
+          try { publishOutput(testItem.id, outputBlock.replace(/\r?\n/g, '\r\n') + '\r\n'); } catch {}
+          try { finishTest(testItem.id, 'failed', outputBlock); } catch {}
+        } else {
+          try { finishTest(testItem.id, 'failed', messages.map(m => m.message).join('\n\n')); } catch {}
+        }
       } else {
         const fallbackOutput = [
           getStatusHeader(code, testItem.id),
@@ -745,8 +772,10 @@ function handleTestResult(
         ].join("\n");
 
         run.failed(testItem, new vscode.TestMessage(fallbackOutput));
-        run.appendOutput(fallbackOutput.replace(/\r?\n/g, '\r\n') + '\r\n', undefined, testItem);
-        try { publishOutput(testItem.id, fallbackOutput.replace(/\r?\n/g, '\r\n') + '\r\n'); } catch {}
+        if (appendDetailedOutput) {
+          run.appendOutput(fallbackOutput.replace(/\r?\n/g, '\r\n') + '\r\n', undefined, testItem);
+          try { publishOutput(testItem.id, fallbackOutput.replace(/\r?\n/g, '\r\n') + '\r\n'); } catch {}
+        }
         try { finishTest(testItem.id, 'failed', fallbackOutput); } catch {}
       }
     }
