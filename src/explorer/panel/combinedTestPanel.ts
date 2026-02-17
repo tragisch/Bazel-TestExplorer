@@ -181,16 +181,36 @@ function renderHtml(
   summary?: { total: number; passed: number; failed: number; ignored: number }
   , extensionContext?: vscode.ExtensionContext, panel?: vscode.WebviewPanel
 ): string {
-  const escape = (input: string | undefined) => (input ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const escapeHtml = (input: string | undefined) => (input ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  const escapeAttr = (input: string | undefined) => escapeHtml(input)
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+  const toStatusClass = (status: string): string => {
+    switch (status.toUpperCase()) {
+      case 'PASS':
+        return 'pass';
+      case 'FAIL':
+        return 'fail';
+      case 'TIMEOUT':
+        return 'timeout';
+      case 'SKIP':
+        return 'skip';
+      default:
+        return 'fail';
+    }
+  };
 
   const casesRows = testCases.length > 0
     ? testCases.map(tc => `
         <tr>
-          <td class="status ${tc.status.toLowerCase()}">${tc.status}</td>
-          <td>${escape(tc.name)}</td>
-          <td>${escape(tc.suite ?? tc.className ?? '')}</td>
-          <td>${escape(tc.file)}${tc.line ? `:${tc.line}` : ''}</td>
-          <td>${escape(tc.errorMessage ?? '')}</td>
+          <td class="status ${toStatusClass(tc.status)}">${escapeHtml(tc.status)}</td>
+          <td>${escapeHtml(tc.name)}</td>
+          <td>${escapeHtml(tc.suite ?? tc.className ?? '')}</td>
+          <td>${escapeHtml(tc.file)}${tc.line ? `:${tc.line}` : ''}</td>
+          <td>${escapeHtml(tc.errorMessage ?? '')}</td>
         </tr>
       `).join('')
     : `<tr><td colspan="5"><i>No individual test cases recorded.</i></td></tr>`;
@@ -198,17 +218,17 @@ function renderHtml(
   const metadataList = metadata
     ? `
       <ul>
-        <li><b>Target:</b> ${escape(metadata.target)}</li>
-        <li><b>Type:</b> ${escape(metadata.type)}</li>
-        <li><b>Timeout:</b> ${escape(metadata.timeout)}</li>
-        <li><b>Size:</b> ${escape(metadata.size)}</li>
+        <li><b>Target:</b> ${escapeHtml(metadata.target)}</li>
+        <li><b>Type:</b> ${escapeHtml(metadata.type)}</li>
+        <li><b>Timeout:</b> ${escapeHtml(metadata.timeout)}</li>
+        <li><b>Size:</b> ${escapeHtml(metadata.size)}</li>
         <li><b>Flaky:</b> ${metadata.flaky ? 'Yes' : 'No'}</li>
-        <li><b>Toolchain:</b> ${escape(metadata.toolchain)}</li>
-        <li><b>Tags:</b> ${Array.isArray(metadata.tags) ? escape(metadata.tags.join(', ')) : escape(metadata.tags)}</li>
-        <li><b>Visibility:</b> ${Array.isArray(metadata.visibility) ? escape(metadata.visibility.join(', ')) : escape(metadata.visibility)}</li>
-        <li><b>Dependencies:</b> ${Array.isArray(metadata.deps) ? escape(metadata.deps.join(', ')) : escape(metadata.deps)}</li>
-        <li><b>Sources:</b> ${Array.isArray(metadata.srcs) ? escape(metadata.srcs.join(', ')) : escape(metadata.srcs)}</li>
-        <li><b>Location:</b> ${escape(metadata.location)}</li>
+        <li><b>Toolchain:</b> ${escapeHtml(metadata.toolchain)}</li>
+        <li><b>Tags:</b> ${Array.isArray(metadata.tags) ? escapeHtml(metadata.tags.join(', ')) : escapeHtml(metadata.tags)}</li>
+        <li><b>Visibility:</b> ${Array.isArray(metadata.visibility) ? escapeHtml(metadata.visibility.join(', ')) : escapeHtml(metadata.visibility)}</li>
+        <li><b>Dependencies:</b> ${Array.isArray(metadata.deps) ? escapeHtml(metadata.deps.join(', ')) : escapeHtml(metadata.deps)}</li>
+        <li><b>Sources:</b> ${Array.isArray(metadata.srcs) ? escapeHtml(metadata.srcs.join(', ')) : escapeHtml(metadata.srcs)}</li>
+        <li><b>Location:</b> ${escapeHtml(metadata.location)}</li>
       </ul>
     `
     : '<i>No Bazel metadata cached for this target.</i>';
@@ -244,7 +264,7 @@ function renderHtml(
       })
       .map(f => `
         <tr data-percent="${f.percent.toFixed(2)}">
-          <td class="path"><a class="file-link" data-path="${escape(f.path)}" title="${escape(f.path)}">${escape(shortenPath(f.path))}</a></td>
+          <td class="path"><a class="file-link" data-path="${escapeAttr(f.path)}" title="${escapeAttr(f.path)}">${escapeHtml(shortenPath(f.path))}</a></td>
           <td>${f.percent.toFixed(2)}%</td>
           <td>${f.covered}/${f.total}</td>
         </tr>
@@ -264,7 +284,7 @@ function renderHtml(
     ? `
       <h4>Top uncovered</h4>
       <ul>
-        ${uncoveredTop.map(f => `<li>${escape(shortenPath(f.path))} — ${f.percent.toFixed(2)}% (${f.covered}/${f.total})</li>`).join('')}
+        ${uncoveredTop.map(f => `<li>${escapeHtml(shortenPath(f.path))} — ${f.percent.toFixed(2)}% (${f.covered}/${f.total})</li>`).join('')}
       </ul>
     `
     : '';
@@ -289,17 +309,24 @@ function renderHtml(
     : `<i>No coverage data available for this target.</i>`;
 
   const initialRawHtml = `<pre id="rawXmlPre" style="white-space:pre-wrap;">(raw XML not loaded)</pre>`;
-  // Prepare external script URI when extensionContext is available
-  const scriptTag = extensionContext && panel
-    ? `<script src="${panel.webview.asWebviewUri(vscode.Uri.joinPath(extensionContext.extensionUri, 'media', 'combinedPanel.js'))}"></script>`
-    : `<script>/* fallback inline script omitted */</script>`;
+  const scriptUri = extensionContext && panel
+    ? panel.webview.asWebviewUri(vscode.Uri.joinPath(extensionContext.extensionUri, 'media', 'combinedPanel.js')).toString()
+    : undefined;
+  const cspSource = panel?.webview.cspSource;
+  const styleCsp = cspSource ? `style-src ${cspSource} 'unsafe-inline'` : `style-src 'unsafe-inline'`;
+  const scriptCsp = cspSource ? `script-src ${cspSource}` : `script-src 'none'`;
+  const imgCsp = cspSource ? `img-src ${cspSource} data:` : `img-src data:`;
+  const csp = `default-src 'none'; ${styleCsp}; ${scriptCsp}; ${imgCsp};`;
+  const scriptTag = scriptUri
+    ? `<script src="${escapeAttr(scriptUri)}"></script>`
+    : '';
 
   return `
     <!doctype html>
     <html>
       <head>
         <meta charset="utf-8" />
-        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline' vscode-resource:;">
+        <meta http-equiv="Content-Security-Policy" content="${escapeAttr(csp)}">
         <style>
           body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 0.5rem; }
           .topbar { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
@@ -320,7 +347,7 @@ function renderHtml(
         <div class="topbar">
           <button id="rerunBtn">Rerun</button>
           <label><input id="pinChk" type="checkbox"> Pin</label>
-          <span style="margin-left:auto; font-size:12px; color:#666">${escape(testId)}</span>
+          <span style="margin-left:auto; font-size:12px; color:#666">${escapeHtml(testId)}</span>
         </div>
 
         <div class="tabs">
@@ -353,9 +380,9 @@ function renderHtml(
 
           <div id="coverage" style="display:none">
             <h3>Coverage</h3>
-            <p><b>Type:</b> ${escape(coverageType)}</p>
-            <p><b>Source:</b> ${escape(coverageSource)}</p>
-            <p><b>Instrumentation filter:</b> ${escape(instrumentationFilter ?? 'n/a')}</p>
+            <p><b>Type:</b> ${escapeHtml(coverageType)}</p>
+            <p><b>Source:</b> ${escapeHtml(coverageSource)}</p>
+            <p><b>Instrumentation filter:</b> ${escapeHtml(instrumentationFilter ?? 'n/a')}</p>
             <label style="font-size:12px;"><input id="covOnlyUncovered" type="checkbox"> only uncovered</label>
             ${coverageSection}
             ${uncoveredSection}

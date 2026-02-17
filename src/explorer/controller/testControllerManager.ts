@@ -253,7 +253,7 @@ export class TestControllerManager {
       vscode.workspace.onDidChangeConfiguration((e) => {
         if (e.affectsConfiguration('bazelTestExplorer')) {
           logWithTimestamp('Configuration changed. Reloading tests...');
-          vscode.window.withProgress(
+          void vscode.window.withProgress(
             {
               location: vscode.ProgressLocation.Window,
               title: 'Bazel Test Explorer',
@@ -262,7 +262,11 @@ export class TestControllerManager {
             async (progress) => {
               await this.discover(progress);
             }
-          );
+          ).then(undefined, (error: unknown) => {
+            const message = formatError(error);
+            vscode.window.showErrorMessage(`❌ Reload failed:\n${message}`);
+            logWithTimestamp(`❌ Error in configuration-triggered reload:\n${message}`);
+          });
         }
       })
     );
