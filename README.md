@@ -28,12 +28,20 @@ Uses `bazel query`, `bazel test`, and `bazel coverage`, integrated with the VS C
 ## Screenshot
 ![Example](images/Example_TestRun.png)
 
-## Remarks
-- `c++filt` / `rustfilt` should be available in `PATH` for demangled names in coverage.
-- `--instrumentation_filter=.*` can be slow in large repositories. Adjust this filter in settings to match your source paths (e.g., `--instrumentation_filter="app/*"` or `--instrumentation_filter="//src/..."`).
-- `--combined_report=lcov` creates a central `bazel-out/_coverage/_coverage_report.dat` for easier coverage aggregation. If this file is empty, check that your instrumentation filter matches your source files.
-- The extension prioritizes `coverage.dat` over `baseline_coverage.dat` (which is often empty).
-- Experimental test.xml parsing can be slow or incompatible with some frameworks.
+## Remarks to coverage:
+To get a working coverage (with C/C++) is sometimes annoying.
+Here some tipps:
+- MODULE.bazel.: 
+  - use `bazel_dep(name = "toolchains_llvm", version = "1.6.0")` and `llvm_version = "19.1.0"` or newer.
+- .bazelrc: 
+  - `--combined_report=lcov` creates a central `bazel-out/_coverage/_coverage_report.dat` for easier coverage aggregation.
+  -  `--instrumentation_filter=.*` can be slow in large repositories. Adjust this filter in settings to match your source paths (e.g. `--instrumentation_filter="//src/..."`).
+  -  set `coverage --experimental_use_llvm_covmap` and `coverage --experimental_generate_llvm_lcov`
+  - on macOS set `coverage --copt=-fcoverage-compilation-dir=.`
+- System:
+  - `c++filt` / `rustfilt` should be available in `PATH` for demangled names in coverage.
+
+Coverage should be working in terminal!! If not the extension can not fix this.
 
 ## License
 MIT License
