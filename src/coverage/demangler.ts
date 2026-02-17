@@ -24,8 +24,8 @@ export const demangleSymbols = async (
 	kind: DemanglerKind,
 	toolPath?: string
 ): Promise<string[]> => {
-	if (symbols.length === 0) return symbols;
-	if (disabledDemanglers.has(kind)) return symbols;
+	if (symbols.length === 0) {return symbols;}
+	if (disabledDemanglers.has(kind)) {return symbols;}
 
 	const tool = toolPath || defaultTools[kind];
 	if (toolPath && !fs.existsSync(toolPath)) {

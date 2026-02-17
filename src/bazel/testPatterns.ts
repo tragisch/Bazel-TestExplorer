@@ -313,7 +313,7 @@ export const BUILTIN_TEST_PATTERNS: TestCasePattern[] = [
         supportsIndividual: true,
         filterTemplate: '${name}'
     }
-]
+];
 
 // Mapping from Bazel rule/test type to allowed pattern IDs
 // Note: Many C/C++ tests (cc_test) can use different frameworks (Unity, gtest, catch2, etc.).

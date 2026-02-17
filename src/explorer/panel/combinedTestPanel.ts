@@ -54,7 +54,7 @@ export async function showCombinedTestPanel(testId: string, bazelClient: BazelCl
     });
 
     panel.webview.onDidReceiveMessage(async (msg) => {
-      if (!panel) return;
+      if (!panel) {return;}
       const activeId = currentId ?? testId;
 
       if (msg.command === 'requestRawXml') {
@@ -164,9 +164,9 @@ export async function showCombinedTestPanel(testId: string, bazelClient: BazelCl
   }
 
   pendingArgs = { testId, metadata, cases };
-  if (debounceTimer) clearTimeout(debounceTimer);
+  if (debounceTimer) {clearTimeout(debounceTimer);}
   debounceTimer = setTimeout(() => {
-    if (!panel || !pendingArgs) return;
+    if (!panel || !pendingArgs) {return;}
     currentId = pendingArgs.testId;
     panel.webview.html = renderHtml(pendingArgs.testId, pendingArgs.metadata, pendingArgs.cases?.testCases ?? [], pendingArgs.cases?.summary, extensionContext, panel);
     pendingArgs = undefined;
@@ -230,16 +230,16 @@ function renderHtml(
   const coverageArgs = coverage?.coverageArgs ?? [];
   const instrumentationFilter = (() => {
     const withEquals = coverageArgs.find(arg => arg.startsWith('--instrumentation_filter='));
-    if (withEquals) return withEquals.split('=')[1];
+    if (withEquals) {return withEquals.split('=')[1];}
     const flagIndex = coverageArgs.findIndex(arg => arg === '--instrumentation_filter');
-    if (flagIndex >= 0 && coverageArgs[flagIndex + 1]) return coverageArgs[flagIndex + 1];
+    if (flagIndex >= 0 && coverageArgs[flagIndex + 1]) {return coverageArgs[flagIndex + 1];}
     return undefined;
   })();
   const coverageRows = coverage
     ? coverage.files
       .slice()
       .sort((a, b) => {
-        if (a.percent !== b.percent) return a.percent - b.percent;
+        if (a.percent !== b.percent) {return a.percent - b.percent;}
         return a.path.localeCompare(b.path);
       })
       .map(f => `
@@ -255,7 +255,7 @@ function renderHtml(
       .filter(f => f.percent < 100)
       .slice()
       .sort((a, b) => {
-        if (a.percent !== b.percent) return a.percent - b.percent;
+        if (a.percent !== b.percent) {return a.percent - b.percent;}
         return a.path.localeCompare(b.path);
       })
       .slice(0, 5)

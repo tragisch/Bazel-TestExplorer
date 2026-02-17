@@ -38,19 +38,19 @@ export function resolveSourceUri(
 }
 
 export function selectPreferredSourceFile(srcs: string[]): string {
-  if (srcs.length === 1) return srcs[0];
+  if (srcs.length === 1) {return srcs[0];}
 
   const runnerFile = srcs.find(s => s.includes('_Runner.c') || s.includes('_Runner.cc'));
   if (runnerFile) {
     const nonRunner = srcs.find(s => !s.includes('_Runner.c') && !s.includes('_Runner.cc'));
-    if (nonRunner) return nonRunner;
+    if (nonRunner) {return nonRunner;}
   }
   return srcs[0];
 }
 
 export function bazelLabelToUri(label: string): vscode.Uri | undefined {
   const workspace = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
-  if (!workspace) return undefined;
+  if (!workspace) {return undefined;}
 
   let packagePath: string;
   let fileName: string;
@@ -102,7 +102,7 @@ export function guessSourceUri(
   }
 
   const cacheEntry = packageFileCache.get(packageCacheKey)!;
-  if (!cacheEntry.dirExists) return undefined;
+  if (!cacheEntry.dirExists) {return undefined;}
 
   for (const ext of extensions) {
     const candidate = testName + ext;
@@ -167,28 +167,28 @@ export function resolveSourceFromMetadata(
   if (metadata.srcs && metadata.srcs.length > 0) {
     for (const src of metadata.srcs) {
       const normalized = normalizeSrcEntry(src, packagePath);
-      if (normalized) candidates.push({ file: normalized });
+      if (normalized) {candidates.push({ file: normalized });}
     }
   }
 
   if (metadata.location) {
     const parsed = parseLocation(metadata.location);
-    if (parsed) candidates.push(parsed);
+    if (parsed) {candidates.push(parsed);}
   }
 
   for (const candidate of candidates) {
     const absolute = toAbsolutePath(candidate.file, workspacePath);
-    if (fs.existsSync(absolute)) return candidate;
+    if (fs.existsSync(absolute)) {return candidate;}
   }
   return undefined;
 }
 
 export function normalizeSrcEntry(src: string, packagePath: string): string | undefined {
-  if (!src) return undefined;
+  if (!src) {return undefined;}
   if (src.startsWith('//')) {
     const withoutPrefix = src.slice(2);
     const [pkg, file] = withoutPrefix.split(':');
-    if (pkg && file) return path.posix.join(pkg, file);
+    if (pkg && file) {return path.posix.join(pkg, file);}
     return pkg;
   }
   if (src.startsWith(':')) {
@@ -197,14 +197,14 @@ export function normalizeSrcEntry(src: string, packagePath: string): string | un
   }
   if (src.includes(':')) {
     const [pkg, file] = src.split(':');
-    if (file) return path.posix.join(pkg.replace(/^\/\//, ''), file);
+    if (file) {return path.posix.join(pkg.replace(/^\/\//, ''), file);}
   }
   return path.posix.join(packagePath, src);
 }
 
 export function parseLocation(location: string): { file: string; line?: number } | undefined {
   const match = location.match(/^(.*?):(\d+)(?::\d+)?$/);
-  if (!match) return undefined;
+  if (!match) {return undefined;}
   const file = match[1];
   const line = parseInt(match[2], 10);
   return { file, line: Number.isFinite(line) ? line : undefined };
@@ -214,17 +214,17 @@ export function selectFilePath(primary?: string, fallback?: string): string | un
   if (primary && primary.trim().length > 0) {
     const normalized = primary.trim();
     const hasSeparator = normalized.includes('/') || normalized.includes(path.sep);
-    if (hasSeparator || !fallback) return normalized;
+    if (hasSeparator || !fallback) {return normalized;}
     const fallbackDir = fallback.includes('/') || fallback.includes(path.sep)
       ? path.posix.dirname(fallback).replace(/\\/g, '/')
       : '';
-    if (fallbackDir) return path.posix.join(fallbackDir, normalized);
+    if (fallbackDir) {return path.posix.join(fallbackDir, normalized);}
     return normalized;
   }
   return fallback;
 }
 
 export function toAbsolutePath(filePath: string, workspacePath: string): string {
-  if (path.isAbsolute(filePath)) return filePath;
+  if (path.isAbsolute(filePath)) {return filePath;}
   return path.join(workspacePath, filePath);
 }

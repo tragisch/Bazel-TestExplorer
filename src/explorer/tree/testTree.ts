@@ -213,7 +213,7 @@ function createTestItem(
   
   // Add size and timeout warnings for large/long-running tests
   const sizeIcon = testTarget.size === 'enormous' ? '🔴 ' : testTarget.size === 'large' ? '🟠 ' : '';
-  const timeoutValue = testTarget.timeout != null ? parseInt(testTarget.timeout, 10) : NaN;
+  const timeoutValue = testTarget.timeout !== null && testTarget.timeout !== undefined ? parseInt(testTarget.timeout, 10) : NaN;
   const timeoutIcon = !Number.isNaN(timeoutValue) && timeoutValue > 300 ? '⏱️ ' : '';
   if (sizeIcon || timeoutIcon) {
     label = `${sizeIcon}${timeoutIcon}${label}`;

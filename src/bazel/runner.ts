@@ -57,7 +57,7 @@ function mergeFlags(...arrays: string[][]): string[] {
       const key = arg.startsWith('--') ? arg.split('=')[0] : arg;
       if (map.has(key)) {
         const idx = order.indexOf(key);
-        if (idx !== -1) order.splice(idx, 1);
+        if (idx !== -1) {order.splice(idx, 1);}
       }
       map.set(key, arg);
       order.push(key);
@@ -192,8 +192,8 @@ function parseSuiteResults(
     };
     const symbol = symbolMap[status as TestStatus] ?? `${status}`;
 
-    if (status === "PASSED") passed++;
-    else if (status === "FAILED") failed++;
+    if (status === "PASSED") {passed++;}
+    else if (status === "FAILED") {failed++;}
 
     return `${target}  : ${symbol} (${isCached ? "cached, " : ""}${testTime})`;
   });
@@ -529,9 +529,9 @@ export const initiateBazelTest = async (
   if (config.runsPerTest && config.runsPerTest > 0) {
     runSpecificFlags.push(`--runs_per_test=${config.runsPerTest}`);
   }
-  if (config.runsPerTestDetectsFlakes) runSpecificFlags.push('--runs_per_test_detects_flakes');
-  if (config.nocacheTestResults) runSpecificFlags.push('--nocache_test_results');
-  if (config.testStrategyExclusive) runSpecificFlags.push('--test_strategy=exclusive');
+  if (config.runsPerTestDetectsFlakes) {runSpecificFlags.push('--runs_per_test_detects_flakes');}
+  if (config.nocacheTestResults) {runSpecificFlags.push('--nocache_test_results');}
+  if (config.testStrategyExclusive) {runSpecificFlags.push('--test_strategy=exclusive');}
 
   // Per-target flags (from tags/metadata)
   const perTargetFlags = computePerTargetFlags(effectiveTestId);
@@ -580,9 +580,9 @@ export const initiateBazelTest = async (
     : '1';
 
   // Only set vars if they are not already provided in the environment
-  if (!env.TEST_TOTAL_SHARDS) env.TEST_TOTAL_SHARDS = totalShards;
-  if (!env.TEST_SHARD_INDEX) env.TEST_SHARD_INDEX = '0';
-  if (!env.TEST_SHARD_STATUS_FILE) env.TEST_SHARD_STATUS_FILE = path.join(cwd, '.vscode_bazel_shard_status');
+  if (!env.TEST_TOTAL_SHARDS) {env.TEST_TOTAL_SHARDS = totalShards;}
+  if (!env.TEST_SHARD_INDEX) {env.TEST_SHARD_INDEX = '0';}
+  if (!env.TEST_SHARD_STATUS_FILE) {env.TEST_SHARD_STATUS_FILE = path.join(cwd, '.vscode_bazel_shard_status');}
   logWithTimestamp(`Shard env: TEST_SHARD_INDEX=${env.TEST_SHARD_INDEX}, TEST_TOTAL_SHARDS=${env.TEST_TOTAL_SHARDS}`);
 
   const result = await runBazelCommand(
@@ -621,11 +621,11 @@ function extractTestCaseName(id: string): string {
 
 function matchTestCaseName(testCase: IndividualTestCase, targetLower: string): boolean {
   const nameLower = testCase.name.toLowerCase();
-  if (nameLower === targetLower) return true;
+  if (nameLower === targetLower) {return true;}
   const scope = (testCase.suite || testCase.className || '').toLowerCase();
   if (scope) {
     const combined = `${scope}::${nameLower}`;
-    if (combined === targetLower) return true;
+    if (combined === targetLower) {return true;}
   }
   return false;
 }

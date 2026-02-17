@@ -202,14 +202,14 @@ suite('BazelClient', () => {
             JSON.stringify({ type: 'RULE', rule: { name: '//src/bin:test_two', ruleClass: 'py_test', attribute: [] } })
           ];
           for (const l of lines) {
-            if (onLine) onLine(l);
+            if (onLine) {onLine(l);}
           }
           return { code: 0, stdout: lines.join('\n'), stderr: '' };
         }
 
         if (args[0] === 'version') {
           const line = 'Build label: bazel 6.0.0';
-          if (onLine) onLine(line);
+          if (onLine) {onLine(line);}
           return { code: 0, stdout: line + '\n', stderr: '' };
         }
 

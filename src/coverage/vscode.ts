@@ -24,7 +24,7 @@ export const parseLcovToFileCoverage = (
 
 	for (const rawLine of lcov.replace(/\r\n/g, '\n').split('\n')) {
 		const line = rawLine.trim();
-		if (!line) continue;
+		if (!line) {continue;}
 
 		if (line.startsWith('SF:')) {
 			const sfPath = line.slice(3);
@@ -45,7 +45,7 @@ export const parseLcovToFileCoverage = (
 				continue;
 			}
 			const fileMap = coverageByFile.get(currentFile);
-			if (!fileMap) continue;
+			if (!fileMap) {continue;}
 			const previous = fileMap.get(lineNum) ?? 0;
 			fileMap.set(lineNum, previous + hitNum);
 			continue;
@@ -53,9 +53,9 @@ export const parseLcovToFileCoverage = (
 
 		if (line.startsWith('LF:') && currentFile) {
 			const total = Number(line.slice(3));
-			if (!Number.isFinite(total) || total <= 0) continue;
+			if (!Number.isFinite(total) || total <= 0) {continue;}
 			const fileMap = coverageByFile.get(currentFile);
-			if (!fileMap || fileMap.size > 0) continue;
+			if (!fileMap || fileMap.size > 0) {continue;}
 			for (let i = 1; i <= total; i += 1) {
 				fileMap.set(i - 1, 0);
 			}
@@ -64,12 +64,12 @@ export const parseLcovToFileCoverage = (
 
 		if (line.startsWith('LH:') && currentFile) {
 			const covered = Number(line.slice(3));
-			if (!Number.isFinite(covered) || covered <= 0) continue;
+			if (!Number.isFinite(covered) || covered <= 0) {continue;}
 			const fileMap = coverageByFile.get(currentFile);
-			if (!fileMap || fileMap.size === 0) continue;
+			if (!fileMap || fileMap.size === 0) {continue;}
 			let count = 0;
 			for (const key of fileMap.keys()) {
-				if (count >= covered) break;
+				if (count >= covered) {break;}
 				fileMap.set(key, 1);
 				count += 1;
 			}
@@ -99,7 +99,7 @@ export const getCoverageDetailsForFile = (coverage: vscode.FileCoverage): vscode
 const toLcovPath = (filePath: string): string => filePath.replace(/\\/g, '/');
 
 const normalizeCoveragePath = (filePath: string, execRoot?: string): string => {
-	if (!execRoot) return filePath;
+	if (!execRoot) {return filePath;}
 	const normalizedExecRoot = path.normalize(execRoot);
 	const normalizedPath = path.normalize(filePath);
 	if (normalizedPath.startsWith(normalizedExecRoot + path.sep)) {
@@ -246,7 +246,7 @@ export const demangleCoverageDetails = async (
 		}
 	}
 
-	if (names.length === 0) return;
+	if (names.length === 0) {return;}
 
 	const rustResults = await demangleSymbols(names, 'rust', rustToolPath);
 	const cppResults = await demangleSymbols(names, 'cpp', cppToolPath);

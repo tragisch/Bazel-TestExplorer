@@ -26,8 +26,8 @@ export const logWithTimestamp = (message: string, level: "info" | "warn" | "erro
     const now = new Date().toISOString().replace("T", " ").replace("Z", "");
     const timestamp = `${now} `;
     let tag = `[Info] `;
-    if (level === "warn") tag = `[Warn] `;
-    if (level === "error") tag = `[Error] `;
+    if (level === "warn") {tag = `[Warn] `;}
+    if (level === "error") {tag = `[Error] `;}
     const indentedMessage = message.split("\n").map(line => `  ${line}`).join("\n");
     logger.appendLine(`${timestamp} ${tag} ${indentedMessage}`);
 };

@@ -61,7 +61,7 @@ export const initializeCoverageState = (
 	}
 	const entries = Object.entries(raw as Record<string, CoverageTargetState | CoverageSummary>);
 	for (const [key, value] of entries) {
-		if (!value || typeof value !== 'object') continue;
+		if (!value || typeof value !== 'object') {continue;}
 		if ('latest' in value && 'runs' in value) {
 			coverageByTarget.set(key, value as CoverageTargetState);
 			continue;

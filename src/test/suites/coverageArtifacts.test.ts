@@ -32,7 +32,7 @@ suite('Coverage Artifacts', () => {
 		assert.strictEqual(results.profdata.length, 1);
 
 		files.forEach(file => {
-			if (fs.existsSync(file)) fs.unlinkSync(file);
+			if (fs.existsSync(file)) {fs.unlinkSync(file);}
 		});
 		fs.rmSync(root, { recursive: true, force: true });
 	});

@@ -31,8 +31,8 @@ suite('Run Profile - Manual Tag Filtering', () => {
     const mockClient = {
       runTest: async (_t: any, _run: any) => { /* no-op */ },
       getTargetMetadata: (id: string) => {
-        if (id === '//pkg:manual_test') return { target: id, type: 'cc_test', tags: ['manual'] };
-        if (id === '//pkg:normal_test') return { target: id, type: 'cc_test', tags: [] };
+        if (id === '//pkg:manual_test') {return { target: id, type: 'cc_test', tags: ['manual'] };}
+        if (id === '//pkg:normal_test') {return { target: id, type: 'cc_test', tags: [] };}
         return undefined;
       }
     } as any;

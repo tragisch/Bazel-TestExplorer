@@ -285,11 +285,11 @@ async function executeSingleBazelQuery(query: string, workspacePath: string, con
 }
 
 function parseBazelLine(line: string): void {
-  if (line.trim() === '') return;
+  if (line.trim() === '') {return;}
 
   try {
     const target = JSON.parse(line);
-    if (target.type !== "RULE" || !target.rule) return;
+    if (target.type !== "RULE" || !target.rule) {return;}
 
     const rule = target.rule;
     const targetName = rule.name;

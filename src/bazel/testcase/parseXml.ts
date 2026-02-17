@@ -98,7 +98,7 @@ export function parseStructuredTestXml(
     const testcases = collectTestCasesFromSuite(suite);
     for (const tc of testcases) {
       const name = decodeXmlEntities((tc?.name ?? '') as string);
-      if (!name) continue;
+      if (!name) {continue;}
 
       const file = decodeXmlEntities((tc?.file ?? '') as string);
       const line = tc?.line ? parseInt(String(tc.line), 10) || 0 : 0;
@@ -430,28 +430,28 @@ function collectSystemOutSections(xml: string): string[] {
 
 function collectSuites(doc: any): any[] {
   // JUnit variants: root testsuite, or testsuites -> testsuite[]
-  if (!doc) return [];
+  if (!doc) {return [];}
   const suites: any[] = [];
   if (doc.testsuite) {
     suites.push(doc.testsuite);
   }
   if (doc.testsuites) {
     const ts = doc.testsuites.testsuite ?? doc.testsuites;
-    if (Array.isArray(ts)) suites.push(...ts);
-    else if (ts) suites.push(ts);
+    if (Array.isArray(ts)) {suites.push(...ts);}
+    else if (ts) {suites.push(ts);}
   }
   return suites.flatMap(s => (Array.isArray(s) ? s : [s]).filter(Boolean));
 }
 
 function collectTestCasesFromSuite(suite: any): any[] {
-  if (!suite) return [];
+  if (!suite) {return [];}
   const tc = suite.testcase ?? suite['testcase'];
-  if (Array.isArray(tc)) return tc;
+  if (Array.isArray(tc)) {return tc;}
   return tc ? [tc] : [];
 }
 
 function normalizeTag(node: any): ParsedTag | undefined {
-  if (!node) return undefined;
+  if (!node) {return undefined;}
   // If multiple tags present
   const n = Array.isArray(node) ? node[0] : node;
   if (typeof n === 'string') {
@@ -474,8 +474,8 @@ function collectSystemOutSectionsFromDoc(doc: any): string[] {
     const so = s['system-out'] ?? s.system_out;
     if (Array.isArray(so)) {
       for (const seg of so) {
-        if (typeof seg === 'string') out.push(decodeCData(seg));
-        else if (seg && typeof seg['#text'] === 'string') out.push(decodeCData(seg['#text']));
+        if (typeof seg === 'string') {out.push(decodeCData(seg));}
+        else if (seg && typeof seg['#text'] === 'string') {out.push(decodeCData(seg['#text']));}
       }
     } else if (typeof so === 'string') {
       out.push(decodeCData(so));
@@ -489,8 +489,8 @@ function collectSystemOutSectionsFromDoc(doc: any): string[] {
       const tso = tc['system-out'] ?? tc.system_out;
       if (Array.isArray(tso)) {
         for (const seg of tso) {
-          if (typeof seg === 'string') out.push(decodeCData(seg));
-          else if (seg && typeof seg['#text'] === 'string') out.push(decodeCData(seg['#text']));
+          if (typeof seg === 'string') {out.push(decodeCData(seg));}
+          else if (seg && typeof seg['#text'] === 'string') {out.push(decodeCData(seg['#text']));}
         }
       } else if (typeof tso === 'string') {
         out.push(decodeCData(tso));

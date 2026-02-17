@@ -111,14 +111,14 @@ export function runBazelCommand(
         rl.on('line', line => {
             const normalizedLine = line.replace(/\r?\n/g, '\r\n');
             stdout += normalizedLine + '\n';
-            if (onLine) onLine(normalizedLine);
+            if (onLine) {onLine(normalizedLine);}
         });
 
         const errorRl = readline.createInterface({ input: proc.stderr });
         errorRl.on('line', line => {
             const normalizedLine = line.replace(/\r?\n/g, '\r\n');
             stderr += normalizedLine + '\n';
-            if (onErrorLine) onErrorLine(normalizedLine);
+            if (onErrorLine) {onErrorLine(normalizedLine);}
         });
 
         proc.on('close', code => {

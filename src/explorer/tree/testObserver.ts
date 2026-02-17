@@ -50,13 +50,13 @@ export class TestObserver implements vscode.Disposable {
   private handleEvent(e: TestEvent) {
     switch (e.type) {
       case 'started':
-        if (this.verboseLogging) logWithTimestamp(`Test started: ${e.testId}`);
+        if (this.verboseLogging) {logWithTimestamp(`Test started: ${e.testId}`);}
         break;
       case 'passed':
       case 'failed':
       case 'skipped':
         this.pushHistory({ testId: e.testId, type: e.type, durationMs: e.durationMs, message: e.message, timestamp: e.timestamp });
-        if (this.verboseLogging) logWithTimestamp(`Test ${e.type}: ${e.testId} (${e.durationMs ?? 0}ms)`);
+        if (this.verboseLogging) {logWithTimestamp(`Test ${e.type}: ${e.testId} (${e.durationMs ?? 0}ms)`);}
         break;
       case 'output':
         // Throttle or silence per-line output unless verbose logging enabled
@@ -69,7 +69,7 @@ export class TestObserver implements vscode.Disposable {
 
   private pushHistory(entry: TestHistoryEntry) {
     this.history.unshift(entry);
-    if (this.history.length > this.maxEntries) this.history.length = this.maxEntries;
+    if (this.history.length > this.maxEntries) {this.history.length = this.maxEntries;}
   }
 
   getHistory(): ReadonlyArray<TestHistoryEntry> {
@@ -77,12 +77,12 @@ export class TestObserver implements vscode.Disposable {
   }
 
   private toMessageString(msg?: string | vscode.MarkdownString): string {
-    if (!msg) return '';
+    if (!msg) {return '';}
     return typeof msg === 'string' ? msg : msg.value ?? String(msg);
   }
 
   dispose() {
-    for (const d of this.disposables) d.dispose();
+    for (const d of this.disposables) {d.dispose();}
   }
 }
 

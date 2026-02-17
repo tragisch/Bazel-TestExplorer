@@ -54,7 +54,7 @@ export const extractTestCasesFromOutput = (
   const activeRustWatchers = new Set<string>();
 
   const flushUnittestCase = () => {
-    if (!pendingUnittest) return;
+    if (!pendingUnittest) {return;}
     const file = pendingUnittest.file || '';
     const lineValue = pendingUnittest.line || 0;
     const testCase: IndividualTestCase = {
@@ -294,7 +294,7 @@ export const extractTestCasesFromOutput = (
   flushUnittestCase();
 
   for (const [testName, messages] of collectingMessage.entries()) {
-    if (messages.length === 0) continue;
+    if (messages.length === 0) {continue;}
     const targetCase = findLatestTestCase(testCases, testName);
     if (targetCase && !targetCase.errorMessage) {
       targetCase.errorMessage = messages.join('\n');

@@ -419,17 +419,17 @@ export class TestControllerManager {
 
   private findTestItemById(targetId: string): vscode.TestItem | undefined {
     const visit = (item: vscode.TestItem): vscode.TestItem | undefined => {
-      if (item.id === targetId) return item;
+      if (item.id === targetId) {return item;}
       for (const [, child] of item.children) {
         const found = visit(child);
-        if (found) return found;
+        if (found) {return found;}
       }
       return undefined;
     };
 
     for (const [, item] of this.controller.items) {
       const found = visit(item);
-      if (found) return found;
+      if (found) {return found;}
     }
     return undefined;
   }
@@ -461,8 +461,8 @@ export class TestControllerManager {
     const collectAllTests = (item: vscode.TestItem): vscode.TestItem[] => {
       const collected: vscode.TestItem[] = [];
       const visit = (node: vscode.TestItem) => {
-        if (node.children.size === 0) collected.push(node);
-        else node.children.forEach(visit);
+        if (node.children.size === 0) {collected.push(node);}
+        else {node.children.forEach(visit);}
       };
       visit(item);
       return collected;

@@ -26,7 +26,7 @@ vscode.workspace.onDidChangeWorkspaceFolders(() => {
 });
 
 export const findBazelWorkspace = async (): Promise<string | null> => {
-  if (cachedWorkspace) return cachedWorkspace;
+  if (cachedWorkspace) {return cachedWorkspace;}
 
   const possibleFiles = ['MODULE.bazel', 'WORKSPACE.bazel', 'WORKSPACE'];
 

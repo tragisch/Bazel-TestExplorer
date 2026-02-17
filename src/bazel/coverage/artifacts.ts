@@ -75,7 +75,7 @@ export const extractLcovPathFromOutput = (output: string): string | undefined =>
 	for (const line of lines) {
 		const marker = 'LCOV coverage report is located at ';
 		const index = line.indexOf(marker);
-		if (index === -1) continue;
+		if (index === -1) {continue;}
 		const pathPart = line.slice(index + marker.length).trim();
 		if (pathPart.length > 0) {
 			return pathPart;
@@ -86,7 +86,7 @@ export const extractLcovPathFromOutput = (output: string): string | undefined =>
 
 export const extractBazelBinExecPath = (output: string): string | undefined => {
 	const matches = Array.from(output.matchAll(/bazel-bin\/[^\s]+/g));
-	if (matches.length === 0) return undefined;
+	if (matches.length === 0) {return undefined;}
 	return matches[matches.length - 1]?.[0];
 };
 
@@ -95,7 +95,7 @@ export const convertProfrawToLcov = async (
 	binaryPath: string,
 	cancellationToken?: vscode.CancellationToken
 ): Promise<{ path: string; content: string } | undefined> => {
-	if (profrawFiles.length === 0) return undefined;
+	if (profrawFiles.length === 0) {return undefined;}
 	const profdataPath = path.join(os.tmpdir(), `bazel-coverage-${Date.now()}.profdata`);
 
 	const runTool = async (tool: string, args: string[]): Promise<{ ok: boolean; stdout: string; stderr: string }> => {
@@ -178,8 +178,8 @@ export const findCoverageArtifacts = async (
 	const profdataExt = new Set(['.profdata']);
 
 	const walk = async (dir: string): Promise<void> => {
-		if (cancellationToken?.isCancellationRequested) return;
-		if (visited.has(dir)) return;
+		if (cancellationToken?.isCancellationRequested) {return;}
+		if (visited.has(dir)) {return;}
 		visited.add(dir);
 		let entries: fs.Dirent[];
 		try {
@@ -188,14 +188,14 @@ export const findCoverageArtifacts = async (
 			return;
 		}
 		for (const entry of entries) {
-			if (cancellationToken?.isCancellationRequested) return;
+			if (cancellationToken?.isCancellationRequested) {return;}
 			if (entry.isDirectory()) {
 				// Include _coverage folder (created by --combined_report=lcov), but skip other ignored dirs
-				if (ignoreDirs.has(entry.name) && entry.name !== '_coverage') continue;
+				if (ignoreDirs.has(entry.name) && entry.name !== '_coverage') {continue;}
 				await walk(path.join(dir, entry.name));
 				continue;
 			}
-			if (!entry.isFile()) continue;
+			if (!entry.isFile()) {continue;}
 			const fullPath = path.join(dir, entry.name);
 			const ext = path.extname(entry.name);
 			if (lcovExt.has(ext)) {
@@ -211,7 +211,7 @@ export const findCoverageArtifacts = async (
 	};
 
 	for (const root of searchRoots) {
-		if (!root) continue;
+		if (!root) {continue;}
 		await walk(root);
 	}
 
@@ -257,7 +257,7 @@ export const loadFirstValidLcov = async (
 	];
 	const unique = Array.from(new Set(prioritized));
 	for (const file of unique) {
-		if (cancellationToken?.isCancellationRequested) return undefined;
+		if (cancellationToken?.isCancellationRequested) {return undefined;}
 		try {
 			const stat = await fs.promises.stat(file);
 			const content = await fs.promises.readFile(file, 'utf8');
@@ -304,10 +304,10 @@ const hasLcovRecords = (content: string, logFn?: (msg: string) => void): boolean
 	// Check for LCOV format markers
 	for (const raw of lines) {
 		const line = raw.trim();
-		if (!line) continue;
-		if (line.startsWith('SF:')) hasSource = true;
-		if (line.startsWith('DA:') || line.startsWith('LF:')) hasLines = true;
-		if (hasSource && hasLines) return true;
+		if (!line) {continue;}
+		if (line.startsWith('SF:')) {hasSource = true;}
+		if (line.startsWith('DA:') || line.startsWith('LF:')) {hasLines = true;}
+		if (hasSource && hasLines) {return true;}
 	}
 	
 	// If not LCOV, log first few lines for debugging

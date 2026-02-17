@@ -29,7 +29,7 @@ export const parseLcov = (content: string): CoverageModel => {
 
 	for (const rawLine of content.split(/\r?\n/)) {
 		const line = rawLine.trim();
-		if (!line) continue;
+		if (!line) {continue;}
 
 		if (line.startsWith('SF:')) {
 			if (current) {
@@ -70,8 +70,8 @@ export const resolveCoverageFilePath = (
 	workspaceRoot: string,
 	fallbackRoot?: string
 ): string => {
-	if (!filePath) return filePath;
-	if (path.isAbsolute(filePath)) return filePath;
+	if (!filePath) {return filePath;}
+	if (path.isAbsolute(filePath)) {return filePath;}
 	const primary = path.join(workspaceRoot, filePath);
 	if (fs.existsSync(primary)) {
 		return primary;

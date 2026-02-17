@@ -189,7 +189,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	// refresh on events (but ignore high-volume 'output' events)
 	const testEventDisposable = onDidTestEvent((e) => {
-		if (e?.type === 'output') return; // skip per-line output events to avoid UI churn
+		if (e?.type === 'output') {return;} // skip per-line output events to avoid UI churn
 		historyProvider.refresh();
 		updateStatus();
 	});
@@ -206,14 +206,14 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand('bazelTestExplorer.openHistoryItem', async (entry: any) => {
-			if (!entry) return;
+			if (!entry) {return;}
 			const body = typeof entry.message === 'string' ? entry.message : (entry.message?.value ?? '');
 			const contentLines: string[] = [];
 			contentLines.push(`--- Test: ${entry.testId} ---`);
 			contentLines.push(`Status: ${entry.type}`);
 			contentLines.push(`Duration: ${entry.durationMs ?? '-'} ms`);
 			contentLines.push('');
-			if (body) contentLines.push(body);
+			if (body) {contentLines.push(body);}
 			const content = contentLines.join('\n');
 			const doc = await vscode.workspace.openTextDocument({ content, language: 'text' });
 			await vscode.window.showTextDocument(doc, { preview: true, viewColumn: vscode.ViewColumn.Beside });
@@ -224,7 +224,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		}),
 
 		vscode.commands.registerCommand('bazelTestExplorer.rerunTestFromHistory', async (testId: string) => {
-			if (!testId) return;
+			if (!testId) {return;}
 			try {
 				await testManager.runTestsByIds([testId]);
 			} catch (err) {
