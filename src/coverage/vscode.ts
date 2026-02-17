@@ -155,6 +155,10 @@ export const normalizeLcovContent = (
 		}
 
 		if (line.startsWith('SF:')) {
+			// A new SF: line implicitly ends any previous record that
+			// lacked an end_of_record marker (guards against truncated LCOV).
+			currentRecordFiltered = false;
+
 			const originalPath = line.slice(3).trim();
 			const normalizedPath = normalizeLcovSourcePath(originalPath, normalizedWorkspace, normalizedExecRoot);
 			const shouldFilter = shouldFilterCoveragePath(normalizedPath, options);

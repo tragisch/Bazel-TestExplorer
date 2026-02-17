@@ -271,7 +271,11 @@ export async function activate(context: vscode.ExtensionContext) {
 
 			coverageOutput.show(true);
 			coverageOutput.appendLine(`[coverage] targets=${targetLabels.length}`);
-			const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? workspaceRoot;
+			// Use a single consistent workspace path throughout the coverage flow.
+			// workspaceRoot comes from findBazelWorkspace() (the directory containing
+			// MODULE.bazel / WORKSPACE.bazel / WORKSPACE) and is the correct root for
+			// resolving Bazel-relative coverage paths.
+			const workspaceFolder = workspaceRoot;
 			const runner = new BazelCoverageRunner(coverageOutput);
 
 			await vscode.window.withProgress(
@@ -475,7 +479,7 @@ export async function activate(context: vscode.ExtensionContext) {
 								`[coverage] normalized lcov updated=${normalized.updatedRecords} removed=${normalized.removedRecords}`
 							);
 							const normalizedReportPath = centralCoverage
-								?? path.join(workspaceRoot, 'bazel-out', '_coverage', '_coverage_report.dat');
+								?? path.join(workspaceFolder, 'bazel-out', '_coverage', '_coverage_report.dat');
 							try {
 								await fs.promises.mkdir(path.dirname(normalizedReportPath), { recursive: true });
 								await fs.promises.writeFile(normalizedReportPath, normalized.content, 'utf8');
