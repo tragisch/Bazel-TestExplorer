@@ -3,14 +3,14 @@
 All notable changes to the "bazel-unity-test" extension will be documented here.
 
 ## [Unreleased]
-- Coverage: Add `--combined_report=lcov` to default coverage args
-- Coverage: Improved central coverage report detection (`bazel-out/_coverage/_coverage_report.dat`)
-- Coverage: Enhanced artifact search to include `_coverage` folder
-- Coverage: Prioritize `coverage.dat` over empty `baseline_coverage.dat` files
-- Coverage: Added detailed logging for LCOV file validation and rejection reasons
-- Coverage: Added format detection to identify non-LCOV coverage files (gcov, etc.)
-- Coverage: Improved error messages with actionable suggestions for instrumentation filter issues
-- Docs: Added comprehensive coverage troubleshooting guide with format validation tips
+- No unreleased changes.
+
+## [0.1.17] - 2026-02-17
+- Coverage run target handling fixed for discovered test cases (`::` IDs now normalize to Bazel target labels).
+- Test case discovery now respects configured `bazelPath` consistently.
+- Activation now includes `WORKSPACE.bazel` workspaces.
+- Discovery query paths are normalized to safely handle `//...` and similar recursive inputs.
+- Maintenance: consolidated test-pattern source and cleaned up lint warnings.
 
 ## [0.1.16] - 2025-12-23
 - Coverage Integration: Bazel coverage runs via Testing UI with Coverage tab in Test Details

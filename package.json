@@ -2,7 +2,7 @@
   "name": "bazel-testexplorer",
   "displayName": "Bazel-TestExplorer",
   "description": "A VS Code extension to run and manage Bazel tests.",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "icon": "images/icon_Bazel_TestExplorer.png",
   "engines": {
     "vscode": "^1.99.0"
@@ -232,6 +232,8 @@
     }
   },
   "scripts": {
+    "lint": "eslint \"src/**/*.ts\"",
+    "lint:fix": "eslint \"src/**/*.ts\" --fix",
     "compile": "npm run check-types && tsc -p tsconfig.json && node esbuild.js",
     "check-types": "tsc --noEmit",
     "watch": "npm-run-all -p watch:*",
