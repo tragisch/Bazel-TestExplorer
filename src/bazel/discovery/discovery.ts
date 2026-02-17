@@ -14,10 +14,9 @@ import { createHash } from 'crypto';
 import { callRunBazelCommandForTest } from '../runner';
 import { logWithTimestamp, formatError } from '../../logging';
 import { TestCaseParseResult, BazelTestTarget } from '../types';
-import { PATTERN_IDS_BY_TEST_TYPE } from './patterns';
+import { PATTERN_IDS_BY_TEST_TYPE, getAllTestPatterns } from '../testPatterns';
 import { getTestTargetById } from '../queries';
 import { parseUnifiedTestResult } from '../testcase/testResultParser';
-import { getAllTestPatterns } from '../testPatterns';
 import { FRAMEWORK_PATTERNS, detectFrameworks } from '../frameworkDetection';
 
 export { setTestXmlLoader, getTestXmlLoader } from '../testcase/testResultParser';

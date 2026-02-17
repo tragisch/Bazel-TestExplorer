@@ -8,4 +8,4 @@
 
 // Re-export from the actual implementation file
 export * from './discovery';
-// Note: discovery.ts imports './patterns' internally
+// discovery.ts imports shared test patterns from ../testPatterns
