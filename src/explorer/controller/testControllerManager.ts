@@ -20,6 +20,7 @@
 
 import * as vscode from 'vscode';
 import { BazelClient } from '../../bazel/client';
+import { clearDiscoveryCache } from '../../bazel/discovery';
 import { ConfigurationService } from '../../configuration';
 import { discoverAndDisplayTests, resolveTestCaseChildren } from '../tree';
 import { showCombinedTestPanel } from '../panel';
@@ -104,6 +105,8 @@ export class TestControllerManager {
       vscode.commands.registerCommand('extension.reloadBazelTests', async () => {
         logWithTimestamp('Reloading Bazel tests...');
         try {
+          this.bazelClient.clearCache();
+          clearDiscoveryCache();
           await vscode.window.withProgress(
             {
               location: vscode.ProgressLocation.Window,
@@ -233,6 +236,7 @@ export class TestControllerManager {
       this.debounceTimer = setTimeout(() => {
         // Invalidate cache on BUILD changes
         this.bazelClient.clearCache();
+        clearDiscoveryCache();
         logWithTimestamp('BUILD files changed, cache invalidated. Reloading tests...');
         vscode.commands.executeCommand('extension.reloadBazelTests');
       }, 2000);
@@ -253,6 +257,7 @@ export class TestControllerManager {
       vscode.workspace.onDidChangeConfiguration((e) => {
         if (e.affectsConfiguration('bazelTestExplorer')) {
           logWithTimestamp('Configuration changed. Reloading tests...');
+          clearDiscoveryCache();
           void vscode.window.withProgress(
             {
               location: vscode.ProgressLocation.Window,

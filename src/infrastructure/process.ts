@@ -33,6 +33,18 @@ export const cancelAllBazelProcesses = (): number => {
         try {
             proc.kill('SIGTERM');
             count += 1;
+            // Fallback: force-kill if process ignores SIGTERM
+            const killTimer = setTimeout(() => {
+                try {
+                    if (proc.exitCode === null && proc.signalCode === null) {
+                        proc.kill('SIGKILL');
+                    }
+                } catch {
+                    // Process may already be gone
+                }
+            }, 5_000);
+            killTimer.unref();
+            proc.once('close', () => clearTimeout(killTimer));
         } catch {
             // ignore
         }
@@ -93,7 +105,7 @@ export function runBazelCommand(
             // Fallback: force-kill if SIGTERM is ignored after 5 seconds
             const killTimer = setTimeout(() => {
                 try {
-                    if (!proc.killed) {
+                    if (proc.exitCode === null && proc.signalCode === null) {
                         logWithTimestamp(`Force-killing Bazel process (SIGTERM ignored): ${bazelPath} ${args.join(" ")}`);
                         proc.kill('SIGKILL');
                     }

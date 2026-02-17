@@ -25,7 +25,7 @@ import { onDidTestEvent } from './explorer/events';
 import { TestCaseAnnotations, TestCaseCodeLensProvider, TestCaseHoverProvider } from './explorer/annotations';
 import { TestCaseInsights } from './explorer/panel';
 import { showCombinedTestPanel } from './explorer/panel';
-import { parseLcovToFileCoverage, getCoverageDetailsForFile, demangleCoverageDetails, normalizeLcovContent } from './coverage/vscode';
+import { parseLcovToFileCoverage, getCoverageDetailsForFile, demangleCoverageDetails, normalizeLcovContent, clearCoverageDetailsCache } from './coverage/vscode';
 import { initializeCoverageState, setCoverageSummary } from './coverage/state';
 import { BazelCoverageRunner, resolveBazelInfo, findCoverageArtifacts, loadFirstValidLcov, extractLcovPathFromOutput, extractBazelBinExecPath, convertProfrawToLcov } from './bazel/coverage/artifacts';
 import { cancelAllBazelProcesses } from './infrastructure/process';
@@ -135,6 +135,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	const coverageOutput = vscode.window.createOutputChannel('Coverage');
 	context.subscriptions.push(coverageOutput);
+	let isCoverageRunInProgress = false;
 	const applyCoverageSummary = (item: vscode.TestItem, coverages: vscode.FileCoverage[]) => {
 		let covered = 0;
 		let total = 0;
@@ -248,26 +249,33 @@ export async function activate(context: vscode.ExtensionContext) {
 		}),
 
 		vscode.commands.registerCommand('bazelTestExplorer.showCoverageDetails', async (items?: vscode.TestItem | vscode.TestItem[]) => {
-			const selectedItems = Array.isArray(items)
-				? items
-				: items
-					? [items]
-					: [];
-			const normalizeTargetLabel = (value: string): string => {
-				const trimmed = value.trim();
-				return trimmed.includes('::') ? trimmed.split('::')[0] : trimmed;
-			};
-			const targetLabels = Array.from(
-				new Set(
-					selectedItems
-						.map(item => normalizeTargetLabel(item.id ?? item.label))
-						.filter(label => label.includes(':') && !label.includes('::'))
-				)
-			);
-			if (targetLabels.length === 0) {
-				void vscode.window.showInformationMessage('No Bazel test targets selected for coverage.');
+			if (isCoverageRunInProgress) {
+				void vscode.window.showWarningMessage('Coverage run already in progress. Please wait for it to finish.');
 				return;
 			}
+			isCoverageRunInProgress = true;
+			clearCoverageDetailsCache();
+			try {
+				const selectedItems = Array.isArray(items)
+					? items
+					: items
+						? [items]
+						: [];
+				const normalizeTargetLabel = (value: string): string => {
+					const trimmed = value.trim();
+					return trimmed.includes('::') ? trimmed.split('::')[0] : trimmed;
+				};
+				const targetLabels = Array.from(
+					new Set(
+						selectedItems
+							.map(item => normalizeTargetLabel(item.id ?? item.label))
+							.filter(label => label.includes(':') && !label.includes('::'))
+					)
+				);
+				if (targetLabels.length === 0) {
+					void vscode.window.showInformationMessage('No Bazel test targets selected for coverage.');
+					return;
+				}
 
 			coverageOutput.show(true);
 			coverageOutput.appendLine(`[coverage] targets=${targetLabels.length}`);
@@ -546,20 +554,27 @@ export async function activate(context: vscode.ExtensionContext) {
 			);
 
 			// Fire-and-forget: prompt the user to open coverage without blocking progress
-			void vscode.window.showInformationMessage('Coverage updated.', 'Open Coverage').then(async (action) => {
-				if (action === 'Open Coverage') {
-					try {
-						await vscode.commands.executeCommand('testing.openCoverage');
-					} catch {
-						// Fallback for older VS Code versions
+				void vscode.window.showInformationMessage('Coverage updated.', 'Open Coverage').then(async (action) => {
+					if (action === 'Open Coverage') {
 						try {
-							await vscode.commands.executeCommand('testing.openTesting');
+							await vscode.commands.executeCommand('testing.openCoverage');
 						} catch {
-							coverageOutput.appendLine('[coverage] could not open coverage view automatically');
+							// Fallback for older VS Code versions
+							try {
+								await vscode.commands.executeCommand('testing.openTesting');
+							} catch {
+								coverageOutput.appendLine('[coverage] could not open coverage view automatically');
+							}
 						}
 					}
-				}
-			});
+				});
+			} catch (error) {
+				const message = formatError(error);
+				coverageOutput.appendLine(`[coverage] command failed: ${message}`);
+				void vscode.window.showErrorMessage(`Coverage run failed:\n${message}`);
+			} finally {
+				isCoverageRunInProgress = false;
+			}
 		})
 	);
 

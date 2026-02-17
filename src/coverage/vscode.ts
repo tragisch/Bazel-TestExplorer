@@ -13,6 +13,10 @@ import { resolveCoverageFilePath } from './parser';
 
 const coverageDetailsByUri = new Map<string, vscode.FileCoverageDetail[]>();
 
+export const clearCoverageDetailsCache = (): void => {
+	coverageDetailsByUri.clear();
+};
+
 export const parseLcovToFileCoverage = (
 	lcov: string,
 	baseFolder: string,

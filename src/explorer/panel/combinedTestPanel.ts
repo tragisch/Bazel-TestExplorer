@@ -24,12 +24,13 @@ let panel: vscode.WebviewPanel | undefined;
 let pinned = false;
 let currentId: string | undefined;
 let debounceTimer: NodeJS.Timeout | undefined;
-let pendingArgs: { testId: string; metadata: any; cases: any } | undefined;
+let pendingArgs: { testId: string; metadata: any; cases: any; workspaceRoot?: string } | undefined;
 const DEBOUNCE_MS = 300;
 
 export async function showCombinedTestPanel(testId: string, bazelClient: BazelClient, insights: TestCaseInsights, extensionContext?: vscode.ExtensionContext): Promise<void> {
   const metadata = bazelClient.getTargetMetadata(testId);
   const cases = insights.getResult(testId);
+  const workspaceRoot = bazelClient.workspace;
 
   if (!metadata && !cases) {
     void vscode.window.showWarningMessage(`No metadata or structured test cases found for ${testId}. Try expanding the test target first.`);
@@ -163,12 +164,20 @@ export async function showCombinedTestPanel(testId: string, bazelClient: BazelCl
     return;
   }
 
-  pendingArgs = { testId, metadata, cases };
+  pendingArgs = { testId, metadata, cases, workspaceRoot };
   if (debounceTimer) {clearTimeout(debounceTimer);}
   debounceTimer = setTimeout(() => {
     if (!panel || !pendingArgs) {return;}
     currentId = pendingArgs.testId;
-    panel.webview.html = renderHtml(pendingArgs.testId, pendingArgs.metadata, pendingArgs.cases?.testCases ?? [], pendingArgs.cases?.summary, extensionContext, panel);
+    panel.webview.html = renderHtml(
+      pendingArgs.testId,
+      pendingArgs.metadata,
+      pendingArgs.cases?.testCases ?? [],
+      pendingArgs.cases?.summary,
+      extensionContext,
+      panel,
+      pendingArgs.workspaceRoot
+    );
     pendingArgs = undefined;
     debounceTimer = undefined;
   }, DEBOUNCE_MS);
@@ -179,7 +188,7 @@ function renderHtml(
   metadata: any,
   testCases: IndividualTestCase[],
   summary?: { total: number; passed: number; failed: number; ignored: number }
-  , extensionContext?: vscode.ExtensionContext, panel?: vscode.WebviewPanel
+  , extensionContext?: vscode.ExtensionContext, panel?: vscode.WebviewPanel, workspaceRoot?: string
 ): string {
   const escapeHtml = (input: string | undefined) => (input ?? '')
     .replace(/&/g, '&amp;')
@@ -238,7 +247,6 @@ function renderHtml(
     : `<i>No structured test.xml data captured yet.</i>`;
 
   const coverage = getCoverageSummary(testId);
-  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   const shortenPath = (filePath: string) => {
     if (workspaceRoot && filePath.startsWith(workspaceRoot)) {
       return path.relative(workspaceRoot, filePath) || path.basename(filePath);

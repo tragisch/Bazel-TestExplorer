@@ -13,11 +13,20 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { getCachedWorkspace } from '../bazel/workspace';
 import { BazelTestTarget } from '../bazel/types';
 
 // Package-level cache to avoid repeated fs.existsSync calls for the same package.
 type PackageCacheEntry = { dirExists: boolean; files?: Set<string> };
 const packageFileCache: Map<string, PackageCacheEntry> = new Map();
+
+function resolveWorkspacePath(): string | undefined {
+  const cachedWorkspace = getCachedWorkspace();
+  if (cachedWorkspace) {
+    return cachedWorkspace;
+  }
+  return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+}
 
 export function resolveSourceUri(
   testTarget: BazelTestTarget,
@@ -49,7 +58,7 @@ export function selectPreferredSourceFile(srcs: string[]): string {
 }
 
 export function bazelLabelToUri(label: string): vscode.Uri | undefined {
-  const workspace = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
+  const workspace = resolveWorkspacePath();
   if (!workspace) {return undefined;}
 
   let packagePath: string;
@@ -82,10 +91,13 @@ export function guessSourceUri(
   testName: string,
   testType: string
 ): vscode.Uri | undefined {
-  const workspace = vscode.workspace.workspaceFolders?.[0].uri.fsPath || '';
+  const workspace = resolveWorkspacePath();
+  if (!workspace) {
+    return undefined;
+  }
   const packagePath = packageName.replace(/^\/\//, '');
   const extensions = getExtensionsByType(testType);
-  const packageCacheKey = packagePath;
+  const packageCacheKey = `${workspace}::${packagePath}`;
 
   if (!packageFileCache.has(packageCacheKey)) {
     const dirFull = path.join(workspace, packagePath);

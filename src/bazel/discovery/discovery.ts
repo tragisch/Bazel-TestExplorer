@@ -13,7 +13,7 @@
 import { createHash } from 'crypto';
 import { callRunBazelCommandForTest } from '../runner';
 import { logWithTimestamp, formatError } from '../../logging';
-import { TestCaseParseResult, BazelTestTarget } from '../types';
+import { TestCaseParseResult } from '../types';
 import { PATTERN_IDS_BY_TEST_TYPE, getAllTestPatterns } from '../testPatterns';
 import { getTestTargetById } from '../queries';
 import { parseUnifiedTestResult } from '../testcase/testResultParser';
@@ -21,7 +21,7 @@ import { FRAMEWORK_PATTERNS, detectFrameworks } from '../frameworkDetection';
 
 export { setTestXmlLoader, getTestXmlLoader } from '../testcase/testResultParser';
 
-interface CacheEntry { result: TestCaseParseResult; stdoutHash: string; timestamp: number; }
+interface CacheEntry { result: TestCaseParseResult; timestamp: number; }
 
 // Configuration service for dependency injection
 export interface IConfigService {
@@ -114,10 +114,13 @@ export const discoverIndividualTestCases = async (
       };
     }
 
+    const bazelPath = configService.getBazelPath();
+    const allowedPatterns = resolveAllowedPatterns(testTarget, testType);
+    const cacheKey = buildDiscoveryCacheKey(testTarget, workspacePath, bazelPath, testType, allowedPatterns);
     const ttl = configService.getDiscoveryTtlMs();
-    const cache = discoveryCache.get(testTarget);
+    const cache = discoveryCache.get(cacheKey);
     if (cache && (Date.now() - cache.timestamp) < ttl) {
-      logWithTimestamp(`Using cached test case discovery for ${testTarget}`);
+      logWithTimestamp(`Using cached test case discovery for ${testTarget} (${workspacePath})`);
       return cache.result;
     }
 
@@ -126,15 +129,11 @@ export const discoverIndividualTestCases = async (
     }
 
     // Run the test to get output with individual test case results
-    const bazelPath = configService.getBazelPath();
-    const { stdout, stderr } = await callRunBazelCommandForTest({
+    await callRunBazelCommandForTest({
       testId: testTarget,
       cwd: workspacePath,
       bazelPath
     });
-    const combinedOutput = [stdout, stderr].filter(Boolean).join('\n');
-
-    const allowedPatterns = resolveAllowedPatterns(testTarget, testType);
     // If we have a restricted set of allowed patterns and none of them
     // support individual test case extraction, skip the expensive
     // XML/system-out parsing. This saves time when we already know the
@@ -153,10 +152,9 @@ export const discoverIndividualTestCases = async (
         };
         const entry: CacheEntry = {
           result: empty,
-          stdoutHash: hashService.sha1(combinedOutput),
           timestamp: Date.now()
         };
-        discoveryCache.set(testTarget, entry);
+        discoveryCache.set(cacheKey, entry);
         return empty;
       }
     }
@@ -171,10 +169,9 @@ export const discoverIndividualTestCases = async (
     if (finalResult.testCases.length > 0) {
       const entry: CacheEntry = {
         result: finalResult,
-        stdoutHash: hashService.sha1(combinedOutput),
         timestamp: Date.now()
       };
-      discoveryCache.set(testTarget, entry);
+      discoveryCache.set(cacheKey, entry);
       logWithTimestamp(`Found ${finalResult.testCases.length} test cases for ${testTarget}`);
       return finalResult;
     }
@@ -188,10 +185,9 @@ export const discoverIndividualTestCases = async (
 
     const entry: CacheEntry = {
       result: emptyResult,
-      stdoutHash: hashService.sha1(combinedOutput),
       timestamp: Date.now()
     };
-    discoveryCache.set(testTarget, entry);
+    discoveryCache.set(cacheKey, entry);
 
     return emptyResult;
   } catch (error) {
@@ -206,6 +202,26 @@ export const discoverIndividualTestCases = async (
 export function clearDiscoveryCache(): void {
   discoveryCache.clear();
   logWithTimestamp('Cleared test discovery cache');
+}
+
+function buildDiscoveryCacheKey(
+  testTarget: string,
+  workspacePath: string,
+  bazelPath: string,
+  testType?: string,
+  allowedPatterns?: string[]
+): string {
+  const normalizedPatterns = [...(allowedPatterns ?? [])].sort();
+  const patternKey = normalizedPatterns.join(',');
+  const testTypeKey = testType ?? '';
+  const rawKey = JSON.stringify({
+    workspacePath,
+    bazelPath,
+    testTarget,
+    testType: testTypeKey,
+    allowedPatterns: normalizedPatterns
+  });
+  return `${workspacePath}::${bazelPath}::${testTarget}::${testTypeKey}::${patternKey}::${hashService.sha1(rawKey)}`;
 }
 
 export function getDiscoveryCacheStats(): { size: number; entries: string[] } {

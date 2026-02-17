@@ -28,6 +28,8 @@ export interface CoverageArtifacts {
 	testlogs: string[];
 }
 
+const MAX_LCOV_FILE_BYTES = 100 * 1024 * 1024; // 100 MB
+
 export class BazelCoverageRunner {
 	constructor(private readonly outputChannel: vscode.OutputChannel) {}
 
@@ -53,16 +55,30 @@ export class BazelCoverageRunner {
 				this.outputChannel.append(stripAnsi(text));
 			});
 
-			cancellationToken?.onCancellationRequested(() => {
+			const cancellationDisposable = cancellationToken?.onCancellationRequested(() => {
 				logWithTimestamp('Bazel coverage cancelled by user.', 'warn');
 				child.kill('SIGTERM');
+				const killTimer = setTimeout(() => {
+					try {
+						if (child.exitCode === null && child.signalCode === null) {
+							logWithTimestamp('Force-killing Bazel coverage process (SIGTERM ignored).', 'warn');
+							child.kill('SIGKILL');
+						}
+					} catch {
+						// Process may already be gone
+					}
+				}, 5_000);
+				killTimer.unref();
+				child.once('close', () => clearTimeout(killTimer));
 			});
 
 			child.on('error', (err) => {
+				cancellationDisposable?.dispose();
 				untrackBazelProcess(child);
 				reject(err);
 			});
 			child.on('close', (code) => {
+				cancellationDisposable?.dispose();
 				untrackBazelProcess(child);
 				resolve({ code: code ?? 0, stdout, stderr });
 			});
@@ -147,6 +163,16 @@ export const resolveBazelInfo = async (
 	cancellationToken?: vscode.CancellationToken
 ): Promise<string | undefined> => {
 	return new Promise((resolve) => {
+		let cancellationDisposable: vscode.Disposable | undefined;
+		let settled = false;
+		const finish = (value: string | undefined) => {
+			if (settled) {
+				return;
+			}
+			settled = true;
+			cancellationDisposable?.dispose();
+			resolve(value);
+		};
 		const child = cp.spawn(bazelBinary, ['info', infoKey], {
 			cwd: workspaceRoot,
 			stdio: 'pipe'
@@ -155,13 +181,24 @@ export const resolveBazelInfo = async (
 		child.stdout.on('data', (data) => {
 			output += data.toString();
 		});
-		child.on('error', () => resolve(undefined));
-		cancellationToken?.onCancellationRequested(() => {
+		child.on('error', () => finish(undefined));
+		cancellationDisposable = cancellationToken?.onCancellationRequested(() => {
 			child.kill('SIGTERM');
-			resolve(undefined);
+			const killTimer = setTimeout(() => {
+				try {
+					if (child.exitCode === null && child.signalCode === null) {
+						child.kill('SIGKILL');
+					}
+				} catch {
+					// ignore
+				}
+			}, 5_000);
+			killTimer.unref();
+			child.once('close', () => clearTimeout(killTimer));
+			finish(undefined);
 		});
 		child.on('close', () => {
-			resolve(output.trim() || undefined);
+			finish(output.trim() || undefined);
 		});
 	});
 };
@@ -260,6 +297,10 @@ export const loadFirstValidLcov = async (
 		if (cancellationToken?.isCancellationRequested) {return undefined;}
 		try {
 			const stat = await fs.promises.stat(file);
+			if (stat.size > MAX_LCOV_FILE_BYTES) {
+				logFn?.(`[coverage] rejected ${file}: file too large (${stat.size} bytes > ${MAX_LCOV_FILE_BYTES} bytes)`);
+				continue;
+			}
 			const content = await fs.promises.readFile(file, 'utf8');
 			logFn?.(`[coverage] checking lcov=${file} (${stat.size} bytes)`);
 			if (hasLcovRecords(content, logFn)) {

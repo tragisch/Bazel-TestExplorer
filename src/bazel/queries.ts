@@ -75,7 +75,7 @@ export const queryBazelTestLabelsOnly = async (
   const labels: string[] = [];
   
   for (const path of sanitizedPaths) {
-    const query = `${allTypes.map(type => `kind(${type}, ${path}...)`).join(" union ")}`;
+    const query = `${allTypes.map(type => `kind(${type}, ${path})`).join(" union ")}`;
     const bazelArgs = ['query', query, '--keep_going', '--output=label'];
     
     const { stdout } = await runBazelCommand(
@@ -184,22 +184,30 @@ export const getTestTargetById = (target: string): BazelTestTarget | undefined =
  * Validates a single Bazel query path
  */
 function isValidBazelPath(path: string): boolean {
-  // Bazel paths must start with // or be relative patterns
-  if (!path.startsWith('//') && !path.startsWith('...')) {
+  const trimmed = path.trim();
+  // Bazel paths must be workspace labels/patterns (local or external repos)
+  if (!trimmed.startsWith('//') && !trimmed.startsWith('...') && !trimmed.startsWith('@')) {
     return false;
   }
   
-  // Check for suspicious characters that could indicate injection
-  if (path.includes(';') || path.includes('|') || path.includes('&')) {
+  // Disallow shell and query-expression control characters in user-provided paths
+  if (/[;&|`$()<>\s]/.test(trimmed)) {
     return false;
   }
   
+  // Allow canonical Bazel path forms such as:
+  // //..., //pkg, //pkg/..., //:target, //pkg:all, @repo//pkg:target
+  const allowedPattern = /^(?:@[A-Za-z0-9._+\-]+)?\/\/[A-Za-z0-9._+\-/]*(?::[A-Za-z0-9._+\-/*]+)?(?:\/?\.\.\.)?$|^\.\.\.$/;
+  if (!allowedPattern.test(trimmed)) {
+    return false;
+  }
+
   return true;
 }
 
 function sanitizeQueryPaths(queryPaths: string[]): string[] {
   if (queryPaths.length === 0) {
-    return ['//'];
+    return ['//...'];
   }
   
   const validPaths = queryPaths
@@ -215,25 +223,34 @@ function sanitizeQueryPaths(queryPaths: string[]): string[] {
     });
   
   // If no valid paths remain, fall back to root
-  return validPaths.length > 0 ? validPaths : ['//'];
+  return validPaths.length > 0 ? validPaths : ['//...'];
 }
 
 function buildBazelQueries(paths: string[], testTypes: string[]): string[] {
   const allTypes = [...new Set([...testTypes, "test_suite"])];
   return paths.map(path =>
-    `${allTypes.map(type => `kind(${type}, ${path}...)`).join(" union ")}`
+    `${allTypes.map(type => `kind(${type}, ${path})`).join(" union ")}`
   );
 }
 
 function normalizeQueryPathForRecursion(path: string): string {
   const trimmed = path.trim();
-  if (trimmed === '//...' || trimmed === '...') {
-    return '//';
+  if (trimmed === '...') {
+    return '//...';
   }
-  if (trimmed.endsWith('...')) {
-    return trimmed.slice(0, -3);
+  if (trimmed === '//') {
+    return '//...';
   }
-  return trimmed;
+  if (trimmed.includes(':')) {
+    return trimmed;
+  }
+  if (trimmed.endsWith('/...') || trimmed.endsWith('...')) {
+    return trimmed;
+  }
+  if (trimmed.endsWith('/')) {
+    return `${trimmed}...`;
+  }
+  return `${trimmed}/...`;
 }
 
 async function executeBazelQueries(queries: string[], workspacePath: string, config: ConfigurationService): Promise<void> {
