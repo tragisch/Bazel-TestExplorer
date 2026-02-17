@@ -883,9 +883,10 @@ export const callRunBazelCommandForTest = async (options: {
   testId: string;
   cwd: string;
   additionalArgs?: string[];
+  bazelPath?: string;
   cancellationToken?: vscode.CancellationToken;
 }): Promise<{ stdout: string; stderr: string }> => {
-  const { testId, cwd, additionalArgs = [], cancellationToken } = options;
+  const { testId, cwd, additionalArgs = [], bazelPath, cancellationToken } = options;
   
   let effectiveTestId = testId;
   if (/^\/\/[^:]*$/.test(testId)) {
@@ -894,7 +895,7 @@ export const callRunBazelCommandForTest = async (options: {
   const userArgs: string[] = [...additionalArgs];
   const args = ['test', effectiveTestId, ...DEFAULT_BAZEL_TEST_FLAGS, ...userArgs];
 
-  const { stdout, stderr } = await runBazelCommand(args, cwd, undefined, undefined, undefined, undefined, cancellationToken);
+  const { stdout, stderr } = await runBazelCommand(args, cwd, undefined, undefined, bazelPath, undefined, cancellationToken);
   
   return { stdout, stderr };
 };

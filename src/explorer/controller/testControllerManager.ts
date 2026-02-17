@@ -273,13 +273,33 @@ export class TestControllerManager {
       'Bazel Coverage',
       vscode.TestRunProfileKind.Coverage,
       async (request) => {
-        const collectLeafTests = (item: vscode.TestItem): vscode.TestItem[] => {
+        const collectCoverageTargets = (item: vscode.TestItem): vscode.TestItem[] => {
           const collected: vscode.TestItem[] = [];
+          const isTargetId = (id: string): boolean => id.includes(':') && !id.includes('::');
+          const resolveTargetFromCaseId = (id: string): vscode.TestItem | undefined => {
+            if (!id.includes('::')) {
+              return undefined;
+            }
+            const baseTargetId = id.split('::')[0];
+            return this.findTestItemById(baseTargetId);
+          };
+
           const visit = (node: vscode.TestItem) => {
-            if (node.children.size === 0) {
+            if (isTargetId(node.id)) {
               collected.push(node);
               return;
             }
+
+            const mappedTarget = resolveTargetFromCaseId(node.id);
+            if (mappedTarget) {
+              collected.push(mappedTarget);
+              return;
+            }
+
+            if (node.children.size === 0) {
+              return;
+            }
+
             node.children.forEach(visit);
           };
           visit(item);
@@ -295,16 +315,18 @@ export class TestControllerManager {
                 cancellable: false
               },
               async () => {
-                return Array.from(this.controller.items).flatMap(([, item]) => collectLeafTests(item));
+                return Array.from(this.controller.items).flatMap(([, item]) => collectCoverageTargets(item));
               }
             );
+        const normalizedTargets = targets.flatMap(collectCoverageTargets);
+        const uniqueTargets = Array.from(new Map(normalizedTargets.map(item => [item.id, item])).values());
 
-        if (targets.length === 0) {
+        if (uniqueTargets.length === 0) {
           void vscode.window.showInformationMessage('No test targets available for coverage.');
           return;
         }
 
-        await vscode.commands.executeCommand('bazelTestExplorer.showCoverageDetails', targets);
+        await vscode.commands.executeCommand('bazelTestExplorer.showCoverageDetails', uniqueTargets);
       }
     );
     this.coverageProfile.isDefault = false;

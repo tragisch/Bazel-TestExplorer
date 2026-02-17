@@ -75,7 +75,8 @@ export const queryBazelTestLabelsOnly = async (
   const labels: string[] = [];
   
   for (const path of sanitizedPaths) {
-    const query = `${allTypes.map(type => `kind(${type}, ${path}...)`).join(" union ")}`;
+    const recursivePath = normalizeQueryPathForRecursion(path);
+    const query = `${allTypes.map(type => `kind(${type}, ${recursivePath}...)`).join(" union ")}`;
     const bazelArgs = ['query', query, '--keep_going', '--output=label'];
     
     const { stdout } = await runBazelCommand(
@@ -203,11 +204,12 @@ function sanitizeQueryPaths(queryPaths: string[]): string[] {
   }
   
   const validPaths = queryPaths
-    .filter(p => p.trim() !== '')
+    .map(p => p.trim())
+    .filter(p => p !== '')
+    .map(normalizeQueryPathForRecursion)
     .filter(p => {
-      const trimmed = p.trim();
-      if (!isValidBazelPath(trimmed)) {
-        logWithTimestamp(`Invalid Bazel query path ignored: ${trimmed}`, 'warn');
+      if (!isValidBazelPath(p)) {
+        logWithTimestamp(`Invalid Bazel query path ignored: ${p}`, 'warn');
         return false;
       }
       return true;
@@ -220,8 +222,19 @@ function sanitizeQueryPaths(queryPaths: string[]): string[] {
 function buildBazelQueries(paths: string[], testTypes: string[]): string[] {
   const allTypes = [...new Set([...testTypes, "test_suite"])];
   return paths.map(path =>
-    `${allTypes.map(type => `kind(${type}, ${path}...)`).join(" union ")}`
+    `${allTypes.map(type => `kind(${type}, ${normalizeQueryPathForRecursion(path)}...)`).join(" union ")}`
   );
+}
+
+function normalizeQueryPathForRecursion(path: string): string {
+  const trimmed = path.trim();
+  if (trimmed === '//...' || trimmed === '...') {
+    return '//';
+  }
+  if (trimmed.endsWith('...')) {
+    return trimmed.slice(0, -3);
+  }
+  return trimmed;
 }
 
 async function executeBazelQueries(queries: string[], workspacePath: string, config: ConfigurationService): Promise<void> {

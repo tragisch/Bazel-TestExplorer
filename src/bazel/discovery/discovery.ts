@@ -127,13 +127,14 @@ export const discoverIndividualTestCases = async (
     }
 
     // Run the test to get output with individual test case results
+    const bazelPath = configService.getBazelPath();
     const { stdout, stderr } = await callRunBazelCommandForTest({
       testId: testTarget,
       cwd: workspacePath,
+      bazelPath
     });
     const combinedOutput = [stdout, stderr].filter(Boolean).join('\n');
 
-    const bazelPath = configService.getBazelPath();
     const allowedPatterns = resolveAllowedPatterns(testTarget, testType);
     // If we have a restricted set of allowed patterns and none of them
     // support individual test case extraction, skip the expensive

@@ -21,6 +21,7 @@
   "main": "./dist/extension.js",
   "activationEvents": [
     "workspaceContains:**/MODULE.bazel",
+    "workspaceContains:**/WORKSPACE.bazel",
     "workspaceContains:**/WORKSPACE"
   ],
   "contributes": {

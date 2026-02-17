@@ -253,9 +253,21 @@ export async function activate(context: vscode.ExtensionContext) {
 				: items
 					? [items]
 					: [];
-			const targetLabels = selectedItems.length > 0
-				? selectedItems.map(item => item.id ?? item.label)
-				: ['//demo:target'];
+			const normalizeTargetLabel = (value: string): string => {
+				const trimmed = value.trim();
+				return trimmed.includes('::') ? trimmed.split('::')[0] : trimmed;
+			};
+			const targetLabels = Array.from(
+				new Set(
+					selectedItems
+						.map(item => normalizeTargetLabel(item.id ?? item.label))
+						.filter(label => label.includes(':') && !label.includes('::'))
+				)
+			);
+			if (targetLabels.length === 0) {
+				void vscode.window.showInformationMessage('No Bazel test targets selected for coverage.');
+				return;
+			}
 
 			coverageOutput.show(true);
 			coverageOutput.appendLine(`[coverage] targets=${targetLabels.length}`);
