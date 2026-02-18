@@ -220,13 +220,15 @@
           "name": "Bazel Test Settings",
           "type": "webview",
           "contextualTitle": "Bazel Test Settings",
-          "icon": "images/icon_Bazel_TestExplorer.png"
+          "icon": "images/icon_Bazel_TestExplorer.png",
+          "when": "bazelTestExplorer.workspaceAvailable"
         },
         {
           "id": "bazelTestExplorer.history",
           "name": "Bazel Test History",
           "contextualTitle": "Bazel Test History",
-          "icon": "images/icon_Bazel_TestExplorer.png"
+          "icon": "images/icon_Bazel_TestExplorer.png",
+          "when": "bazelTestExplorer.workspaceAvailable"
         }
       ]
     }

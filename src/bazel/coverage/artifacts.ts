@@ -177,11 +177,15 @@ export const resolveBazelInfo = async (
 			cwd: workspaceRoot,
 			stdio: 'pipe'
 		});
+		trackBazelProcess(child);
 		let output = '';
 		child.stdout.on('data', (data) => {
 			output += data.toString();
 		});
-		child.on('error', () => finish(undefined));
+		child.on('error', () => {
+			untrackBazelProcess(child);
+			finish(undefined);
+		});
 		cancellationDisposable = cancellationToken?.onCancellationRequested(() => {
 			child.kill('SIGTERM');
 			const killTimer = setTimeout(() => {
@@ -198,6 +202,7 @@ export const resolveBazelInfo = async (
 			finish(undefined);
 		});
 		child.on('close', () => {
+			untrackBazelProcess(child);
 			finish(output.trim() || undefined);
 		});
 	});

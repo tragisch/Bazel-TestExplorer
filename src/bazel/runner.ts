@@ -45,6 +45,11 @@ const EMPTY_UNIFIED_RESULT: UnifiedTestResult = {
 };
 
 /**
+ * Separator inserted before detailed test summary to visually separate live output from final results
+ */
+const DETAILED_OUTPUT_SEPARATOR = '\r\n\r\n' + '═'.repeat(80) + '\r\n' + '  TEST RESULTS SUMMARY' + '\r\n' + '═'.repeat(80) + '\r\n\r\n';
+
+/**
  * Merge flag arrays with override semantics: later arrays override earlier ones
  * for flags that share the same key (e.g. --test_output=all vs --test_output=errors).
  */
@@ -229,6 +234,7 @@ function processSuccessfulTest(
   appendDetailedOutput: boolean
 ): void {
   if (appendDetailedOutput && displayLog.length > 0) {
+    run.appendOutput(DETAILED_OUTPUT_SEPARATOR, undefined, testItem);
     const outputBlock = [
       getStatusHeader(code, testItem.id),
       '----- BEGIN OUTPUT -----',
@@ -273,6 +279,7 @@ function processIndividualTestCaseFailure(
   run.failed(testItem, message);
   
   if (appendDetailedOutput && displayLog.length > 0) {
+    run.appendOutput(DETAILED_OUTPUT_SEPARATOR, undefined, testItem);
     const outputBlock = [
       `❌ Test Failed: ${testItem.id}`,
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
@@ -332,6 +339,7 @@ function processFailedTest(
     run.failed(testItem, new vscode.TestMessage(`🧨 Errors during tests (Code ${code}):\n\n${cleaned_with_Header}`));
     try { finishTest(testItem.id, 'failed', cleaned_with_Header); } catch {}
     if (appendDetailedOutput) {
+      run.appendOutput(DETAILED_OUTPUT_SEPARATOR, undefined, testItem);
       const outputBlock = [
         getStatusHeader(code, testItem.id),
         '----- BEGIN OUTPUT -----',
@@ -358,7 +366,8 @@ export const executeBazelTest = async (
 ) => {
   try {
     const streamLiveOutput = true;
-    const appendDetailedOutput = !streamLiveOutput;
+    const appendDetailedOutput = true;
+
     const typeMatch = testItem.label.match(/\[(.*?)\]/);
     const testType = typeMatch?.[1] ?? "";
     const isSuite = testType === "test_suite";
@@ -411,6 +420,7 @@ export const executeBazelTest = async (
           try { finishTest(testItem.id, 'failed', warningText); } catch {}
         }
         if (appendDetailedOutput && logWithNote.length > 0) {
+          run.appendOutput(DETAILED_OUTPUT_SEPARATOR, undefined, testItem);
           const outputBlock = [
             getStatusHeader(code, testItem.id),
             '----- BEGIN OUTPUT -----',
@@ -600,8 +610,7 @@ export const initiateBazelTest = async (
       return;
     }
     const cleaned = stripAnsi(line);
-    const prefix = source === 'stderr' ? '[stderr] ' : '';
-    const out = `${prefix}${cleaned}`.replace(/\r?\n/g, '\r\n') + '\r\n';
+    const out = cleaned.replace(/\r?\n/g, '\r\n') + '\r\n';
     run.appendOutput(out, undefined, testItem);
   };
 
@@ -731,6 +740,7 @@ function handleTestResult(
 
       // Append output for the target
       if (appendDetailedOutput) {
+        run.appendOutput(DETAILED_OUTPUT_SEPARATOR, undefined, testItem);
         const outputBlock = [
           getStatusHeader(code, testItem.id),
           '----- BEGIN OUTPUT -----',
@@ -750,6 +760,7 @@ function handleTestResult(
       if (messages.length > 0) {
         run.failed(testItem, messages);
         if (appendDetailedOutput) {
+          run.appendOutput(DETAILED_OUTPUT_SEPARATOR, undefined, testItem);
           const outputBlock = [
             getStatusHeader(code, testItem.id),
             '----- BEGIN OUTPUT -----',
@@ -773,6 +784,7 @@ function handleTestResult(
 
         run.failed(testItem, new vscode.TestMessage(fallbackOutput));
         if (appendDetailedOutput) {
+          run.appendOutput(DETAILED_OUTPUT_SEPARATOR, undefined, testItem);
           run.appendOutput(fallbackOutput.replace(/\r?\n/g, '\r\n') + '\r\n', undefined, testItem);
           try { publishOutput(testItem.id, fallbackOutput.replace(/\r?\n/g, '\r\n') + '\r\n'); } catch {}
         }

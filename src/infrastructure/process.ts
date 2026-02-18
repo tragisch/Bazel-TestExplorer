@@ -27,29 +27,104 @@ export const untrackBazelProcess = (proc: cp.ChildProcess): void => {
     runningBazelProcesses.delete(proc);
 };
 
-export const cancelAllBazelProcesses = (): number => {
-    let count = 0;
-    for (const proc of runningBazelProcesses) {
-        try {
-            proc.kill('SIGTERM');
-            count += 1;
-            // Fallback: force-kill if process ignores SIGTERM
-            const killTimer = setTimeout(() => {
-                try {
-                    if (proc.exitCode === null && proc.signalCode === null) {
-                        proc.kill('SIGKILL');
+/**
+ * Cancels all running Bazel processes with improved reliability
+ * Returns a promise that resolves when all processes are terminated
+ */
+export const cancelAllBazelProcesses = async (): Promise<{ killed: number; failed: number }> => {
+    const processes = Array.from(runningBazelProcesses);
+    if (processes.length === 0) {
+        return { killed: 0, failed: 0 };
+    }
+
+    logWithTimestamp(`Attempting to cancel ${processes.length} running Bazel process(es)...`);
+
+    const killPromises = processes.map(async (proc) => {
+        return new Promise<boolean>((resolve) => {
+            // Process might already be dead
+            if (proc.exitCode !== null || proc.signalCode !== null) {
+                untrackBazelProcess(proc);
+                resolve(true);
+                return;
+            }
+
+            let settled = false;
+            let timeoutHandle: NodeJS.Timeout | undefined;
+
+            // Cleanup function to ensure handlers and timeout are removed
+            const cleanup = () => {
+                if (timeoutHandle) {
+                    clearTimeout(timeoutHandle);
+                    timeoutHandle = undefined;
+                }
+                proc.removeListener('close', onClose);
+                proc.removeListener('error', onError);
+            };
+
+            const finish = (success: boolean) => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                cleanup();
+                untrackBazelProcess(proc);
+                resolve(success);
+            };
+
+            const onClose = () => {
+                finish(true);
+            };
+
+            const onError = (err: Error) => {
+                logWithTimestamp(`Error while killing process: ${err.message}`, 'warn');
+                finish(false);
+            };
+
+            proc.once('close', onClose);
+            proc.once('error', onError);
+
+            // Set timeout for force-kill
+            timeoutHandle = setTimeout(() => {
+                // Check if process is still alive before force-killing
+                if (proc.exitCode === null && proc.signalCode === null) {
+                    logWithTimestamp('Force-killing Bazel process (SIGTERM ignored)', 'warn');
+                    try {
+                        // Try to kill the process group (all child processes)
+                        if (process.platform !== 'win32' && proc.pid) {
+                            process.kill(-proc.pid, 'SIGKILL');
+                        } else {
+                            proc.kill('SIGKILL');
+                        }
+                    } catch (err) {
+                        logWithTimestamp(`Failed to force-kill process: ${err}`, 'warn');
                     }
-                } catch {
-                    // Process may already be gone
                 }
             }, 5_000);
-            killTimer.unref();
-            proc.once('close', () => clearTimeout(killTimer));
-        } catch {
-            // ignore
-        }
+
+            try {
+                // Try to kill the process group (all child processes) on POSIX systems
+                if (process.platform !== 'win32' && proc.pid) {
+                    // Negative PID kills the process group
+                    process.kill(-proc.pid, 'SIGTERM');
+                } else {
+                    proc.kill('SIGTERM');
+                }
+            } catch (err) {
+                logWithTimestamp(`Failed to send SIGTERM: ${err}`, 'warn');
+                finish(false);
+            }
+        });
+    });
+
+    const results = await Promise.all(killPromises);
+    const killed = results.filter(r => r).length;
+    const failed = results.length - killed;
+
+    if (killed > 0) {
+        logWithTimestamp(`Successfully cancelled ${killed} Bazel process(es)${failed > 0 ? `, ${failed} failed` : ''}`);
     }
-    return count;
+    
+    return { killed, failed };
 };
 
 /**

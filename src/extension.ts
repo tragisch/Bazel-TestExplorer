@@ -13,6 +13,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as cp from 'child_process';
 import { initializeLogger, logWithTimestamp, measure, formatError } from './logging';
 import { findBazelWorkspace, getCachedWorkspace } from './bazel/workspace';
 import { BazelClient } from './bazel/client';
@@ -98,8 +99,12 @@ export async function activate(context: vscode.ExtensionContext) {
 	if (!workspaceRoot) {
 		// silently stop activation in non-Bazel workspaces to avoid noisy popups
 		logWithTimestamp('No Bazel workspace detected. Extension remains idle.');
+		vscode.commands.executeCommand('setContext', 'bazelTestExplorer.workspaceAvailable', false);
 		return;
 	}
+
+	// Signal to VS Code that a Bazel workspace is available (used for view visibility)
+	vscode.commands.executeCommand('setContext', 'bazelTestExplorer.workspaceAvailable', true);
 
 	// Log current verbose/debug settings once workspace detected
 	try {
@@ -580,12 +585,75 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand('bazelTestExplorer.cancelAllRuns', async () => {
-			const killed = cancelAllBazelProcesses();
-			if (killed > 0) {
-				logWithTimestamp(`Cancelled ${killed} Bazel process(es) by user request.`);
-				void vscode.window.showInformationMessage(`Stopped ${killed} Bazel process(es).`);
-			} else {
-				void vscode.window.showInformationMessage('No running Bazel processes to stop.');
+			try {
+				logWithTimestamp('User requested to cancel all Bazel runs...');
+				
+				// First, kill all tracked Bazel processes
+				const { killed, failed } = await cancelAllBazelProcesses();
+				
+				// Then, shut down the Bazel server to ensure no background activities remain
+				if (killed > 0 || failed > 0) {
+					logWithTimestamp('Shutting down Bazel server...');
+					try {
+						const shutdownProc = cp.spawn(configurationService.bazelPath, ['shutdown'], {
+							cwd: workspaceRoot,
+							stdio: 'ignore'
+							// Note: No timeout option here - we handle it manually below
+						});
+						
+						await new Promise<void>((resolve) => {
+							let settled = false;
+							let timer: NodeJS.Timeout | undefined;
+							
+							const cleanup = () => {
+								if (timer) {
+									clearTimeout(timer);
+									timer = undefined;
+								}
+								shutdownProc.removeAllListeners('close');
+								shutdownProc.removeAllListeners('error');
+							};
+							
+							const finish = () => {
+								if (settled) {
+									return;
+								}
+								settled = true;
+								cleanup();
+								resolve();
+							};
+							
+							timer = setTimeout(() => {
+								if (shutdownProc.exitCode === null && shutdownProc.signalCode === null) {
+									shutdownProc.kill('SIGKILL');
+								}
+								finish();
+							}, 10_000);
+							
+							shutdownProc.on('close', finish);
+							shutdownProc.on('error', finish);
+						});
+						
+						logWithTimestamp('Bazel server shutdown completed.');
+					} catch (err) {
+						logWithTimestamp(`Failed to shutdown Bazel server: ${err}`, 'warn');
+					}
+				}
+				
+				// Provide user feedback
+				if (killed > 0) {
+					const message = failed > 0 
+						? `Stopped ${killed} Bazel process(es). ${failed} failed to terminate.`
+						: `Successfully stopped ${killed} Bazel process(es).`;
+					void vscode.window.showInformationMessage(message);
+				} else if (failed > 0) {
+					void vscode.window.showWarningMessage(`Failed to stop ${failed} Bazel process(es).`);
+				} else {
+					void vscode.window.showInformationMessage('No running Bazel processes to stop.');
+				}
+			} catch (err) {
+				logWithTimestamp(`Error during cancelAllRuns: ${err}`, 'error');
+				void vscode.window.showErrorMessage(`Failed to cancel Bazel runs: ${err}`);
 			}
 		})
 	);
@@ -608,6 +676,8 @@ export async function activate(context: vscode.ExtensionContext) {
 	});
 }
 
-export function deactivate() { }
+export function deactivate() {
+	vscode.commands.executeCommand('setContext', 'bazelTestExplorer.workspaceAvailable', false);
+}
 
 export { findBazelWorkspace, getCachedWorkspace };
