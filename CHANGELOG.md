@@ -5,6 +5,9 @@ All notable changes to the "bazel-unity-test" extension will be documented here.
 ## [Unreleased]
 - No unreleased changes.
 
+## [0.1.18] - 2026-02-18
+- Fixed small issues
+
 ## [0.1.17] - 2026-02-17
 - Coverage run target handling fixed for discovered test cases (`::` IDs now normalize to Bazel target labels).
 - Test case discovery now respects configured `bazelPath` consistently.
