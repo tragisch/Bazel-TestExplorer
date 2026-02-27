@@ -14,7 +14,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as cp from 'child_process';
-import { initializeLogger, logWithTimestamp, measure, formatError } from './logging';
+import { initializeLogger, logWithTimestamp, measure, formatError, disposeLogger } from './logging';
 import { findBazelWorkspace, getCachedWorkspace } from './bazel/workspace';
 import { BazelClient } from './bazel/client';
 import { ConfigurationService } from './configuration';
@@ -22,21 +22,20 @@ import { TestControllerManager } from './explorer/controller';
 import { TestObserver } from './explorer/tree';
 import TestHistoryProvider from './explorer/testHistoryProvider';
 import TestSettingsView from './explorer/testSettingsView';
-import { onDidTestEvent } from './explorer/events';
+import { onDidTestEvent, disposeEventBus } from './explorer/events';
 import { TestCaseAnnotations, TestCaseCodeLensProvider, TestCaseHoverProvider } from './explorer/annotations';
 import { TestCaseInsights } from './explorer/panel';
 import { showCombinedTestPanel } from './explorer/panel';
-import { parseLcovToFileCoverage, getCoverageDetailsForFile, demangleCoverageDetails, normalizeLcovContent, clearCoverageDetailsCache } from './coverage/vscode';
-import { initializeCoverageState, setCoverageSummary } from './coverage/state';
-import { BazelCoverageRunner, resolveBazelInfo, findCoverageArtifacts, loadFirstValidLcov, extractLcovPathFromOutput, extractBazelBinExecPath, convertProfrawToLcov } from './bazel/coverage/artifacts';
+import { initializeCoverageState, disposeCoverageState } from './coverage/state';
+import { createCoverageCommandHandler } from './coverage/commands';
 import { cancelAllBazelProcesses } from './infrastructure/process';
 
 export async function activate(context: vscode.ExtensionContext) {
 	initializeLogger();
 	initializeCoverageState(context.workspaceState);
 
-	const extensionVersion = vscode.extensions.getExtension("tragisch.bazel-testexplorer")?.packageJSON.version;
-	logWithTimestamp(`Bazel Test Explorer v${extensionVersion} aktiviert.`);
+	const extensionVersion = vscode.extensions.getExtension("tragisch.bazel-testexplorer")?.packageJSON?.version as string | undefined;
+	logWithTimestamp(`Bazel Test Explorer v${extensionVersion ?? 'unknown'} aktiviert.`);
 
 	// Verbose activation diagnostics to help track view registration issues (opt-in)
 	const enableActivationDiagnostics = vscode.workspace.getConfiguration('bazelTestExplorer').get('verboseViewRegistrationLogging') === true || process.env['VSCODE_DEV'] === 'true';
@@ -45,7 +44,8 @@ export async function activate(context: vscode.ExtensionContext) {
 		// Log host VS Code and UI kind to help debug when views/containers
 		logWithTimestamp(`Host VS Code version: ${vscode.version}, uiKind: ${vscode.env.uiKind}`);
 
-		const pkg = (context.extension && (context.extension.packageJSON as any)) ?? vscode.extensions.getExtension('tragisch.bazel-testexplorer')?.packageJSON as any | undefined;
+		const pkg = (context.extension?.packageJSON ?? vscode.extensions.getExtension('tragisch.bazel-testexplorer')?.packageJSON) as
+			{ contributes?: { viewsContainers?: unknown; views?: unknown; commands?: Array<{ command: string }> } } | undefined;
 
 		// Log which extension path is actually used in the Extension Dev Host
 		try {
@@ -56,7 +56,7 @@ export async function activate(context: vscode.ExtensionContext) {
 				if (fs.existsSync(packageJsonPath)) {
 					const raw = fs.readFileSync(packageJsonPath, 'utf8');
 					try {
-						const parsed = JSON.parse(raw) as any;
+						const parsed = JSON.parse(raw) as { contributes?: { views?: unknown; viewsContainers?: unknown } };
 						logWithTimestamp(`On-disk package.json contributes.views: ${JSON.stringify(parsed.contributes?.views ?? {})}`);
 						logWithTimestamp(`On-disk package.json viewsContainers: ${JSON.stringify(parsed.contributes?.viewsContainers ?? {})}`);
 					} catch (e) {
@@ -72,7 +72,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		if (pkg?.contributes) {
 			logWithTimestamp(`Contributes.viewsContainers: ${JSON.stringify(pkg.contributes.viewsContainers ?? {})}`);
 			logWithTimestamp(`Contributes.views: ${JSON.stringify(pkg.contributes.views ?? {})}`);
-			logWithTimestamp(`Contributes.commands: ${JSON.stringify(Object.keys(pkg.contributes.commands ?? {}).length ? pkg.contributes.commands.map((c:any)=>c.command) : pkg.contributes.commands ?? {})}`);
+			logWithTimestamp(`Contributes.commands: ${JSON.stringify(Array.isArray(pkg.contributes.commands) ? pkg.contributes.commands.map((c) => c.command) : pkg.contributes.commands ?? {})}`);
 		} else {
 			logWithTimestamp('No contributes section found in package.json', 'warn');
 		}
@@ -140,17 +140,6 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	const coverageOutput = vscode.window.createOutputChannel('Coverage');
 	context.subscriptions.push(coverageOutput);
-	let isCoverageRunInProgress = false;
-	const applyCoverageSummary = (item: vscode.TestItem, coverages: vscode.FileCoverage[]) => {
-		let covered = 0;
-		let total = 0;
-		for (const coverage of coverages) {
-			covered += coverage.statementCoverage.covered;
-			total += coverage.statementCoverage.total;
-		}
-		const percent = total === 0 ? 0 : (covered / total) * 100;
-		item.description = `Coverage: ${percent.toFixed(2)}% (${covered}/${total} lines)`;
-	};
 
 	// Observer for collecting runtimes and small in-memory history
 	const testObserver = new TestObserver(context);
@@ -211,7 +200,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	);
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('bazelTestExplorer.openHistoryItem', async (entry: any) => {
+		vscode.commands.registerCommand('bazelTestExplorer.openHistoryItem', async (entry: { testId?: string; type?: string; durationMs?: number; message?: string | vscode.MarkdownString }) => {
 			if (!entry) {return;}
 			const body = typeof entry.message === 'string' ? entry.message : (entry.message?.value ?? '');
 			const contentLines: string[] = [];
@@ -253,334 +242,13 @@ export async function activate(context: vscode.ExtensionContext) {
 			await showCombinedTestPanel(testItem.id, bazelClient, testCaseInsights, context);
 		}),
 
-		vscode.commands.registerCommand('bazelTestExplorer.showCoverageDetails', async (items?: vscode.TestItem | vscode.TestItem[]) => {
-			if (isCoverageRunInProgress) {
-				void vscode.window.showWarningMessage('Coverage run already in progress. Please wait for it to finish.');
-				return;
-			}
-			isCoverageRunInProgress = true;
-			clearCoverageDetailsCache();
-			try {
-				const selectedItems = Array.isArray(items)
-					? items
-					: items
-						? [items]
-						: [];
-				const normalizeTargetLabel = (value: string): string => {
-					const trimmed = value.trim();
-					return trimmed.includes('::') ? trimmed.split('::')[0] : trimmed;
-				};
-				const targetLabels = Array.from(
-					new Set(
-						selectedItems
-							.map(item => normalizeTargetLabel(item.id ?? item.label))
-							.filter(label => label.includes(':') && !label.includes('::'))
-					)
-				);
-				if (targetLabels.length === 0) {
-					void vscode.window.showInformationMessage('No Bazel test targets selected for coverage.');
-					return;
-				}
-
-			coverageOutput.show(true);
-			coverageOutput.appendLine(`[coverage] targets=${targetLabels.length}`);
-			// Use a single consistent workspace path throughout the coverage flow.
-			// workspaceRoot comes from findBazelWorkspace() (the directory containing
-			// MODULE.bazel / WORKSPACE.bazel / WORKSPACE) and is the correct root for
-			// resolving Bazel-relative coverage paths.
-			const workspaceFolder = workspaceRoot;
-			const runner = new BazelCoverageRunner(coverageOutput);
-
-			await vscode.window.withProgress(
-				{
-					location: vscode.ProgressLocation.Notification,
-					title: 'Bazel Coverage',
-					cancellable: true
-				},
-				async (progress, token) => {
-					const tryConvertLlvm = async (stdout: string, stderr: string, artifacts: { profraw: string[]; profdata: string[]; lcov: string[]; testlogs: string[] }, execrootPath?: string) => {
-						if (artifacts.profraw.length === 0 && artifacts.profdata.length === 0) {
-							return undefined;
-						}
-						const execPath = extractBazelBinExecPath(stdout + stderr);
-						const bazelBin = await resolveBazelInfo(configurationService.bazelPath, workspaceRoot, 'bazel-bin', token);
-						const binaryPath = execPath && bazelBin ? path.join(bazelBin, execPath.replace(/^bazel-bin\//, '')) : undefined;
-						if (binaryPath && fs.existsSync(binaryPath)) {
-							coverageOutput.appendLine(`[coverage] converting LLVM profile using ${binaryPath}`);
-							const converted = await convertProfrawToLcov(artifacts.profraw, binaryPath, token);
-							if (converted) {
-								coverageOutput.appendLine(`[coverage] using llvm lcov=${converted.path}`);
-								const normalized = normalizeLcovContent(converted.content, {
-									workspaceRoot: workspaceFolder,
-									execRoot: execrootPath,
-									filterExternal: true,
-									filterBazelOut: true
-								});
-								if (normalized.rewritten || normalized.removedRecords > 0) {
-									coverageOutput.appendLine(
-										`[coverage] normalized llvm lcov updated=${normalized.updatedRecords} removed=${normalized.removedRecords}`
-									);
-								}
-								const convertedCoverages = parseLcovToFileCoverage(normalized.content, workspaceFolder, context.extensionPath, execrootPath);
-								if (convertedCoverages.length === 0) {
-									coverageOutput.appendLine('[coverage] llvm lcov contained no files');
-									return undefined;
-								}
-								await demangleCoverageDetails(configurationService.cppDemanglerPath, configurationService.rustDemanglerPath);
-								return {
-									coverages: convertedCoverages,
-									artifacts: { ...artifacts, lcov: [...artifacts.lcov, converted.path] }
-								};
-							}
-						} else {
-							coverageOutput.appendLine('[coverage] LLVM profiles detected; llvm-cov/llvm-profdata may be missing or binary not found.');
-						}
-						return undefined;
-					};
-					for (const targetLabel of targetLabels) {
-						if (token.isCancellationRequested) {
-							coverageOutput.appendLine('[coverage] cancelled');
-							break;
-						}
-						progress.report({ message: `Running coverage for ${targetLabel}` });
-						coverageOutput.appendLine(`[coverage] run target=${targetLabel}`);
-												// Respect ignoreRcFiles setting: when enabled, instruct Bazel to
-												// ignore system/user/workspace .bazelrc files and only apply any
-												// explicit bazelrc files provided via settings.
-												let args: string[];
-												if (configurationService.ignoreRcFiles) {
-													const filtered = configurationService.coverageArgs.filter(a => !a.startsWith('--bazelrc') && !a.startsWith('--ignore_all_rc_files'));
-													// On macOS, LLVM coverage requires -fcoverage-compilation-dir=.
-													// to produce correct relative paths in the coverage mapping.
-													// When ignoreRcFiles is true the .bazelrc that normally sets
-													// this flag is skipped, so we inject it automatically.
-													if (process.platform === 'darwin') {
-														const coptFlag = '--copt=-fcoverage-compilation-dir=.';
-														if (!filtered.some(a => a.includes('-fcoverage-compilation-dir'))) {
-															filtered.push(coptFlag);
-															coverageOutput.appendLine(`[coverage] macOS detected: added ${coptFlag}`);
-														}
-													}
-													const explicitBazelrc = configurationService.bazelrcFiles.map(p => `--bazelrc=${p}`);
-													// Startup options must precede the command (coverage)
-													args = ['--ignore_all_rc_files', ...explicitBazelrc, 'coverage', ...filtered, targetLabel];
-												} else {
-													args = ['coverage', ...configurationService.coverageArgs, targetLabel];
-												}
-						// Log the exact Bazel command being executed for coverage (include flags)
-						try {
-							logWithTimestamp(`Running Bazel: ${configurationService.bazelPath} ${args.join(' ')}`);
-							// Also write a clear note to the coverage output whether .bazelrc files are ignored
-							coverageOutput.appendLine(`[coverage] ignoreRcFiles=${configurationService.ignoreRcFiles ? 'true (using --ignore_all_rc_files)' : 'false (using .bazelrc if present)'}`);
-							const explicit = configurationService.bazelrcFiles ?? [];
-							if (explicit.length > 0) {
-								coverageOutput.appendLine(`[coverage] explicit --bazelrc files: ${explicit.join(', ')}`);
-							}
-						} catch (e) {
-							// best-effort logging; don't block coverage run on logging errors
-						}
-						const result = await runner.runCoverage(
-							{ bazelBinary: configurationService.bazelPath, args, workspaceRoot },
-							token
-						);
-						if (result.code !== 0) {
-							coverageOutput.appendLine(`[coverage] bazel coverage failed (code=${result.code}) for ${targetLabel}`);
-							continue;
-						}
-
-						coverageOutput.appendLine('[coverage] locating artifacts');
-						const execroot = await resolveBazelInfo(configurationService.bazelPath, workspaceRoot, 'execution_root', token);
-						const testlogs = await resolveBazelInfo(configurationService.bazelPath, workspaceRoot, 'bazel-testlogs', token);
-						const artifacts = await findCoverageArtifacts(
-							[execroot, testlogs, workspaceRoot].filter(Boolean) as string[],
-							token
-						);
-						coverageOutput.appendLine(
-							`[coverage] artifacts lcov=${artifacts.lcov.length} profraw=${artifacts.profraw.length} profdata=${artifacts.profdata.length}`
-						);
-
-						const reportedLcov = extractLcovPathFromOutput(result.stdout + result.stderr);
-						if (reportedLcov) {
-							coverageOutput.appendLine(`[coverage] reported lcov=${reportedLcov}`);
-						}
-						// Check for central _coverage_report.dat first (created by --combined_report=lcov)
-						const centralCoveragePaths = [
-							execroot ? path.join(execroot, 'bazel-out', '_coverage', '_coverage_report.dat') : undefined,
-							path.join(workspaceRoot, 'bazel-out', '_coverage', '_coverage_report.dat')
-						].filter(Boolean) as string[];
-						const centralCoverage = centralCoveragePaths.find(p => fs.existsSync(p));
-						if (centralCoverage) {
-							coverageOutput.appendLine(`[coverage] found central coverage report: ${centralCoverage}`);
-						}
-						const targetPath = targetLabel.replace(/^\/\//, '').replace(':', path.sep);
-						const preferredRoot = testlogs ? path.join(testlogs, targetPath) : undefined;
-						const preferredLcov = preferredRoot
-							? artifacts.lcov.filter(file => file.startsWith(preferredRoot))
-							: [];
-						const lcovCandidates = centralCoverage
-							? [centralCoverage, reportedLcov, ...preferredLcov, ...artifacts.lcov].filter(Boolean) as string[]
-							: reportedLcov
-								? [reportedLcov, ...preferredLcov, ...artifacts.lcov]
-								: (preferredLcov.length > 0 ? preferredLcov : artifacts.lcov);
-						if (preferredLcov.length === 0 && !centralCoverage) {
-							coverageOutput.appendLine('[coverage] no target-specific or central LCOV found; falling back to latest valid LCOV.');
-						}
-						const lcovResult = await loadFirstValidLcov(
-							lcovCandidates,
-							token,
-							(msg) => coverageOutput.appendLine(msg)
-						);
-						if (!lcovResult) {
-							const converted = await tryConvertLlvm(result.stdout, result.stderr, artifacts, execroot);
-							if (converted) {
-								const summary = testManager.publishCoverage(
-									targetLabel,
-									converted.coverages,
-									getCoverageDetailsForFile,
-									'line',
-									{
-										lcov: converted.artifacts.lcov,
-										profraw: converted.artifacts.profraw,
-										profdata: converted.artifacts.profdata,
-										testlogs: converted.artifacts.testlogs
-									},
-									configurationService.coverageArgs,
-									true
-								);
-								if (summary) {
-									setCoverageSummary(targetLabel, summary);
-									coverageOutput.appendLine(
-										`[coverage] published ${targetLabel} ${summary.covered}/${summary.total} (${summary.percent.toFixed(2)}%)`
-									);
-									continue;
-								}
-							}
-							coverageOutput.appendLine(`[coverage] no usable LCOV found for ${targetLabel}`);
-							if (lcovCandidates.length > 0) {
-								coverageOutput.appendLine(`[coverage] lcov candidates: ${lcovCandidates.slice(0, 5).join(', ')}`);
-								
-								// Check if we found non-empty coverage files that weren't in LCOV format
-								const nonEmptyCandidates = await Promise.all(
-									lcovCandidates.slice(0, 3).map(async (file) => {
-										try {
-											const stat = await fs.promises.stat(file);
-											return stat.size > 0 ? file : null;
-										} catch {
-											return null;
-										}
-									})
-								);
-								const hasNonEmptyFiles = nonEmptyCandidates.some(f => f !== null);
-								if (hasNonEmptyFiles) {
-									coverageOutput.appendLine('[coverage] ⚠️  Found non-empty coverage files but they are not in LCOV format.');
-									coverageOutput.appendLine('[coverage] This might happen if --combined_report=lcov is not working properly.');
-									coverageOutput.appendLine('[coverage] Try adjusting --instrumentation_filter to match your source files (e.g., --instrumentation_filter="app/.*").');
-								}
-							}
-							continue;
-						}
-						coverageOutput.appendLine(`[coverage] using lcov=${lcovResult.path}`);
-
-						const normalized = normalizeLcovContent(lcovResult.content, {
-							workspaceRoot: workspaceFolder,
-							execRoot: execroot,
-							filterExternal: true,
-							filterBazelOut: true
-						});
-						if (normalized.rewritten || normalized.removedRecords > 0) {
-							coverageOutput.appendLine(
-								`[coverage] normalized lcov updated=${normalized.updatedRecords} removed=${normalized.removedRecords}`
-							);
-							const normalizedReportPath = centralCoverage
-								?? path.join(workspaceFolder, 'bazel-out', '_coverage', '_coverage_report.dat');
-							try {
-								await fs.promises.mkdir(path.dirname(normalizedReportPath), { recursive: true });
-								await fs.promises.writeFile(normalizedReportPath, normalized.content, 'utf8');
-								coverageOutput.appendLine(`[coverage] wrote normalized lcov=${normalizedReportPath}`);
-							} catch (err) {
-								coverageOutput.appendLine(`[coverage] failed to write normalized lcov: ${String(err)}`);
-							}
-						}
-						
-						// Debug: Show LCOV content to understand what's being generated
-						coverageOutput.appendLine('[coverage] LCOV content preview:');
-						const previewLines = normalized.content.split('\n').slice(0, 30);
-						previewLines.forEach(line => coverageOutput.appendLine(`  ${line}`));
-						if (normalized.content.split('\n').length > 30) {
-							coverageOutput.appendLine(`  ... (${normalized.content.split('\n').length - 30} more lines)`);
-						}
-
-						let coverages = parseLcovToFileCoverage(normalized.content, workspaceFolder, context.extensionPath, execroot);
-						await demangleCoverageDetails(configurationService.cppDemanglerPath, configurationService.rustDemanglerPath);
-						coverageOutput.appendLine(`[coverage] parsed files=${coverages.length}`);
-						const totalLines = coverages.reduce((sum, entry) => sum + entry.statementCoverage.total, 0);
-						coverageOutput.appendLine(`[coverage] total lines=${totalLines}`);
-						if (coverages.length === 0 || totalLines === 0) {
-							coverageOutput.appendLine('[coverage] ⚠️  LCOV has no line data. This means no source files were instrumented.');
-							coverageOutput.appendLine('[coverage] Check: bazel-out/darwin_arm64-fastbuild/testlogs/app/matrix/test_dm/test_dm.instrumented_files');
-							coverageOutput.appendLine('[coverage] Trying LLVM profiles as fallback...');
-							const converted = await tryConvertLlvm(result.stdout, result.stderr, artifacts, execroot);
-							if (converted) {
-								coverages = converted.coverages;
-								await demangleCoverageDetails(configurationService.cppDemanglerPath, configurationService.rustDemanglerPath);
-							} else {
-								continue;
-							}
-						}
-
-						const summary = testManager.publishCoverage(
-							targetLabel,
-							coverages,
-							getCoverageDetailsForFile,
-							'line',
-							{
-								lcov: artifacts.lcov,
-								profraw: artifacts.profraw,
-								profdata: artifacts.profdata,
-								testlogs: artifacts.testlogs
-							},
-							configurationService.coverageArgs,
-							false
-						);
-						if (!summary) {
-							void vscode.window.showWarningMessage(`No matching test item found for ${targetLabel}.`);
-							coverageOutput.appendLine(`No matching test item found for ${targetLabel}.`);
-							continue;
-						}
-						setCoverageSummary(targetLabel, summary);
-						coverageOutput.appendLine(
-							`[coverage] published ${targetLabel} ${summary.covered}/${summary.total} (${summary.percent.toFixed(2)}%)`
-						);
-					}
-
-					// Show info message AFTER the progress callback ends so the
-					// progress notification dismisses immediately when work is done.
-				}
-			);
-
-			// Fire-and-forget: prompt the user to open coverage without blocking progress
-				void vscode.window.showInformationMessage('Coverage updated.', 'Open Coverage').then(async (action) => {
-					if (action === 'Open Coverage') {
-						try {
-							await vscode.commands.executeCommand('testing.openCoverage');
-						} catch {
-							// Fallback for older VS Code versions
-							try {
-								await vscode.commands.executeCommand('testing.openTesting');
-							} catch {
-								coverageOutput.appendLine('[coverage] could not open coverage view automatically');
-							}
-						}
-					}
-				});
-			} catch (error) {
-				const message = formatError(error);
-				coverageOutput.appendLine(`[coverage] command failed: ${message}`);
-				void vscode.window.showErrorMessage(`Coverage run failed:\n${message}`);
-			} finally {
-				isCoverageRunInProgress = false;
-			}
-		})
+		vscode.commands.registerCommand('bazelTestExplorer.showCoverageDetails', createCoverageCommandHandler({
+			workspaceRoot,
+			configurationService,
+			testManager,
+			coverageOutput,
+			extensionPath: context.extensionPath
+		}))
 	);
 
 	context.subscriptions.push(
@@ -677,6 +345,9 @@ export async function activate(context: vscode.ExtensionContext) {
 }
 
 export function deactivate() {
+	disposeEventBus();
+	disposeCoverageState();
+	disposeLogger();
 	vscode.commands.executeCommand('setContext', 'bazelTestExplorer.workspaceAvailable', false);
 }
 

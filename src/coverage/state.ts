@@ -113,3 +113,12 @@ export const formatCoverageShort = (summary: CoverageSummary): string => {
 export const getCoverageRuns = (targetId: string): CoverageRun[] => {
 	return coverageByTarget.get(targetId)?.runs ?? [];
 };
+
+/**
+ * Dispose the coverage state, clearing all in-memory data.
+ * Call this during extension deactivation to avoid resource leaks.
+ */
+export const disposeCoverageState = (): void => {
+	coverageByTarget.clear();
+	storage = undefined;
+};

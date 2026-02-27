@@ -29,7 +29,7 @@ export function analyzeTestFailures(
           return { pattern: new RegExp(p), source: 'Custom Setting' };
         } catch (e) {
           logWithTimestamp(`Invalid regex pattern in settings: "${p}"`, 'warn');
-          return null as any;
+          return null;
         }
       })
       .filter((p): p is { pattern: RegExp; source: string } => p !== null),

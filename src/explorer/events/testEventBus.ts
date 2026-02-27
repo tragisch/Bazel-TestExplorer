@@ -50,10 +50,20 @@ export function clearStartTime(testId: string) {
   startTimes.delete(testId);
 }
 
+/**
+ * Dispose the event bus, releasing the underlying EventEmitter and clearing state.
+ * Call this during extension deactivation to avoid resource leaks.
+ */
+export function disposeEventBus(): void {
+  startTimes.clear();
+  emitter.dispose();
+}
+
 export default {
   onDidTestEvent,
   startTest,
   finishTest,
   publishOutput,
-  clearStartTime
+  clearStartTime,
+  disposeEventBus
 };

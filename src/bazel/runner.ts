@@ -18,7 +18,7 @@ import { runBazelCommand } from '../infrastructure/process';
 import { logWithTimestamp, measure, formatError } from '../logging';
 import { ConfigurationService } from '../configuration';
 import { analyzeTestFailures } from './parseFailures';
-import { TestFramework } from './testFilterStrategies';
+import { TestFramework, getTestFilterArgs, supportsTestFilter } from './testFilterStrategies';
 import { detectPrimaryFramework } from './frameworkDetection';
 import { parseUnifiedTestResult, UnifiedTestResult } from './testcase/testResultParser';
 import { stripAnsi } from './testcase/parseOutput';
@@ -504,8 +504,7 @@ export const initiateBazelTest = async (
     const typeMatch = testItem.label.match(/\[(.*?)\]/);
     const testType = typeMatch?.[1] ?? "";
     
-    // Import and use test filter strategies
-    const { getTestFilterArgs, supportsTestFilter } = require('./testFilterStrategies');
+    // Use test filter strategies for individual test case execution
     // Prefer metadata-based detection (uses dependencies/type) when available
     const targetMeta = getTestTargetById(effectiveTestId);
     const detected = detectPrimaryFramework(targetMeta);

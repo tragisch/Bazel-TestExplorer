@@ -184,8 +184,8 @@ export class QueryCache {
    * Creates a cache key from query parameters
    */
   static createKey(queryPaths: string[], testTypes: string[]): string {
-    const sortedPaths = queryPaths.sort().join('|');
-    const sortedTypes = testTypes.sort().join('|');
+    const sortedPaths = [...queryPaths].sort().join('|');
+    const sortedTypes = [...testTypes].sort().join('|');
     const combined = `${sortedPaths}:${sortedTypes}`;
     return crypto.createHash('sha256').update(combined).digest('hex').slice(0, 16);
   }

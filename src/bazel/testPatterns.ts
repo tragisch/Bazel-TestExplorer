@@ -10,6 +10,8 @@
  * Test patterns - regex patterns for parsing test output from various frameworks (gtest, pytest, etc.)
  */
 
+import * as vscode from 'vscode';
+
 export interface TestCasePattern {
     id: string;
     framework: string;
@@ -363,20 +365,19 @@ export function getAllTestPatterns(): TestCasePattern[] {
     let allPatterns = [...BUILTIN_TEST_PATTERNS];
 
     try {
-        const vscode = require('vscode');
         const config = vscode.workspace.getConfiguration("bazelTestExplorer");
-        const customPatterns = config.get("customTestPatterns", []) as any[];
+        const customPatterns = config.get<Record<string, unknown>[]>("customTestPatterns", []);
 
         for (const customPattern of customPatterns) {
             if (customPattern.id && customPattern.pattern && customPattern.groups) {
                 try {
                     const pattern: TestCasePattern = {
-                        id: customPattern.id,
-                        framework: customPattern.framework || 'Custom',
-                        pattern: new RegExp(customPattern.pattern),
-                        groups: customPattern.groups,
-                        description: customPattern.description || 'Custom pattern from settings',
-                        example: customPattern.example || 'No example provided'
+                        id: String(customPattern.id),
+                        framework: String(customPattern.framework ?? 'Custom'),
+                        pattern: new RegExp(String(customPattern.pattern)),
+                        groups: customPattern.groups as TestCasePattern['groups'],
+                        description: String(customPattern.description ?? 'Custom pattern from settings'),
+                        example: String(customPattern.example ?? 'No example provided')
                     };
                     allPatterns.push(pattern);
                 } catch (error) {

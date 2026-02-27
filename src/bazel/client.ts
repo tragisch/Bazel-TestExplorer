@@ -10,7 +10,7 @@
  * Bazel client facade - unified interface for Bazel operations with caching and error handling
  */
 
-import { TestRun, CancellationToken } from 'vscode';
+import { TestItem, TestRun, CancellationToken } from 'vscode';
 import { BazelTestTarget } from './types';
 import { queryBazelTestTargets, queryBazelTestLabelsOnly, queryBazelTestMetadata, getTestTargetById } from './queries';
 import { executeBazelTest } from './runner';
@@ -65,7 +65,7 @@ export class BazelClient {
     } catch (error) {
       const result = this.errorHandler.handle(error, 'query');
       this.errorHandler.logError(result, 'QueryTests');
-      throw new Error(result.userMessage);
+      throw new Error(result.userMessage, { cause: error });
     }
   }
 
@@ -73,7 +73,7 @@ export class BazelClient {
    * Execute a single test with error handling and cancellation support
    */
   async runTest(
-    testItem: any,
+    testItem: TestItem,
     run: TestRun,
     token?: CancellationToken
   ): Promise<void> {
@@ -82,7 +82,7 @@ export class BazelClient {
     } catch (error) {
       const result = this.errorHandler.handle(error, 'run');
       this.errorHandler.logError(result, 'RunTest');
-      throw new Error(result.userMessage);
+      throw new Error(result.userMessage, { cause: error });
     }
   }
 

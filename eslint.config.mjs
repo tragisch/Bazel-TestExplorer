@@ -20,6 +20,8 @@ export default [{
             format: ["camelCase", "PascalCase"],
         }],
 
+        "@typescript-eslint/no-explicit-any": "warn",
+        "@typescript-eslint/no-require-imports": "warn",
         curly: "warn",
         eqeqeq: "warn",
         "no-throw-literal": "warn",

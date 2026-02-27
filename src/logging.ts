@@ -48,3 +48,13 @@ export const logMemoryUsage = () => {
     const toMB = (bytes: number) => (bytes / 1024 / 1024).toFixed(2) + ' MB';
     logWithTimestamp(`Memory Usage — RSS: ${toMB(mem.rss)}, Heap Used: ${toMB(mem.heapUsed)}, Heap Total: ${toMB(mem.heapTotal)}`);
 };
+
+/**
+ * Dispose the logger and its underlying OutputChannel.
+ * Call this during extension deactivation to avoid resource leaks.
+ */
+export const disposeLogger = (): void => {
+    if (logger) {
+        logger.dispose();
+    }
+};

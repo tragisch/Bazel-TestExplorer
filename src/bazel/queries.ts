@@ -115,10 +115,7 @@ export const queryBazelTestMetadata = async (
   
   testMap.clear();
   
-  const rawChunkSize = (config as any).metadataChunkSize;
-  const chunkSize = typeof rawChunkSize === 'number' && rawChunkSize >= 1
-    ? clamp(rawChunkSize, MIN_CHUNK_SIZE, MAX_CHUNK_SIZE)
-    : DEFAULT_CHUNK_SIZE;
+  const chunkSize = config.metadataChunkSize;
   const chunks: string[][] = [];
   
   for (let i = 0; i < labels.length; i += chunkSize) {
@@ -128,10 +125,7 @@ export const queryBazelTestMetadata = async (
   logWithTimestamp(`Processing ${chunks.length} chunks (size=${chunkSize})`);
   
   // Process chunks with parallelism limit
-  const rawLimit = (config as any).maxParallelQueries;
-  const limit = typeof rawLimit === 'number' && rawLimit >= 1
-    ? clamp(rawLimit, MIN_PARALLEL_QUERIES, MAX_PARALLEL_QUERIES)
-    : DEFAULT_PARALLEL_QUERIES;
+  const limit = config.maxParallelQueries;
   let chunkIndex = 0;
   const workers: Promise<void>[] = [];
   
@@ -254,11 +248,7 @@ function normalizeQueryPathForRecursion(path: string): string {
 }
 
 async function executeBazelQueries(queries: string[], workspacePath: string, config: ConfigurationService): Promise<void> {
-  // Use configured limit when available; fall back to default for mocks
-  const rawLimit = (config as any).maxParallelQueries;
-  const limit = typeof rawLimit === 'number' && rawLimit >= 1 
-    ? clamp(rawLimit, MIN_PARALLEL_QUERIES, MAX_PARALLEL_QUERIES) 
-    : DEFAULT_PARALLEL_QUERIES;
+  const limit = config.maxParallelQueries;
   // Simple concurrency pool without external deps
   let index = 0;
   const workers: Promise<void>[] = [];
@@ -304,10 +294,10 @@ function parseBazelLine(line: string): void {
   if (line.trim() === '') {return;}
 
   try {
-    const target = JSON.parse(line);
+    const target: BazelQueryTarget = JSON.parse(line) as BazelQueryTarget;
     if (target.type !== "RULE" || !target.rule) {return;}
 
-    const rule = target.rule;
+    const rule: BazelRule = target.rule;
     const targetName = rule.name;
 
     testMap.set(targetName, {
@@ -330,8 +320,28 @@ function parseBazelLine(line: string): void {
   }
 }
 
-function getAttribute(rule: any, name: string) {
-  return rule.attribute?.find((a: any) => a.name === name);
+interface BazelRuleAttribute {
+  name: string;
+  stringValue?: string;
+  booleanValue?: boolean;
+  intValue?: number;
+  stringListValue?: string[];
+}
+
+interface BazelRule {
+  name: string;
+  ruleClass: string;
+  location?: string;
+  attribute?: BazelRuleAttribute[];
+}
+
+interface BazelQueryTarget {
+  type: string;
+  rule?: BazelRule;
+}
+
+function getAttribute(rule: BazelRule, name: string): BazelRuleAttribute | undefined {
+  return rule.attribute?.find((a) => a.name === name);
 }
 
 /**

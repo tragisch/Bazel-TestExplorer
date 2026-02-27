@@ -11,6 +11,7 @@
  */
 
 import { createHash } from 'crypto';
+import * as vscode from 'vscode';
 import { callRunBazelCommandForTest } from '../runner';
 import { logWithTimestamp, formatError } from '../../logging';
 import { TestCaseParseResult } from '../types';
@@ -36,7 +37,6 @@ class VSCodeConfigService implements IConfigService {
 
   getDiscoveryTtlMs(): number {
     try {
-      const vscode = require('vscode');
       const cfg = vscode.workspace.getConfiguration('bazelTestExplorer');
       return (cfg.get('testCaseDiscoveryCacheMs', this.DISCOVERY_CACHE_MS_DEFAULT) as number);
     } catch (error) {
@@ -47,7 +47,6 @@ class VSCodeConfigService implements IConfigService {
 
   isDiscoveryEnabled(): boolean {
     try {
-      const vscode = require('vscode');
       const cfg = vscode.workspace.getConfiguration('bazelTestExplorer');
       return (cfg.get('enableTestCaseDiscovery', true) as boolean);
     } catch (error) {
@@ -58,7 +57,6 @@ class VSCodeConfigService implements IConfigService {
 
   getBazelPath(): string {
     try {
-      const vscode = require('vscode');
       const cfg = vscode.workspace.getConfiguration('bazelTestExplorer');
       return (cfg.get('bazelPath', 'bazel') as string);
     } catch (error) {

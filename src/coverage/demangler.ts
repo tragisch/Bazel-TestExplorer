@@ -19,6 +19,16 @@ const defaultTools: Record<DemanglerKind, string> = {
 
 const disabledDemanglers = new Set<DemanglerKind>();
 
+const DEMANGLER_TIMEOUT_MS = 10_000;
+
+/**
+ * Reset the set of disabled demanglers.
+ * Call this during extension deactivation to avoid stale state.
+ */
+export const resetDisabledDemanglers = (): void => {
+	disabledDemanglers.clear();
+};
+
 export const demangleSymbols = async (
 	symbols: string[],
 	kind: DemanglerKind,
@@ -42,7 +52,15 @@ export const demangleSymbols = async (
 		let stderr = '';
 
 		const child = cp.spawn(tool, [], { stdio: 'pipe' });
+
+		// Kill the demangler if it hangs
+		const timeout = setTimeout(() => {
+			logWithTimestamp(`Demangler '${tool}' timed out after ${DEMANGLER_TIMEOUT_MS}ms. Killing process.`, 'warn');
+			child.kill('SIGKILL');
+		}, DEMANGLER_TIMEOUT_MS);
+
 		child.on('error', (err) => {
+			clearTimeout(timeout);
 			const code = (err as NodeJS.ErrnoException).code;
 			if (code === 'ENOENT') {
 				logWithTimestamp(
@@ -62,6 +80,7 @@ export const demangleSymbols = async (
 			stderr += data.toString();
 		});
 		child.on('close', (code) => {
+			clearTimeout(timeout);
 			if (code !== 0) {
 				logWithTimestamp(`Demangler exited with code ${code}: ${stderr.trim()}`, 'warn');
 				resolve(symbols);

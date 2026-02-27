@@ -159,7 +159,9 @@ export class ErrorHandler {
    */
   private isTransientError(error: Error): boolean {
     const message = error.message.toLowerCase();
-    const errorCode = (error as any).code;
+    const errorCode = 'code' in error
+      ? (error as NodeJS.ErrnoException).code
+      : undefined;
 
     // Check error.code property for Node.js errors
     if (errorCode) {
